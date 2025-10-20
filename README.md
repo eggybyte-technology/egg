@@ -325,21 +325,41 @@ egg/
 
 ## 🏷️ Versioning & Releases
 
-Egg uses Monorepo subdirectory tag strategy:
+Egg uses unified version tags for all modules:
 
-- `core/v1.0.0`
-- `runtimex/v1.0.0`
-- `connectx/v1.2.0`
-- `obsx/v1.1.0`
+- `v0.0.1` - All modules released together
+- `v0.1.0` - Minor version updates
+- `v1.0.0` - Major stable release
 
 Usage example:
 
 ```bash
-go get github.com/eggybyte-technology/egg/core@core/v1.0.0
-go get github.com/eggybyte-technology/egg/connectx@connectx/v1.2.0
+# Install CLI tool
+go install github.com/eggybyte-technology/egg/cli/cmd@v0.0.1
+
+# Use framework modules
+go get github.com/eggybyte-technology/egg/core@v0.0.1
+go get github.com/eggybyte-technology/egg/connectx@v0.0.1
 ```
 
-For major version v2+, module paths need `/v2` suffix.
+### Release Process
+
+We use [GoReleaser](https://goreleaser.com/) for automated releases:
+
+```bash
+# Test release locally
+make release-test
+
+# Create and push tag
+git tag -a v0.0.1 -m "Release v0.0.1"
+git push origin v0.0.1
+
+# Publish release (requires GITHUB_TOKEN)
+export GITHUB_TOKEN=your_token
+make release-publish
+```
+
+See [RELEASE_QUICKSTART.md](RELEASE_QUICKSTART.md) for quick reference or [docs/RELEASING.md](docs/RELEASING.md) for detailed guide.
 
 ## 🤝 Contributing
 
