@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/eggybyte-technology/egg/cli/internal/configschema"
 	"github.com/eggybyte-technology/egg/cli/internal/projectfs"
@@ -192,14 +193,7 @@ func (g *APIGenerator) Init(ctx context.Context) error {
 		return fmt.Errorf("failed to write buf.gen.yaml: %w", err)
 	}
 
-	// Create gen directory structure
-	genDirs := []string{"gen/go", "gen/dart", "gen/openapi"}
-	for _, dir := range genDirs {
-		if err := g.fs.CreateDirectory(dir); err != nil {
-			return fmt.Errorf("failed to create gen directory %s: %w", dir, err)
-		}
-	}
-
+	// Note: gen directories will be created automatically by buf generate
 	ui.Success("API definitions initialized")
 	return nil
 }
@@ -465,7 +459,7 @@ func (g *BackendGenerator) updateBackendWorkspace(ctx context.Context, name stri
 // Parameters:
 //   - ctx: Context for cancellation
 //   - name: Service name
-//   - platforms: Target platforms
+//   - platforms: Target platforms (web, android, ios)
 //   - config: Project configuration
 //
 // Returns:
@@ -477,28 +471,35 @@ func (g *BackendGenerator) updateBackendWorkspace(ctx context.Context, name stri
 // Performance:
 //   - Flutter project creation
 func (g *FrontendGenerator) Create(ctx context.Context, name string, platforms []string, config *configschema.Config) error {
-	ui.Info("Creating frontend service: %s", name)
+	ui.Info("Creating frontend service: %s (platforms: %v)", name, platforms)
 
 	// Validate service name
 	if !isValidServiceName(name) {
 		return fmt.Errorf("invalid service name: %s", name)
 	}
 
-	// Create frontend directory
-	frontendDir := filepath.Join("frontend", name)
-	if err := g.fs.CreateDirectory(frontendDir); err != nil {
-		return fmt.Errorf("failed to create frontend directory: %w", err)
+	// Convert service name to valid Dart package name
+	// Dart requires lowercase letters, numbers, and underscores only
+	dartPackageName := dartifyServiceName(name)
+	if dartPackageName != name {
+		ui.Info("Converting service name to Dart-compatible package name: %s -> %s", name, dartPackageName)
+	}
+
+	// Validate Dart package name
+	if !isValidDartPackageName(dartPackageName) {
+		return fmt.Errorf("invalid Dart package name: %s (must use lowercase letters, numbers, and underscores only)", dartPackageName)
 	}
 
 	// Create Flutter project
 	frontendRunner := toolrunner.NewRunner(filepath.Join(g.fs.GetRootDir(), "frontend"))
 	frontendRunner.SetVerbose(true)
 
-	if err := frontendRunner.FlutterCreate(ctx, name, platforms); err != nil {
+	if err := frontendRunner.FlutterCreate(ctx, dartPackageName, platforms); err != nil {
 		return fmt.Errorf("failed to create Flutter project: %w", err)
 	}
 
-	ui.Success("Frontend service created: %s", name)
+	ui.Success("Frontend service created: %s", dartPackageName)
+	ui.Info("To use a specific Flutter version, use FVM: https://fvm.app")
 	return nil
 }
 
@@ -586,9 +587,82 @@ func isValidServiceName(name string) bool {
 		return false
 	}
 	for _, r := range name {
-		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
 			return false
 		}
 	}
+	return true
+}
+
+// dartifyServiceName converts a service name to a valid Dart package name.
+// It replaces hyphens with underscores and ensures the name follows Dart naming conventions.
+//
+// Parameters:
+//   - name: Service name to convert
+//
+// Returns:
+//   - string: Valid Dart package name
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - O(n) string conversion
+func dartifyServiceName(name string) string {
+	return strings.ReplaceAll(name, "-", "_")
+}
+
+// isValidDartPackageName checks if a name is a valid Dart package name.
+// Dart package names must:
+// - Use only lowercase letters, numbers, and underscores
+// - Not start with a number
+// - Not be a reserved Dart keyword
+//
+// Parameters:
+//   - name: Package name to validate
+//
+// Returns:
+//   - bool: True if valid Dart package name
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - O(n) validation
+func isValidDartPackageName(name string) bool {
+	if name == "" || len(name) > 50 {
+		return false
+	}
+
+	// Check if starts with a number
+	if name[0] >= '0' && name[0] <= '9' {
+		return false
+	}
+
+	// Check if all characters are valid
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_') {
+			return false
+		}
+	}
+
+	// Check for Dart reserved keywords
+	dartReservedKeywords := []string{
+		"abstract", "as", "assert", "async", "await", "break", "case", "catch",
+		"class", "const", "continue", "covariant", "default", "deferred", "do",
+		"dynamic", "else", "enum", "export", "extends", "extension", "external",
+		"factory", "false", "final", "finally", "for", "function", "get", "hide",
+		"if", "implements", "import", "in", "interface", "is", "late", "library",
+		"mixin", "new", "null", "on", "operator", "part", "required", "rethrow",
+		"return", "set", "show", "static", "super", "switch", "sync", "this",
+		"throw", "true", "try", "typedef", "var", "void", "while", "with", "yield",
+	}
+
+	for _, keyword := range dartReservedKeywords {
+		if name == keyword {
+			return false
+		}
+	}
+
 	return true
 }

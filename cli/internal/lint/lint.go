@@ -325,7 +325,7 @@ func (l *Linter) checkBackendServices(config *configschema.Config, fs *projectfs
 				Level:      "error",
 				Message:    fmt.Sprintf("Invalid service name: %s", name),
 				Path:       fmt.Sprintf("backend.%s", name),
-				Suggestion: "Use lowercase letters, numbers, and hyphens only",
+				Suggestion: "Use lowercase letters, numbers, hyphens, and underscores only",
 			})
 		}
 
@@ -469,7 +469,7 @@ func (l *Linter) checkFrontendServices(config *configschema.Config, fs *projectf
 				Level:      "error",
 				Message:    fmt.Sprintf("Invalid service name: %s", name),
 				Path:       fmt.Sprintf("frontend.%s", name),
-				Suggestion: "Use lowercase letters, numbers, and hyphens only",
+				Suggestion: "Use lowercase letters, numbers, hyphens, and underscores only",
 			})
 		}
 
@@ -748,7 +748,9 @@ func isValidServiceName(name string) bool {
 		return false
 	}
 	for _, r := range name {
-		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+		// Allow lowercase letters, numbers, hyphens, and underscores
+		// Underscores are allowed for Dart/Flutter naming compatibility
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
 			return false
 		}
 	}

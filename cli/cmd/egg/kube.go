@@ -12,7 +12,7 @@
 //	egg kube template [-n <namespace>]
 //	egg kube apply [-n <namespace>]
 //	egg kube uninstall [-n <namespace>]
-package egg
+package main
 
 import (
 	"context"

@@ -543,7 +543,7 @@ func validateConfig(config *Config, diags *Diagnostics) {
 func validateBackendService(name string, service BackendService, config *Config, diags *Diagnostics, usedPorts map[int]string) {
 	// Validate service name
 	if !isValidServiceName(name) {
-		diags.AddError("Invalid service name", fmt.Sprintf("backend.%s", name), "Use lowercase letters, numbers, and hyphens only")
+		diags.AddError("Invalid service name", fmt.Sprintf("backend.%s", name), "Use lowercase letters, numbers, hyphens, and underscores only")
 	}
 
 	// Validate image name
@@ -603,7 +603,7 @@ func validateBackendService(name string, service BackendService, config *Config,
 func validateFrontendService(name string, service FrontendService, diags *Diagnostics) {
 	// Validate service name
 	if !isValidServiceName(name) {
-		diags.AddError("Invalid service name", fmt.Sprintf("frontend.%s", name), "Use lowercase letters, numbers, and hyphens only")
+		diags.AddError("Invalid service name", fmt.Sprintf("frontend.%s", name), "Use lowercase letters, numbers, hyphens, and underscores only")
 	}
 
 	// Validate image name
@@ -722,11 +722,22 @@ func isValidModulePrefix(prefix string) bool {
 }
 
 func isValidServiceName(name string) bool {
-	return isValidProjectName(name)
+	if name == "" || len(name) > 50 {
+		return false
+	}
+	for _, r := range name {
+		// Allow lowercase letters, numbers, hyphens, and underscores
+		// Underscores are allowed for Dart/Flutter naming compatibility
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 func isValidImageName(name string) bool {
-	return isValidProjectName(name)
+	// Image names follow the same rules as service names
+	return isValidServiceName(name)
 }
 
 func isValidResourceName(name string) bool {

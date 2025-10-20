@@ -170,20 +170,41 @@ func output(level OutputLevel, format string, args ...interface{}) {
 
 	// Format with color and prefix
 	var prefix string
+	var color string
+	const (
+		colorReset  = "\033[0m"
+		colorGray   = "\033[90m"
+		colorBlue   = "\033[34m"
+		colorYellow = "\033[33m"
+		colorRed    = "\033[31m"
+		colorGreen  = "\033[32m"
+	)
+
 	switch level {
 	case LevelDebug:
-		prefix = "🔍 DEBUG:"
+		prefix = "[DEBUG]"
+		color = colorGray
 	case LevelInfo:
-		prefix = "ℹ️  INFO:"
+		prefix = "[INFO]"
+		color = colorBlue
 	case LevelWarning:
-		prefix = "⚠️  WARN:"
+		prefix = "[WARN]"
+		color = colorYellow
 	case LevelError:
-		prefix = "❌ ERROR:"
+		prefix = "[ERROR]"
+		color = colorRed
 	case LevelSuccess:
-		prefix = "✅ SUCCESS:"
+		prefix = "[OK]"
+		color = colorGreen
 	}
 
-	fmt.Fprintf(writer, "%s %s\n", prefix, text)
+	// Check if output is a terminal (supports colors)
+	isTerminal := os.Getenv("TERM") != "" && os.Getenv("TERM") != "dumb"
+	if isTerminal && !useJSON {
+		fmt.Fprintf(writer, "%s%-8s%s %s\n", color, prefix, colorReset, text)
+	} else {
+		fmt.Fprintf(writer, "%-8s %s\n", prefix, text)
+	}
 }
 
 // Debug outputs a debug message.
@@ -330,7 +351,7 @@ func Confirm(format string, args ...interface{}) bool {
 	}
 
 	text := fmt.Sprintf(format, args...)
-	fmt.Printf("❓ %s [y/N]: ", text)
+	fmt.Printf("[?] %s [y/N]: ", text)
 
 	var response string
 	fmt.Scanln(&response)
@@ -395,7 +416,7 @@ func (p *Progress) Update() {
 	}
 
 	percentage := float64(p.current) / float64(p.total) * 100
-	fmt.Printf("\r🔄 %s: %d/%d (%.1f%%)", p.title, p.current, p.total, percentage)
+	fmt.Printf("\r[*] %s: %d/%d (%.1f%%)", p.title, p.current, p.total, percentage)
 
 	if p.current >= p.total {
 		fmt.Println() // New line when complete
@@ -426,6 +447,6 @@ func (p *Progress) Complete() {
 	mu.RUnlock()
 
 	if !useJSON {
-		fmt.Printf("\r✅ %s: Complete\n", p.title)
+		fmt.Printf("\r[OK] %s: Complete\n", p.title)
 	}
 }

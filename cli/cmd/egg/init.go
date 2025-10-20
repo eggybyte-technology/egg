@@ -10,7 +10,7 @@
 // Usage:
 //
 //	egg init [flags]
-package egg
+package main
 
 import (
 	"context"
@@ -121,6 +121,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to generate build configuration: %w", err)
 	}
 
+	// Generate .gitignore
+	if err := generateGitignore(fs); err != nil {
+		return fmt.Errorf("failed to generate .gitignore: %w", err)
+	}
+
 	ui.Success("Project initialized successfully!")
 	ui.Info("Next steps:")
 	ui.Info("  1. Create a backend service: egg create backend <name>")
@@ -151,10 +156,6 @@ func createProjectStructure(fs *projectfs.ProjectFS) error {
 		"api",
 		"backend",
 		"frontend",
-		"gen/go",
-		"gen/dart",
-		"gen/ts",
-		"gen/openapi",
 		"build",
 		"deploy",
 	}
@@ -362,5 +363,36 @@ func generateBuildConfiguration(fs *projectfs.ProjectFS) error {
 	}
 
 	ui.Success("Build configuration generated")
+	return nil
+}
+
+// generateGitignore generates the .gitignore file.
+//
+// Parameters:
+//   - fs: Project file system
+//
+// Returns:
+//   - error: Generation error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Template rendering and file I/O
+func generateGitignore(fs *projectfs.ProjectFS) error {
+	ui.Info("Generating .gitignore...")
+
+	loader := templates.NewLoader()
+
+	// Generate .gitignore from template
+	gitignore, err := loader.LoadTemplate(".gitignore.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to load .gitignore template: %w", err)
+	}
+	if err := fs.WriteFile(".gitignore", gitignore, 0644); err != nil {
+		return fmt.Errorf("failed to write .gitignore: %w", err)
+	}
+
+	ui.Success(".gitignore generated")
 	return nil
 }

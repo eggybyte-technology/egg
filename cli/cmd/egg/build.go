@@ -10,7 +10,7 @@
 // Usage:
 //
 //	egg build [--push] [--version vX.Y.Z] [--subset svc1,svc2]
-package egg
+package main
 
 import (
 	"context"

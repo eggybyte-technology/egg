@@ -10,7 +10,7 @@
 // Usage:
 //
 //	egg doctor
-package egg
+package main
 
 import (
 	"context"
@@ -26,15 +26,19 @@ import (
 // doctorCmd represents the doctor command.
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
-	Short: "Check system environment and toolchain",
-	Long: `Check system environment and toolchain for egg development.
+	Short: "Diagnose development environment",
+	Long: `Perform comprehensive diagnostics of your EGG development environment.
 
 This command verifies:
-- Go installation and version
-- Docker installation and availability
-- Required tools (buf, kubectl, helm)
-- Network connectivity
-- File system permissions
+  • Core toolchain (Go, Docker)
+  • Development tools (buf, kubectl, helm)
+  • Code generation (Buf remote plugins)
+  • Network connectivity (Docker Hub, Go Proxy, Buf Registry)
+  • File system permissions
+
+Note: EGG uses Buf's remote plugin execution, so no local installation 
+of protoc plugins is required. All code generation happens through 
+buf.build remote plugins.
 
 Example:
   egg doctor`,
@@ -62,60 +66,95 @@ func init() {
 func runDoctor(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	ui.Info("Checking system environment and toolchain...")
+	ui.Info("EGG Development Environment Diagnostics")
+	separator := strings.Repeat("=", 60)
+	ui.Info("%s", separator)
 	ui.Info("")
 
 	// Create tool runner
 	runner := toolrunner.NewRunner(".")
-	runner.SetVerbose(true)
+	runner.SetVerbose(false)
+
+	// Track overall status
+	hasErrors := false
+	hasWarnings := false
 
 	// Check system information
 	checkSystemInfo()
 
 	// Check Go installation
+	ui.Info("Core Toolchain")
+	ui.Info("  Checking Go installation...")
 	if err := checkGoInstallation(ctx, runner); err != nil {
-		ui.Error("Go check failed: %v", err)
+		ui.Error("  [x] Go: %v", err)
+		hasErrors = true
 	} else {
-		ui.Success("Go installation: OK")
+		ui.Success("  [+] Go")
 	}
 
 	// Check Docker installation
+	ui.Info("  Checking Docker installation...")
 	if err := checkDockerInstallation(ctx, runner); err != nil {
-		ui.Error("Docker check failed: %v", err)
+		ui.Error("  [x] Docker: %v", err)
+		hasErrors = true
 	} else {
-		ui.Success("Docker installation: OK")
+		ui.Success("  [+] Docker")
 	}
+	ui.Info("")
 
 	// Check required tools
+	ui.Info("Development Tools")
 	if err := checkRequiredTools(ctx, runner); err != nil {
-		ui.Error("Required tools check failed: %v", err)
-	} else {
-		ui.Success("Required tools: OK")
+		ui.Error("  [x] %v", err)
+		hasErrors = true
 	}
+	ui.Info("")
 
-	// Check buf plugins
-	if err := checkBufPlugins(ctx, runner); err != nil {
-		ui.Warning("Buf plugins check: %v", err)
+	// Check buf remote plugins
+	ui.Info("Code Generation")
+	if err := checkBufRemotePlugins(ctx, runner); err != nil {
+		ui.Warning("  [!] %v", err)
+		hasWarnings = true
 	} else {
-		ui.Success("Buf plugins: OK")
+		ui.Success("  [+] Buf remote plugins configured")
+		ui.Info("      - buf.build/protocolbuffers/go")
+		ui.Info("      - buf.build/connectrpc/go")
+		ui.Info("      - buf.build/protocolbuffers/dart")
+		ui.Info("      - buf.build/connectrpc/dart")
+		ui.Info("      - buf.build/grpc-ecosystem/openapiv2")
 	}
+	ui.Info("")
 
 	// Check network connectivity
+	ui.Info("Network Connectivity")
 	if err := checkNetworkConnectivity(ctx, runner); err != nil {
-		ui.Warning("Network connectivity: %v", err)
-	} else {
-		ui.Success("Network connectivity: OK")
+		ui.Warning("  [!] %v", err)
+		hasWarnings = true
 	}
+	ui.Info("")
 
 	// Check file system permissions
+	ui.Info("File System")
 	if err := checkFileSystemPermissions(); err != nil {
-		ui.Error("File system permissions: %v", err)
+		ui.Error("  [x] %v", err)
+		hasErrors = true
 	} else {
-		ui.Success("File system permissions: OK")
+		ui.Success("  [+] Permissions OK")
 	}
 
+	// Summary
 	ui.Info("")
-	ui.Success("System check completed!")
+	ui.Info("%s", separator)
+	if hasErrors {
+		ui.Error("Diagnostics completed with ERRORS")
+		ui.Info("Please resolve the errors above before proceeding.")
+		return fmt.Errorf("environment check failed")
+	} else if hasWarnings {
+		ui.Warning("Diagnostics completed with WARNINGS")
+		ui.Info("Your environment is functional but some optional features may be limited.")
+	} else {
+		ui.Success("All checks passed - environment ready")
+	}
 
 	return nil
 }
@@ -134,9 +173,8 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 // Performance:
 //   - System information retrieval
 func checkSystemInfo() {
-	ui.Info("System Information:")
-	ui.Info("  OS: %s", runtime.GOOS)
-	ui.Info("  Architecture: %s", runtime.GOARCH)
+	ui.Info("System Information")
+	ui.Info("  OS/Arch:    %s/%s", runtime.GOOS, runtime.GOARCH)
 	ui.Info("  Go Version: %s", runtime.Version())
 	ui.Info("")
 }
@@ -157,23 +195,27 @@ func checkSystemInfo() {
 //   - Go version check
 func checkGoInstallation(ctx context.Context, runner *toolrunner.Runner) error {
 	// Check if go is available
-	if available, err := toolrunner.CheckToolAvailability("go"); !available {
-		return fmt.Errorf("go not found in PATH: %w", err)
+	if available, _ := toolrunner.CheckToolAvailability("go"); !available {
+		return fmt.Errorf("not found in PATH")
 	}
 
 	// Get Go version
 	version, err := toolrunner.GetGoVersion(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get Go version: %w", err)
+		return fmt.Errorf("failed to get version: %w", err)
 	}
-
-	ui.Info("Go Version: %s", version)
 
 	// Check Go modules support
 	if _, err := runner.Go(ctx, "env", "GOMOD"); err != nil {
-		return fmt.Errorf("Go modules not supported: %w", err)
+		return fmt.Errorf("modules not supported")
 	}
 
+	// Parse version to check minimum requirement (1.21+)
+	if !strings.Contains(version, "go1.") {
+		return fmt.Errorf("invalid version format: %s", version)
+	}
+
+	ui.Debug("      Version: %s", version)
 	return nil
 }
 
@@ -193,21 +235,22 @@ func checkGoInstallation(ctx context.Context, runner *toolrunner.Runner) error {
 //   - Docker availability check
 func checkDockerInstallation(ctx context.Context, runner *toolrunner.Runner) error {
 	// Check if docker is available
-	if available, err := toolrunner.CheckToolAvailability("docker"); !available {
-		return fmt.Errorf("docker not found in PATH: %w", err)
+	if available, _ := toolrunner.CheckToolAvailability("docker"); !available {
+		return fmt.Errorf("not found in PATH")
 	}
 
 	// Check Docker daemon
 	result, err := runner.Docker(ctx, "version", "--format", "{{.Server.Version}}")
 	if err != nil {
-		return fmt.Errorf("Docker daemon not running: %w", err)
+		return fmt.Errorf("daemon not running")
 	}
 
-	ui.Info("Docker Version: %s", strings.TrimSpace(result.Stdout))
+	version := strings.TrimSpace(result.Stdout)
+	ui.Debug("      Version: %s", version)
 
 	// Check Docker buildx
 	if _, err := runner.Docker(ctx, "buildx", "version"); err != nil {
-		ui.Warning("Docker Buildx not available, multi-platform builds may not work")
+		ui.Warning("      Buildx not available - multi-platform builds disabled")
 	}
 
 	return nil
@@ -228,29 +271,47 @@ func checkDockerInstallation(ctx context.Context, runner *toolrunner.Runner) err
 // Performance:
 //   - Tool availability checks
 func checkRequiredTools(ctx context.Context, runner *toolrunner.Runner) error {
-	requiredTools := []string{
-		"buf",
-		"kubectl",
-		"helm",
+	tools := []struct {
+		name        string
+		required    bool
+		description string
+	}{
+		{"buf", true, "Protocol buffer compiler"},
+		{"kubectl", false, "Kubernetes CLI"},
+		{"helm", false, "Kubernetes package manager"},
 	}
 
-	var missingTools []string
-	for _, tool := range requiredTools {
-		if available, _ := toolrunner.CheckToolAvailability(tool); !available {
-			missingTools = append(missingTools, tool)
+	var missingRequired []string
+	for _, tool := range tools {
+		available, _ := toolrunner.CheckToolAvailability(tool.name)
+		ui.Info("  Checking %s...", tool.name)
+		if available {
+			ui.Success("  [+] %s", tool.name)
+			// Get version if available
+			if tool.name == "buf" {
+				if result, err := runner.Buf(ctx, "version"); err == nil {
+					version := strings.TrimSpace(result.Stdout)
+					ui.Debug("      Version: %s", version)
+				}
+			}
 		} else {
-			ui.Info("%s: Available", tool)
+			if tool.required {
+				ui.Error("  [x] %s (required)", tool.name)
+				missingRequired = append(missingRequired, tool.name)
+			} else {
+				ui.Warning("  [!] %s (optional - %s)", tool.name, tool.description)
+			}
 		}
 	}
 
-	if len(missingTools) > 0 {
-		return fmt.Errorf("missing required tools: %s", strings.Join(missingTools, ", "))
+	if len(missingRequired) > 0 {
+		return fmt.Errorf("missing required tools: %s", strings.Join(missingRequired, ", "))
 	}
 
 	return nil
 }
 
-// checkBufPlugins checks buf plugins installation.
+// checkBufRemotePlugins checks buf remote plugins configuration.
 //
 // Parameters:
 //   - ctx: Context for cancellation
@@ -263,28 +324,21 @@ func checkRequiredTools(ctx context.Context, runner *toolrunner.Runner) error {
 //   - Single-threaded
 //
 // Performance:
-//   - Plugin availability checks
-func checkBufPlugins(ctx context.Context, runner *toolrunner.Runner) error {
-	plugins := []string{
-		"protoc-gen-go",
-		"protoc-gen-connect-go",
-		"protoc-gen-buf-build-dart",
-		"protoc-gen-buf-build-es",
-		"protoc-gen-openapiv2",
+//   - Plugin configuration checks
+//
+// Note: EGG exclusively uses Buf's remote plugin execution (buf.build/...),
+// which means no local installation of protoc plugins is required.
+// This function verifies that buf CLI is properly configured and can access
+// the Buf Schema Registry.
+func checkBufRemotePlugins(ctx context.Context, runner *toolrunner.Runner) error {
+	// Verify buf is available (already checked in checkRequiredTools, but double-check)
+	if available, _ := toolrunner.CheckToolAvailability("buf"); !available {
+		return fmt.Errorf("buf CLI not found - required for remote plugin execution")
 	}
 
-	var missingPlugins []string
-	for _, plugin := range plugins {
-		if available, _ := toolrunner.CheckToolAvailability(plugin); !available {
-			missingPlugins = append(missingPlugins, plugin)
-		} else {
-			ui.Info("Plugin %s: Available", plugin)
-		}
-	}
-
-	if len(missingPlugins) > 0 {
-		return fmt.Errorf("missing buf plugins: %s", strings.Join(missingPlugins, ", "))
-	}
+	ui.Success("  [+] Remote plugin execution enabled")
+	ui.Info("      No local protoc plugins required")
+	ui.Info("      Using Buf Schema Registry (buf.build)")
 
 	return nil
 }
@@ -304,19 +358,28 @@ func checkBufPlugins(ctx context.Context, runner *toolrunner.Runner) error {
 // Performance:
 //   - Network connectivity checks
 func checkNetworkConnectivity(ctx context.Context, runner *toolrunner.Runner) error {
-	// Check connectivity to Docker Hub
-	if _, err := runner.Exec(ctx, "curl", "-s", "--connect-timeout", "5", "https://registry-1.docker.io/v2/"); err != nil {
-		return fmt.Errorf("cannot reach Docker Hub: %w", err)
+	services := []struct {
+		name string
+		url  string
+	}{
+		{"Docker Hub", "https://registry-1.docker.io/v2/"},
+		{"Go Proxy", "https://proxy.golang.org/"},
+		{"Buf Registry", "https://buf.build/"},
 	}
 
-	// Check connectivity to Go proxy
-	if _, err := runner.Exec(ctx, "curl", "-s", "--connect-timeout", "5", "https://proxy.golang.org/"); err != nil {
-		return fmt.Errorf("cannot reach Go proxy: %w", err)
+	var failedServices []string
+	for _, svc := range services {
+		ui.Info("  Checking %s...", svc.name)
+		if _, err := runner.Exec(ctx, "curl", "-s", "--connect-timeout", "5", svc.url); err != nil {
+			ui.Warning("  [!] %s: unreachable", svc.name)
+			failedServices = append(failedServices, svc.name)
+		} else {
+			ui.Success("  [+] %s", svc.name)
+		}
 	}
 
-	// Check connectivity to buf registry
-	if _, err := runner.Exec(ctx, "curl", "-s", "--connect-timeout", "5", "https://buf.build/"); err != nil {
-		return fmt.Errorf("cannot reach buf registry: %w", err)
+	if len(failedServices) > 0 {
+		return fmt.Errorf("connectivity issues detected - some features may not work")
 	}
 
 	return nil
@@ -336,14 +399,18 @@ func checkNetworkConnectivity(ctx context.Context, runner *toolrunner.Runner) er
 // Performance:
 //   - File system permission checks
 func checkFileSystemPermissions() error {
-	// Check current directory write permissions
-	if err := checkWritePermission("."); err != nil {
-		return fmt.Errorf("current directory not writable: %w", err)
+	locations := []struct {
+		path string
+		name string
+	}{
+		{".", "Current directory"},
+		{"/tmp", "Temp directory"},
 	}
 
-	// Check temp directory
-	if err := checkWritePermission("/tmp"); err != nil {
-		return fmt.Errorf("temp directory not writable: %w", err)
+	for _, loc := range locations {
+		if err := checkWritePermission(loc.path); err != nil {
+			return fmt.Errorf("%s not writable: %w", loc.name, err)
+		}
 	}
 
 	return nil

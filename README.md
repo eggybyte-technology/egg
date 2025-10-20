@@ -103,6 +103,8 @@ Lifecycle orchestration, unified port strategy, and health/metrics endpoint mana
 
 ### Installation
 
+#### For Framework Development
+
 ```bash
 # Clone the repository
 git clone https://github.com/eggybyte-technology/egg.git
@@ -114,8 +116,21 @@ go work sync
 # Install development tools
 make tools
 
+# Build CLI tool
+make build-cli
+
 # Run tests
 make test
+```
+
+#### For Application Development
+
+```bash
+# Install the egg CLI tool
+go install github.com/eggybyte-technology/egg/cli/cmd/egg@latest
+
+# Or download pre-built binaries from releases
+# https://github.com/eggybyte-technology/egg/releases
 ```
 
 ### Create Your First Service
@@ -187,6 +202,56 @@ func main() {
 ```
 
 See the complete example at [examples/minimal-connect-service](examples/minimal-connect-service).
+
+## 🛠️ Egg CLI Tool
+
+The Egg CLI provides a complete development workflow for building microservices.
+
+### Quick Start
+
+```bash
+# Install the CLI tool
+go install github.com/eggybyte-technology/egg/cli/cmd/egg@latest
+
+# Verify installation
+egg doctor
+
+# Initialize a new project
+egg init --project-name my-platform \
+         --module-prefix github.com/myorg/my-platform \
+         --docker-registry ghcr.io/myorg
+
+# Create a backend service
+egg create backend user-service
+
+# Create a frontend service
+egg create frontend admin_portal --platforms web
+
+# Generate API code
+egg api init
+egg api generate
+
+# Start local development
+egg compose up
+```
+
+### Naming Convention for Frontend Services
+
+When creating Flutter frontend services, use **underscores** instead of hyphens to comply with Dart package naming requirements:
+
+```bash
+# ✅ Recommended - Use underscores
+egg create frontend admin_portal --platforms web
+egg create frontend user_dashboard --platforms web
+
+# ⚠️ Acceptable - Will be auto-converted
+egg create frontend admin-portal --platforms web
+# Automatically converts to: admin_portal
+```
+
+Dart requires package names to use only lowercase letters, numbers, and underscores.
+
+For detailed CLI documentation, examples, and all available commands, see **[CLI Documentation](cli/README.md)**.
 
 ## ⚙️ Configuration Management
 
@@ -264,6 +329,8 @@ Recommended metric naming:
 
 ## 🛠️ Development Tools
 
+### Framework Development
+
 ```bash
 # Format code
 make fmt
@@ -271,11 +338,17 @@ make fmt
 # Run tests
 make test
 
+# Run CLI integration tests
+make test-cli
+
 # Run linter
 make lint
 
 # Build all modules
 make build
+
+# Build CLI tool
+make build-cli
 
 # Run example
 make run-example
@@ -284,10 +357,41 @@ make run-example
 make quality
 ```
 
+### CLI Tool Testing
+
+```bash
+# Run comprehensive CLI integration tests
+make test-cli
+
+# Run tests and keep the test project for inspection
+make test-cli-keep
+```
+
+The CLI integration test validates:
+- ✅ Project initialization with custom configuration
+- ✅ Backend service generation with local module dependencies
+- ✅ Go workspace management (go.work)
+- ✅ Frontend service generation (Flutter)
+- ✅ Service registration in egg.yaml
+- ✅ API configuration and code generation
+- ✅ Docker Compose configuration
+- ✅ Configuration validation
+
 ## 📁 Project Structure
+
+### Framework Repository
 
 ```
 egg/
+├── cli/            # CLI tool
+│   ├── cmd/egg/    # Command implementations
+│   ├── internal/   # CLI internals
+│   │   ├── configschema/  # Configuration schema
+│   │   ├── generators/    # Code generators
+│   │   ├── templates/     # Service templates
+│   │   ├── toolrunner/    # External tool execution
+│   │   └── render/        # Manifest renderers
+│   └── egg         # Built CLI binary
 ├── core/           # L1: Zero-dependency core interfaces
 │   ├── log/        # Logging interface
 │   ├── errors/     # Error handling
@@ -302,10 +406,55 @@ egg/
 ├── examples/       # Example services
 │   └── minimal-connect-service/
 ├── docs/           # Documentation
-│   └── guide.md    # Detailed guide
+│   ├── guide.md    # Detailed guide
+│   ├── egg-cli.md  # CLI documentation
+│   └── RELEASING.md # Release guide
+├── scripts/        # Automation scripts
+│   └── test-cli.sh # CLI integration tests
 ├── go.work         # Workspace
 ├── Makefile        # Build scripts
-└── .golangci.yml   # Linter configuration
+└── .goreleaser.yml # Release configuration
+```
+
+### Generated Application Structure
+
+After running `egg init` and creating services:
+
+```
+my-platform/
+├── api/            # Protobuf API definitions
+│   ├── buf.yaml
+│   ├── buf.gen.yaml
+│   └── myservice/v1/
+│       └── service.proto
+├── backend/        # Backend services
+│   ├── go.work     # Go workspace for all backend services
+│   └── user-service/
+│       ├── cmd/server/
+│       │   └── main.go
+│       ├── internal/
+│       │   ├── config/
+│       │   ├── handler/
+│       │   └── service/
+│       ├── go.mod
+│       └── go.sum
+├── frontend/       # Frontend applications
+│   └── admin-portal/
+│       ├── lib/
+│       ├── web/
+│       └── pubspec.yaml
+├── gen/            # Generated code
+│   ├── go/         # Go Connect code
+│   ├── dart/       # Dart API clients
+│   ├── ts/         # TypeScript types
+│   └── openapi/    # OpenAPI specs
+├── build/          # Docker build files
+│   ├── Dockerfile.backend
+│   ├── Dockerfile.frontend
+│   └── Dockerfile.eggybyte-go-alpine
+├── deploy/         # Deployment manifests
+│   └── compose.yaml
+└── egg.yaml        # Project configuration
 ```
 
 ## 📈 Test Coverage
@@ -394,11 +543,39 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## 📚 Resources
 
-- [Detailed Guide](docs/guide.md)
-- [Example Service](examples/minimal-connect-service)
-- [API Documentation](https://pkg.go.dev/github.com/eggybyte-technology/egg)
-- [Architecture Design](docs/ARCHITECTURE.md)
-- [Release Notes](docs/RELEASING.md)
+- [Detailed Guide](docs/guide.md) - Complete framework guide
+- [CLI Documentation](cli/README.md) - CLI tool complete reference
+- [Dart Naming Guide](docs/DART_NAMING_COMPATIBILITY.md) - Flutter/Dart naming compatibility
+- [Example Service](examples/minimal-connect-service) - Minimal Connect service
+- [API Documentation](https://pkg.go.dev/github.com/eggybyte-technology/egg) - Go package docs
+- [Release Guide](docs/RELEASING.md) - How to release new versions
+
+## 🎯 Use Cases
+
+### Microservices Platform
+Build a complete microservices platform with:
+- Multiple backend services with Connect
+- Web and mobile frontends with Flutter
+- Unified observability and configuration
+- Kubernetes-native deployment
+
+### API-First Development
+- Define APIs with Protobuf
+- Generate type-safe clients for multiple languages
+- Automatic OpenAPI documentation
+- Version control for API evolution
+
+### Cloud Native Applications
+- Built-in Kubernetes integration
+- ConfigMap hot reload
+- Service discovery
+- Health checks and metrics
+
+### Monorepo Management
+- Multiple services in one repository
+- Shared code and dependencies
+- Unified build and deployment
+- Independent service versioning
 
 ## 📄 License
 

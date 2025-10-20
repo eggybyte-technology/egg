@@ -12,7 +12,7 @@
 //	egg compose up [--detached]
 //	egg compose down
 //	egg compose logs [--service <name>]
-package egg
+package main
 
 import (
 	"context"

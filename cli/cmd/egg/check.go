@@ -10,7 +10,7 @@
 // Usage:
 //
 //	egg check
-package egg
+package main
 
 import (
 	"fmt"

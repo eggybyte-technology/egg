@@ -450,7 +450,7 @@ func (r *Runner) BufGenerate(ctx context.Context) error {
 // Parameters:
 //   - ctx: Context for cancellation
 //   - projectName: Project name
-//   - platforms: Target platforms
+//   - platforms: Target platforms (web, android, ios)
 //
 // Returns:
 //   - error: Execution error if any
@@ -462,6 +462,8 @@ func (r *Runner) BufGenerate(ctx context.Context) error {
 //   - Project scaffolding time
 func (r *Runner) FlutterCreate(ctx context.Context, projectName string, platforms []string) error {
 	args := []string{"create", projectName}
+
+	// Add platforms
 	if len(platforms) > 0 {
 		args = append(args, "--platforms", strings.Join(platforms, ","))
 	}
@@ -472,7 +474,7 @@ func (r *Runner) FlutterCreate(ctx context.Context, projectName string, platform
 	}
 
 	if r.verbose {
-		ui.Debug("Flutter project created: %s", projectName)
+		ui.Debug("Flutter project created: %s (platforms: %v)", projectName, platforms)
 		ui.Debug("Output: %s", result.Stdout)
 	}
 

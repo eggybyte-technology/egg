@@ -27,14 +27,14 @@
 ```bash
 git clone https://github.com/eggybyte-technology/egg.git
 cd egg/cli
-go build -o egg ./cmd/main.go
+go build -o egg ./cmd/egg
 sudo mv egg /usr/local/bin/
 ```
 
 ### Using Go Install
 
 ```bash
-go install github.com/eggybyte-technology/egg/cli/cmd@latest
+go install github.com/eggybyte-technology/egg/cli/cmd/egg@latest
 ```
 
 ## 🚀 Quick Start
@@ -311,7 +311,7 @@ go test ./...
 ### Build
 
 ```bash
-go build -o egg ./cmd/main.go
+go build -o egg ./cmd/egg
 ```
 
 ### Contributing

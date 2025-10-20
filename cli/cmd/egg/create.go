@@ -11,7 +11,7 @@
 //
 //	egg create backend <name>
 //	egg create frontend <name> --platforms web
-package egg
+package main
 
 import (
 	"context"
@@ -78,9 +78,12 @@ This command creates:
 - Build configuration
 - Deployment templates
 
-Example:
+Examples:
   egg create frontend admin-portal --platforms web
-  egg create frontend mobile-app --platforms android,ios`,
+  egg create frontend mobile-app --platforms android,ios
+  egg create frontend hybrid-app --platforms web,android,ios
+  
+Note: For specific Flutter versions, use FVM before running this command.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runCreateFrontend,
 }
@@ -98,7 +101,7 @@ func init() {
 
 	createBackendCmd.Flags().BoolVar(&useLocalModules, "local-modules", false, "Use local egg modules for development")
 	createBackendCmd.Flags().BoolVar(&forceCreate, "force", false, "Force create service even if it already exists")
-	createFrontendCmd.Flags().StringSliceVar(&frontendPlatforms, "platforms", []string{"web"}, "Target platforms (web, android, ios)")
+	createFrontendCmd.Flags().StringSliceVar(&frontendPlatforms, "platforms", []string{"web"}, "Target platforms (comma-separated: web, android, ios)")
 	createFrontendCmd.Flags().BoolVar(&forceCreate, "force", false, "Force create service even if it already exists")
 }
 

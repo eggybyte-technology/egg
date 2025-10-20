@@ -1,4 +1,4 @@
-// Package egg provides the egg CLI tool entry point.
+// Package main provides the egg CLI tool entry point.
 //
 // Overview:
 //   - Responsibility: CLI command parsing and execution
@@ -10,7 +10,7 @@
 // Usage:
 //
 //	egg [command] [flags]
-package egg
+package main
 
 import (
 	"os"
@@ -86,7 +86,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }
 
-// Main is the entry point for the egg CLI tool.
-func Main() {
+// main is the entry point for the egg CLI tool.
+func main() {
 	Execute()
 }

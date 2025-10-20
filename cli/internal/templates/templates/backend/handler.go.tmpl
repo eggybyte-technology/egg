@@ -18,8 +18,26 @@ func NewHandler() *Handler {
 }
 
 // ExampleHandler demonstrates handler structure.
+//
+// Parameters:
+//   - w: HTTP response writer
+//   - r: HTTP request
+//
+// Returns:
+//   - None (writes to response writer)
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - Minimal overhead
 func (h *Handler) ExampleHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	
 	// TODO: Implement your HTTP handler
+	// Use ctx for any I/O operations or service calls
+	_ = ctx // Remove this line when you use the context
+	
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Hello from {{.ServiceName}}"))
 }

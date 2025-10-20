@@ -1,4 +1,4 @@
-// Package egg provides the egg CLI command implementations.
+// Package main provides the egg CLI command implementations.
 //
 // Overview:
 //   - Responsibility: CLI command execution and orchestration
@@ -11,7 +11,7 @@
 //
 //	egg api init
 //	egg api generate
-package egg
+package main
 
 import (
 	"context"
