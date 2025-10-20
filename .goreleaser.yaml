@@ -7,7 +7,7 @@ version: 2
 builds:
   - id: egg-cli
     # Main package path
-    main: ./cli/cmd
+    main: ./cli/cmd/egg
     # Binary name
     binary: egg
     # Module path (for go modules in subdirectory)
