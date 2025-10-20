@@ -8,13 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial release of Egg framework
-- Core module with zero-dependency interfaces
-- Runtime management with unified port strategy
-- Connect integration with unified interceptors
-- OpenTelemetry observability support
-- Kubernetes integration for ConfigMap watching and service discovery
-- Storage abstraction interfaces
 
 ### Changed
 
@@ -25,6 +18,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [0.0.1] - 2025-10-20
+
+### Added
+- Initial release of Egg framework
+- Core module with zero-dependency interfaces
+- Runtime management with unified port strategy
+- Connect integration with unified interceptors
+- OpenTelemetry observability support
+- Kubernetes integration for ConfigMap watching and service discovery
+- Storage abstraction interfaces
+- Docker buildx support for multi-platform image builds (amd64, arm64)
+- Production integration test script (`scripts/test-cli-production.sh`)
+- Go workspace (`go.work`) support for local development
+
+### Changed
+- CLI `build` command now uses Docker buildx by default
+- Added `--buildx` and `--platforms` flags to build command
+
+### Fixed
+- **Critical**: Removed `replace` directives from all module `go.mod` files
+- **Critical**: Updated all internal dependencies to use proper version `v0.0.1`
+- Fixed remote dependency resolution for external users
+- Module dependencies now work correctly without local repository
 
 ## [0.1.0] - 2025-10-17
 
