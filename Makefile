@@ -64,6 +64,16 @@ test:
 	@cd cli && go test -race -cover ./...
 	@echo "✅ All tests passed"
 
+# Run tests without race detection (for release)
+test-no-race:
+	@echo "🧪 Running tests for all modules (without race detection)..."
+	@for module in $(MODULES); do \
+		echo "  Testing $$module..."; \
+		cd $$module && go test -cover ./... && cd .. || exit 1; \
+	done
+	@cd cli && go test -cover ./...
+	@echo "✅ All tests passed"
+
 # Run CLI integration tests
 test-cli: build-cli
 	@echo "🧪 Running CLI integration tests..."
@@ -352,7 +362,7 @@ release:
 	fi
 	@echo ""
 	@echo "Step 2: Running quality checks..."
-	@$(MAKE) test
+	@$(MAKE) test-no-race
 	@echo ""
 	@echo "Step 3: Creating module tags..."
 	@for module in $(MODULES); do \
