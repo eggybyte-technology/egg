@@ -1,8 +1,0 @@
-go 1.25.1
-
-use (
-	./user-service
-// Add your backend services here
-// ./user-service
-// ./order-service
-)

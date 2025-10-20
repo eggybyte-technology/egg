@@ -1,5 +1,5 @@
 # Makefile for egg framework
-.PHONY: help build build-cli test lint clean tools generate release-snapshot release-test release-publish tag
+.PHONY: help build build-cli test lint clean tools generate release-snapshot release-test release-publish tag delete-tag release-version
 
 # Default target
 help:
@@ -19,6 +19,8 @@ help:
 	@echo "  release-snapshot - Build snapshot release locally (test)"
 	@echo "  release-test     - Test release configuration"
 	@echo "  tag              - Create a new version tag (interactive)"
+	@echo "  delete-tag       - Delete a tag locally and remotely (interactive)"
+	@echo "  release-version  - One-click release with version (Usage: make release-version VERSION=v0.0.1)"
 	@echo "  release-publish  - Publish release to GitHub (requires GITHUB_TOKEN)"
 	@echo ""
 	@echo "Quality:"
@@ -168,6 +170,69 @@ tag:
 	echo "Creating tag $$VERSION..."; \
 	git tag -a $$VERSION -m "Release $$VERSION"; \
 	echo "Tag created. Push with: git push origin $$VERSION"
+
+# Delete a specific tag locally and remotely
+delete-tag:
+	@read -p "Enter tag to delete (e.g., v0.0.1): " VERSION; \
+	if [ -z "$$VERSION" ]; then \
+		echo "Error: Tag cannot be empty"; \
+		exit 1; \
+	fi; \
+	echo "Deleting tag $$VERSION..."; \
+	git tag -d $$VERSION || echo "Local tag not found"; \
+	git push --delete origin $$VERSION || echo "Remote tag not found or already deleted"
+
+# One-click release with version (requires GITHUB_TOKEN)
+# Usage: make release-version VERSION=v0.0.1
+release-version:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Error: VERSION is required"; \
+		echo "Usage: make release-version VERSION=v0.0.1"; \
+		exit 1; \
+	fi
+	@if [ -z "$$GITHUB_TOKEN" ]; then \
+		echo "Error: GITHUB_TOKEN environment variable is not set"; \
+		echo "Create a token at: https://github.com/settings/tokens"; \
+		exit 1; \
+	fi
+	@if ! command -v goreleaser >/dev/null 2>&1; then \
+		echo "goreleaser not found. Install it with: go install github.com/goreleaser/goreleaser/v2@latest"; \
+		exit 1; \
+	fi
+	@echo "=================================================="
+	@echo "  Releasing version: $(VERSION)"
+	@echo "=================================================="
+	@echo ""
+	@echo "Step 1: Checking for existing tag..."
+	@if git rev-parse $(VERSION) >/dev/null 2>&1; then \
+		echo "Tag $(VERSION) already exists. Deleting..."; \
+		git tag -d $(VERSION) || true; \
+		git push --delete origin $(VERSION) 2>/dev/null || true; \
+		echo "Old tag deleted"; \
+	else \
+		echo "No existing tag found"; \
+	fi
+	@echo ""
+	@echo "Step 2: Running tests..."
+	@$(MAKE) test
+	@echo ""
+	@echo "Step 3: Creating new tag $(VERSION)..."
+	@git tag -a $(VERSION) -m "Release $(VERSION)"
+	@echo "Tag created"
+	@echo ""
+	@echo "Step 4: Pushing tag to remote..."
+	@git push origin $(VERSION)
+	@echo "Tag pushed"
+	@echo ""
+	@echo "Step 5: Running goreleaser..."
+	@goreleaser release --clean
+	@echo ""
+	@echo "=================================================="
+	@echo "  ✅ Release $(VERSION) completed successfully!"
+	@echo "=================================================="
+	@echo ""
+	@echo "Check the release at:"
+	@echo "https://github.com/eggybyte-technology/egg/releases/tag/$(VERSION)"
 
 # Publish release (requires GITHUB_TOKEN)
 release-publish:
