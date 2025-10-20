@@ -2,10 +2,8 @@ module github.com/eggybyte-technology/egg/storex
 
 go 1.25.1
 
-replace github.com/eggybyte-technology/egg/core => ../core
-
 require (
-	github.com/eggybyte-technology/egg/core v0.0.0-00010101000000-000000000000
+	github.com/eggybyte-technology/egg/core v0.0.1
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/driver/sqlite v1.6.0

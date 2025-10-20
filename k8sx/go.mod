@@ -2,10 +2,8 @@ module github.com/eggybyte-technology/egg/k8sx
 
 go 1.25.1
 
-replace github.com/eggybyte-technology/egg/core => ../core
-
 require (
-	github.com/eggybyte-technology/egg/core v0.0.0-00010101000000-000000000000
+	github.com/eggybyte-technology/egg/core v0.0.1
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v0.34.1

@@ -44,9 +44,11 @@ Examples:
 }
 
 var (
-	pushImages   bool
-	buildVersion string
-	buildSubset  string
+	pushImages     bool
+	buildVersion   string
+	buildSubset    string
+	buildPlatforms string
+	useBuildx      bool
 )
 
 func init() {
@@ -55,6 +57,8 @@ func init() {
 	buildCmd.Flags().BoolVar(&pushImages, "push", false, "Push images to registry after building")
 	buildCmd.Flags().StringVar(&buildVersion, "version", "", "Image version tag")
 	buildCmd.Flags().StringVar(&buildSubset, "subset", "", "Comma-separated list of services to build")
+	buildCmd.Flags().StringVar(&buildPlatforms, "platforms", "linux/amd64,linux/arm64", "Target platforms for multi-arch builds (comma-separated)")
+	buildCmd.Flags().BoolVar(&useBuildx, "buildx", true, "Use Docker buildx for multi-platform builds")
 }
 
 // runBuild executes the build command.
@@ -108,12 +112,12 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build runtime image first
-	if err := buildRuntimeImage(ctx, runner); err != nil {
+	if err := buildRuntimeImage(ctx, runner, useBuildx, buildPlatforms, pushImages); err != nil {
 		return fmt.Errorf("failed to build runtime image: %w", err)
 	}
 
 	// Build images
-	if err := buildImages(ctx, runner, config, servicesToBuild, buildVersion); err != nil {
+	if err := buildImages(ctx, runner, config, servicesToBuild, buildVersion, useBuildx, buildPlatforms, pushImages); err != nil {
 		return fmt.Errorf("failed to build images: %w", err)
 	}
 
@@ -193,6 +197,9 @@ func determineServicesToBuild(config *configschema.Config, subset string) ([]str
 //   - config: Project configuration
 //   - services: List of service names
 //   - version: Image version tag
+//   - useBuildx: Whether to use buildx for multi-platform builds
+//   - platforms: Target platforms (comma-separated)
+//   - push: Whether to push images to registry
 //
 // Returns:
 //   - error: Build error if any
@@ -202,7 +209,7 @@ func determineServicesToBuild(config *configschema.Config, subset string) ([]str
 //
 // Performance:
 //   - Docker image building
-func buildImages(ctx context.Context, runner *toolrunner.Runner, config *configschema.Config, services []string, version string) error {
+func buildImages(ctx context.Context, runner *toolrunner.Runner, config *configschema.Config, services []string, version string, useBuildx bool, platforms string, push bool) error {
 	for _, serviceName := range services {
 		// Determine service type and configuration
 		var serviceType string
@@ -219,7 +226,7 @@ func buildImages(ctx context.Context, runner *toolrunner.Runner, config *configs
 		}
 
 		// Build image
-		if err := buildServiceImage(ctx, runner, config, serviceName, serviceType, imageName, version); err != nil {
+		if err := buildServiceImage(ctx, runner, config, serviceName, serviceType, imageName, version, useBuildx, platforms, push); err != nil {
 			return fmt.Errorf("failed to build image for %s: %w", serviceName, err)
 		}
 	}
@@ -237,6 +244,9 @@ func buildImages(ctx context.Context, runner *toolrunner.Runner, config *configs
 //   - serviceType: Service type (backend/frontend)
 //   - imageName: Image name
 //   - version: Image version tag
+//   - useBuildx: Whether to use buildx for multi-platform builds
+//   - platforms: Target platforms (comma-separated)
+//   - push: Whether to push images to registry
 //
 // Returns:
 //   - error: Build error if any
@@ -246,7 +256,7 @@ func buildImages(ctx context.Context, runner *toolrunner.Runner, config *configs
 //
 // Performance:
 //   - Single Docker image build
-func buildServiceImage(ctx context.Context, runner *toolrunner.Runner, config *configschema.Config, serviceName, serviceType, imageName, version string) error {
+func buildServiceImage(ctx context.Context, runner *toolrunner.Runner, config *configschema.Config, serviceName, serviceType, imageName, version string, useBuildx bool, platforms string, push bool) error {
 	ui.Info("Building %s service: %s", serviceType, serviceName)
 
 	// Build locally first
@@ -270,8 +280,21 @@ func buildServiceImage(ctx context.Context, runner *toolrunner.Runner, config *c
 	fullImageName := fmt.Sprintf("%s/%s:%s", config.DockerRegistry, imageName, version)
 
 	// Build Docker image
-	if err := runner.DockerBuild(ctx, fullImageName, dockerfile, buildContext); err != nil {
-		return fmt.Errorf("failed to build Docker image: %w", err)
+	if useBuildx {
+		// Use buildx for multi-platform builds
+		// Note: --load only works with single platform, so we use --push if specified
+		// or build without --load/--push for multi-platform
+		load := !push && !strings.Contains(platforms, ",")
+
+		ui.Info("Building with buildx for platforms: %s", platforms)
+		if err := runner.DockerBuildx(ctx, fullImageName, dockerfile, buildContext, platforms, push, load); err != nil {
+			return fmt.Errorf("failed to build Docker image with buildx: %w", err)
+		}
+	} else {
+		// Use regular docker build
+		if err := runner.DockerBuild(ctx, fullImageName, dockerfile, buildContext); err != nil {
+			return fmt.Errorf("failed to build Docker image: %w", err)
+		}
 	}
 
 	ui.Success("Built image: %s", fullImageName)
@@ -375,6 +398,9 @@ func pushImagesToRegistry(ctx context.Context, runner *toolrunner.Runner, config
 // Parameters:
 //   - ctx: Context for cancellation
 //   - runner: Tool runner
+//   - useBuildx: Whether to use buildx for multi-platform builds
+//   - platforms: Target platforms (comma-separated)
+//   - push: Whether to push images to registry
 //
 // Returns:
 //   - error: Build error if any
@@ -384,20 +410,34 @@ func pushImagesToRegistry(ctx context.Context, runner *toolrunner.Runner, config
 //
 // Performance:
 //   - Docker image building
-func buildRuntimeImage(ctx context.Context, runner *toolrunner.Runner) error {
+func buildRuntimeImage(ctx context.Context, runner *toolrunner.Runner, useBuildx bool, platforms string, push bool) error {
 	ui.Info("Building runtime image: eggybyte-go-alpine")
 
-	// Check if runtime image already exists
-	result, err := runner.Docker(ctx, "images", "-q", "eggybyte-go-alpine")
-	if err == nil && result.ExitCode == 0 && strings.TrimSpace(result.Stdout) != "" {
-		ui.Debug("Runtime image already exists, skipping build")
-		return nil
+	// Check if runtime image already exists (only if not using buildx or not pushing)
+	if !useBuildx || (!push && !strings.Contains(platforms, ",")) {
+		result, err := runner.Docker(ctx, "images", "-q", "eggybyte-go-alpine")
+		if err == nil && result.ExitCode == 0 && strings.TrimSpace(result.Stdout) != "" {
+			ui.Debug("Runtime image already exists, skipping build")
+			return nil
+		}
 	}
 
 	// Build runtime image
 	runtimeDockerfile := "build/Dockerfile.eggybyte-go-alpine"
-	if err := runner.DockerBuild(ctx, "eggybyte-go-alpine", runtimeDockerfile, "."); err != nil {
-		return fmt.Errorf("failed to build runtime image: %w", err)
+
+	if useBuildx {
+		// Use buildx for multi-platform builds
+		load := !push && !strings.Contains(platforms, ",")
+
+		ui.Info("Building runtime image with buildx for platforms: %s", platforms)
+		if err := runner.DockerBuildx(ctx, "eggybyte-go-alpine", runtimeDockerfile, ".", platforms, false, load); err != nil {
+			return fmt.Errorf("failed to build runtime image with buildx: %w", err)
+		}
+	} else {
+		// Use regular docker build
+		if err := runner.DockerBuild(ctx, "eggybyte-go-alpine", runtimeDockerfile, "."); err != nil {
+			return fmt.Errorf("failed to build runtime image: %w", err)
+		}
 	}
 
 	ui.Success("Runtime image built: eggybyte-go-alpine")

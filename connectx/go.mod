@@ -2,14 +2,10 @@ module github.com/eggybyte-technology/egg/connectx
 
 go 1.25.1
 
-replace github.com/eggybyte-technology/egg/core => ../core
-
-replace github.com/eggybyte-technology/egg/obsx => ../obsx
-
 require (
 	connectrpc.com/connect v1.19.1
-	github.com/eggybyte-technology/egg/core v0.0.0-00010101000000-000000000000
-	github.com/eggybyte-technology/egg/obsx v0.0.0-00010101000000-000000000000
+	github.com/eggybyte-technology/egg/core v0.0.1
+	github.com/eggybyte-technology/egg/obsx v0.0.1
 )
 
 require (
