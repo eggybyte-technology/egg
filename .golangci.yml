@@ -1,0 +1,248 @@
+# golangci-lint configuration for egg framework
+# https://golangci-lint.run/usage/configuration/
+
+run:
+  # Timeout for analysis
+  timeout: 5m
+  
+  # Exit code when issues are found
+  issues-exit-code: 1
+  
+  # Include test files
+  tests: true
+  
+  # Skip directories
+  skip-dirs:
+    - vendor
+    - .git
+    - .idea
+    - .vscode
+  
+  # Skip files
+  skip-files:
+    - ".*\\.pb\\.go$"
+    - ".*\\.gen\\.go$"
+
+# Output configuration
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+# Linters configuration
+linters:
+  enable:
+    # Default linters
+    - errcheck        # Check for unchecked errors
+    - gosimple        # Simplify code
+    - govet           # Go vet
+    - ineffassign     # Detect ineffectual assignments
+    - staticcheck     # Static analysis
+    - typecheck       # Type checking
+    - unused          # Check for unused code
+    
+    # Additional recommended linters
+    - gofmt           # Format code
+    - goimports       # Check import order
+    - misspell        # Check for misspelled words
+    - unconvert       # Remove unnecessary type conversions
+    - unparam         # Check for unused function parameters
+    - gosec           # Security issues
+    - exportloopref   # Check for loop variable capture
+    - gocyclo         # Cyclomatic complexity
+    - dupl            # Duplicate code
+    - goconst         # Repeated strings that could be constants
+    - gocognit        # Cognitive complexity
+    - gocritic        # The most opinionated Go linter
+    - revive          # Fast, configurable, extensible, flexible linter
+    - stylecheck      # Style consistency
+    - whitespace      # Whitespace issues
+    - wsl             # Whitespace linter
+    - errorlint       # Error wrapping
+    - nilerr          # Check for nil errors
+    - nilnil          # Check for nil returns
+    - predeclared     # Check for shadowing predeclared identifiers
+    - thelper         # Test helper functions
+    - wastedassign    # Wasted assignments
+    
+  disable:
+    - funlen          # Too strict for some cases
+    - lll             # Line length - handled by gofmt
+    - gomnd           # Magic numbers - too strict
+    - exhaustive      # Exhaustive switches - too strict
+    - exhaustruct     # Exhaustive structs - too strict
+    - forcetypeassert # Force type assertions - unnecessary
+    - godot           # Comments end with period - too strict
+    - godox           # TODOs in code - we allow them
+    - goerr113        # Error definition - too strict for our use case
+    - nestif          # Nested ifs - too strict
+    - nlreturn        # New line before return - too opinionated
+    - testpackage     # Separate test packages - not always needed
+    - wrapcheck       # Error wrapping - we handle this ourselves
+
+# Linters settings
+linters-settings:
+  errcheck:
+    # Check for ignored type assertions
+    check-type-assertions: true
+    # Check for ignored blank assignments
+    check-blank: true
+    
+  govet:
+    # Enable all checks
+    check-shadowing: true
+    enable-all: true
+    
+  gofmt:
+    # Simplify code
+    simplify: true
+    
+  goimports:
+    # Use goimports with local prefix
+    local-prefixes: github.com/eggybyte-technology/egg
+    
+  gocyclo:
+    # Maximum cyclomatic complexity
+    min-complexity: 15
+    
+  gocognit:
+    # Maximum cognitive complexity
+    min-complexity: 20
+    
+  dupl:
+    # Minimum token sequence for duplication
+    threshold: 100
+    
+  goconst:
+    # Minimum length of string constant
+    min-len: 3
+    # Minimum occurrences to be a constant
+    min-occurrences: 3
+    # Ignore test files
+    ignore-tests: true
+    
+  misspell:
+    # Locale
+    locale: US
+    
+  gosec:
+    # Exclude rules
+    excludes:
+      - G304  # File path from variable - we handle this carefully
+      - G404  # Weak random number generator - acceptable for non-crypto use
+    
+  gocritic:
+    # Enable multiple tags
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - whyNoLint
+      - hugeParam
+      - rangeValCopy
+      
+  revive:
+    # Minimum confidence for issues
+    confidence: 0.8
+    rules:
+      # Enable rules
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unused-parameter
+      - name: unreachable-code
+      - name: redefines-builtin-id
+      
+  stylecheck:
+    # Check for style consistency
+    checks: ["all", "-ST1000", "-ST1003"]
+    
+  whitespace:
+    # Enforce whitespace
+    multi-if: false
+    multi-func: false
+
+# Issues configuration
+issues:
+  # Maximum issues count
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  
+  # Show only new issues
+  new: false
+  
+  # Exclude patterns
+  exclude-rules:
+    # Exclude some linters from test files
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - dupl
+        - gosec
+        - goconst
+        
+    # Exclude known issues
+    - text: "Error return value of .*.Close is not checked"
+      linters:
+        - errcheck
+      path: _test\.go
+      
+    # Exclude shadow checking for err variables
+    - text: "shadow: declaration of .err. shadows declaration"
+      linters:
+        - govet
+        
+    # Exclude specific gosec rules for test files
+    - path: _test\.go
+      text: "G404:"
+      linters:
+        - gosec
+        
+    # Allow dot imports in tests
+    - path: _test\.go
+      text: "dot-imports:"
+      linters:
+        - revive
+        
+  # Exclude directories
+  exclude-dirs:
+    - vendor
+    - testdata
+    - examples
+    
+  # Exclude files
+  exclude-files:
+    - ".*\\.pb\\.go$"
+    - ".*\\.gen\\.go$"
+
+# Severity configuration
+severity:
+  default-severity: error
+  rules:
+    - linters:
+        - dupl
+      severity: warning
+    - linters:
+        - goconst
+      severity: warning

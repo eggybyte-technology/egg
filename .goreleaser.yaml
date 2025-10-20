@@ -1,0 +1,190 @@
+# GoReleaser configuration for Egg Framework
+# This configuration builds the egg CLI tool and prepares releases
+
+version: 2
+
+# Build configuration
+builds:
+  - id: egg-cli
+    # Main package path
+    main: ./cli/cmd
+    # Binary name
+    binary: egg
+    # Module path (for go modules in subdirectory)
+    dir: .
+    # Environment variables for build
+    env:
+      - CGO_ENABLED=0
+    # Build flags
+    flags:
+      - -trimpath
+    # Linker flags for version info
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
+    # Target platforms
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Ignore certain combinations
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+# Archive configuration
+archives:
+  - id: egg-archive
+    builds:
+      - egg-cli
+    # Archive name template
+    name_template: "egg_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Format by OS
+    format_overrides:
+      - goos: windows
+        format: zip
+    # Files to include in archive
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - docs/*
+
+# Checksum configuration
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# Snapshot configuration for development builds
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+# Changelog configuration
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "^style:"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: "✨ New Features"
+      regexp: "^feat:"
+      order: 0
+    - title: "🐛 Bug Fixes"
+      regexp: "^fix:"
+      order: 1
+    - title: "📦 Module Updates"
+      regexp: "^(module|mod):"
+      order: 2
+    - title: "⚡ Performance Improvements"
+      regexp: "^perf:"
+      order: 3
+    - title: "📚 Documentation"
+      regexp: "^docs:"
+      order: 4
+    - title: "🔧 Others"
+      order: 999
+
+# Release configuration
+release:
+  # GitHub repository
+  github:
+    owner: eggybyte-technology
+    name: egg
+  # Release name template
+  name_template: "Egg Framework {{.Version}}"
+  # Draft release
+  draft: false
+  # Prerelease flag
+  prerelease: auto
+  # Release footer
+  footer: |
+    ## 📦 Installation
+
+    ### Homebrew (macOS/Linux)
+    ```bash
+    # Coming soon
+    brew install eggybyte-technology/tap/egg
+    ```
+
+    ### Binary Installation
+    Download the appropriate binary for your platform from the assets above, extract it, and add it to your PATH.
+
+    ### Go Install
+    ```bash
+    go install github.com/eggybyte-technology/egg/cli/cmd@{{.Tag}}
+    ```
+
+    ## 📚 Go Modules
+
+    All framework modules are released with this version. Use them in your projects:
+
+    ```bash
+    # Core modules
+    go get github.com/eggybyte-technology/egg/core@{{.Tag}}
+    go get github.com/eggybyte-technology/egg/runtimex@{{.Tag}}
+    
+    # Infrastructure modules
+    go get github.com/eggybyte-technology/egg/connectx@{{.Tag}}
+    go get github.com/eggybyte-technology/egg/configx@{{.Tag}}
+    go get github.com/eggybyte-technology/egg/obsx@{{.Tag}}
+    go get github.com/eggybyte-technology/egg/k8sx@{{.Tag}}
+    go get github.com/eggybyte-technology/egg/storex@{{.Tag}}
+    ```
+
+    ## 📝 Documentation
+
+    - [Quick Start Guide](https://github.com/eggybyte-technology/egg/blob/main/README.md)
+    - [CLI Documentation](https://github.com/eggybyte-technology/egg/blob/main/docs/egg-cli.md)
+    - [Framework Guide](https://github.com/eggybyte-technology/egg/blob/main/docs/guide.md)
+    - [API Documentation](https://pkg.go.dev/github.com/eggybyte-technology/egg)
+
+    ---
+    **Full Changelog**: https://github.com/eggybyte-technology/egg/compare/{{.PreviousTag}}...{{.Tag}}
+
+# Announce configuration (optional)
+# announce:
+#   twitter:
+#     enabled: false
+#   discord:
+#     enabled: false
+
+# Homebrew tap (optional, for future use)
+# brews:
+#   - name: egg
+#     repository:
+#       owner: eggybyte-technology
+#       name: homebrew-tap
+#     folder: Formula
+#     homepage: https://github.com/eggybyte-technology/egg
+#     description: "A modern, modular Go microservices framework for Cloud Native environments"
+#     license: "Apache-2.0"
+#     install: |
+#       bin.install "egg"
+#     test: |
+#       system "#{bin}/egg", "version"
+
+# Docker images (optional, for future use)
+# dockers:
+#   - image_templates:
+#       - "eggybyte/egg:{{ .Tag }}"
+#       - "eggybyte/egg:latest"
+#     dockerfile: Dockerfile.goreleaser
+#     build_flag_templates:
+#       - "--label=org.opencontainers.image.created={{.Date}}"
+#       - "--label=org.opencontainers.image.title=egg"
+#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#       - "--label=org.opencontainers.image.version={{.Version}}"
+

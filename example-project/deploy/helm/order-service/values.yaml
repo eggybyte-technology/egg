@@ -1,0 +1,21 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/eggybyte-technology/order-service
+  tag: ""
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  ports:
+    http: 8080
+    health: 8081
+    metrics: 9091
+
+env:
+  LOG_LEVEL: "info"
+  KUBERNETES_NAMESPACE: "prod"
+  DATABASE_DSN: "user:pass@tcp(mysql:3306)/app?charset=utf8mb4&parseTime=True"
+  HTTP_PORT: "8080"
+  HEALTH_PORT: "8081"
+  METRICS_PORT: "9091"

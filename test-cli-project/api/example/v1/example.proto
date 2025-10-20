@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package example.v1;
+
+option go_package = "github.com/eggybyte-technology/test-cli-project/gen/go/example/v1";
+
+// ExampleService provides example functionality.
+service ExampleService {
+  // GetExample returns an example response.
+  rpc GetExample(GetExampleRequest) returns (GetExampleResponse) {}
+}
+
+// GetExampleRequest is the request for GetExample.
+message GetExampleRequest {
+  string name = 1;
+}
+
+// GetExampleResponse is the response for GetExample.
+message GetExampleResponse {
+  string message = 1;
+}

@@ -1,0 +1,13 @@
+go 1.25.1
+
+use (
+	./cli
+	./configx
+	./connectx
+	./core
+	./examples/minimal-connect-service
+	./k8sx
+	./obsx
+	./runtimex
+	./storex
+)

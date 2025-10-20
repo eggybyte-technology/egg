@@ -1,0 +1,594 @@
+// Package generators provides code generation for API, backend, and frontend services.
+//
+// Overview:
+//   - Responsibility: Generate project scaffolding, API definitions, service templates
+//   - Key Types: API generator, backend generator, frontend generator
+//   - Concurrency Model: Sequential generation with atomic file writes
+//   - Error Semantics: Generation errors with rollback support
+//   - Performance Notes: Template-based generation, minimal I/O operations
+//
+// Usage:
+//
+//	apiGen := NewAPIGenerator(fs, runner)
+//	err := apiGen.Init()
+//	err := apiGen.Generate()
+package generators
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/eggybyte-technology/egg/cli/internal/configschema"
+	"github.com/eggybyte-technology/egg/cli/internal/projectfs"
+	"github.com/eggybyte-technology/egg/cli/internal/templates"
+	"github.com/eggybyte-technology/egg/cli/internal/toolrunner"
+	"github.com/eggybyte-technology/egg/cli/internal/ui"
+)
+
+// APIGenerator provides API definition generation.
+//
+// Parameters:
+//   - fs: Project file system
+//   - runner: Tool runner for external commands
+//   - loader: Template loader
+//
+// Returns:
+//   - None (data structure)
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - Template-based generation
+type APIGenerator struct {
+	fs     *projectfs.ProjectFS
+	runner *toolrunner.Runner
+	loader *templates.Loader
+}
+
+// BackendGenerator provides backend service generation.
+//
+// Parameters:
+//   - fs: Project file system
+//   - runner: Tool runner for external commands
+//   - loader: Template loader
+//
+// Returns:
+//   - None (data structure)
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - Template-based generation
+type BackendGenerator struct {
+	fs     *projectfs.ProjectFS
+	runner *toolrunner.Runner
+	loader *templates.Loader
+}
+
+// FrontendGenerator provides frontend service generation.
+//
+// Parameters:
+//   - fs: Project file system
+//   - runner: Tool runner for external commands
+//
+// Returns:
+//   - None (data structure)
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - Template-based generation
+type FrontendGenerator struct {
+	fs     *projectfs.ProjectFS
+	runner *toolrunner.Runner
+}
+
+// NewAPIGenerator creates a new API generator.
+//
+// Parameters:
+//   - fs: Project file system
+//   - runner: Tool runner for external commands
+//
+// Returns:
+//   - *APIGenerator: API generator instance
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - Minimal initialization overhead
+func NewAPIGenerator(fs *projectfs.ProjectFS, runner *toolrunner.Runner) *APIGenerator {
+	return &APIGenerator{
+		fs:     fs,
+		runner: runner,
+		loader: templates.NewLoader(),
+	}
+}
+
+// NewBackendGenerator creates a new backend generator.
+//
+// Parameters:
+//   - fs: Project file system
+//   - runner: Tool runner for external commands
+//
+// Returns:
+//   - *BackendGenerator: Backend generator instance
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - Minimal initialization overhead
+func NewBackendGenerator(fs *projectfs.ProjectFS, runner *toolrunner.Runner) *BackendGenerator {
+	return &BackendGenerator{
+		fs:     fs,
+		runner: runner,
+		loader: templates.NewLoader(),
+	}
+}
+
+// NewFrontendGenerator creates a new frontend generator.
+//
+// Parameters:
+//   - fs: Project file system
+//   - runner: Tool runner for external commands
+//
+// Returns:
+//   - *FrontendGenerator: Frontend generator instance
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - Minimal initialization overhead
+func NewFrontendGenerator(fs *projectfs.ProjectFS, runner *toolrunner.Runner) *FrontendGenerator {
+	return &FrontendGenerator{
+		fs:     fs,
+		runner: runner,
+	}
+}
+
+// Init initializes API definitions and configuration.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//
+// Returns:
+//   - error: Initialization error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - File creation and tool execution
+func (g *APIGenerator) Init(ctx context.Context) error {
+	ui.Info("Initializing API definitions...")
+
+	// Create API directory structure
+	if err := g.fs.CreateDirectory("api"); err != nil {
+		return fmt.Errorf("failed to create api directory: %w", err)
+	}
+
+	// Write buf.yaml from template
+	bufYAML, err := g.loader.LoadTemplate("api/buf.yaml.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to load buf.yaml template: %w", err)
+	}
+	if err := g.fs.WriteFile("api/buf.yaml", bufYAML, 0644); err != nil {
+		return fmt.Errorf("failed to write buf.yaml: %w", err)
+	}
+
+	// Write buf.gen.yaml from template
+	bufGenYAML, err := g.loader.LoadTemplate("api/buf.gen.yaml.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to load buf.gen.yaml template: %w", err)
+	}
+	if err := g.fs.WriteFile("api/buf.gen.yaml", bufGenYAML, 0644); err != nil {
+		return fmt.Errorf("failed to write buf.gen.yaml: %w", err)
+	}
+
+	// Create gen directory structure
+	genDirs := []string{"gen/go", "gen/dart", "gen/openapi"}
+	for _, dir := range genDirs {
+		if err := g.fs.CreateDirectory(dir); err != nil {
+			return fmt.Errorf("failed to create gen directory %s: %w", dir, err)
+		}
+	}
+
+	ui.Success("API definitions initialized")
+	return nil
+}
+
+// Generate generates code from API definitions.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//
+// Returns:
+//   - error: Generation error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Code generation time depends on protobuf complexity
+func (g *APIGenerator) Generate(ctx context.Context) error {
+	ui.Info("Generating code from API definitions...")
+
+	// Change to api directory
+	apiRunner := toolrunner.NewRunner(filepath.Join(g.fs.GetRootDir(), "api"))
+	apiRunner.SetVerbose(true)
+
+	// Run buf generate
+	if err := apiRunner.BufGenerate(ctx); err != nil {
+		return fmt.Errorf("failed to generate code with buf: %w", err)
+	}
+
+	ui.Success("Code generation completed")
+	return nil
+}
+
+// Create creates a new backend service.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - name: Service name
+//   - config: Project configuration
+//   - useLocalModules: Whether to use local egg modules for development
+//
+// Returns:
+//   - error: Creation error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Service scaffolding and module initialization
+func (g *BackendGenerator) Create(ctx context.Context, name string, config *configschema.Config, useLocalModules bool) error {
+	ui.Info("Creating backend service: %s", name)
+
+	// Validate service name
+	if !isValidServiceName(name) {
+		return fmt.Errorf("invalid service name: %s", name)
+	}
+
+	// Create service directory structure
+	serviceDir := filepath.Join("backend", name)
+	if err := g.fs.CreateDirectory(serviceDir); err != nil {
+		return fmt.Errorf("failed to create service directory: %w", err)
+	}
+
+	// Create cmd/server directory
+	cmdDir := filepath.Join(serviceDir, "cmd", "server")
+	if err := g.fs.CreateDirectory(cmdDir); err != nil {
+		return fmt.Errorf("failed to create cmd directory: %w", err)
+	}
+
+	// Create internal directory structure
+	internalDirs := []string{
+		filepath.Join(serviceDir, "internal", "config"),
+		filepath.Join(serviceDir, "internal", "handler"),
+		filepath.Join(serviceDir, "internal", "service"),
+	}
+	for _, dir := range internalDirs {
+		if err := g.fs.CreateDirectory(dir); err != nil {
+			return fmt.Errorf("failed to create internal directory %s: %w", dir, err)
+		}
+	}
+
+	// Get service configuration
+	serviceConfig, exists := config.Backend[name]
+	if !exists {
+		return fmt.Errorf("service configuration not found: %s", name)
+	}
+
+	// Initialize Go module
+	modulePath := fmt.Sprintf("%s/backend/%s", config.ModulePrefix, name)
+	serviceRunner := toolrunner.NewRunner(filepath.Join(g.fs.GetRootDir(), serviceDir))
+	serviceRunner.SetVerbose(true)
+
+	if err := serviceRunner.GoModInit(ctx, modulePath); err != nil {
+		return fmt.Errorf("failed to initialize Go module: %w", err)
+	}
+
+	// Add egg dependencies
+	if useLocalModules {
+		// Use local modules for development
+		ui.Info("Adding local egg modules for development...")
+
+		// Get the egg project root (assuming we're running from within the egg project)
+		eggRoot, err := g.findEggProjectRoot()
+		if err != nil {
+			return fmt.Errorf("failed to find egg project root: %w", err)
+		}
+
+		// Add replace directives to use local modules directly
+		replaceDeps := map[string]string{
+			"github.com/eggybyte-technology/egg/runtimex": filepath.Join(eggRoot, "runtimex"),
+			"github.com/eggybyte-technology/egg/connectx": filepath.Join(eggRoot, "connectx"),
+			"github.com/eggybyte-technology/egg/configx":  filepath.Join(eggRoot, "configx"),
+			"github.com/eggybyte-technology/egg/obsx":     filepath.Join(eggRoot, "obsx"),
+			"github.com/eggybyte-technology/egg/core":     filepath.Join(eggRoot, "core"),
+		}
+
+		for modulePath, localPath := range replaceDeps {
+			if _, err := serviceRunner.Go(ctx, "mod", "edit", "-replace", fmt.Sprintf("%s=%s", modulePath, localPath)); err != nil {
+				return fmt.Errorf("failed to add replace directive for %s: %w", modulePath, err)
+			}
+		}
+
+		// Dependencies will be added automatically by go mod tidy when files are generated
+	} else {
+		// Use published modules (when available)
+		ui.Info("Using published egg modules...")
+		// Note: This will be enabled when egg modules are published
+		// eggDeps := []string{
+		// 	"github.com/eggybyte-technology/egg/runtimex@latest",
+		// 	"github.com/eggybyte-technology/egg/connectx@latest",
+		// 	"github.com/eggybyte-technology/egg/configx@latest",
+		// 	"github.com/eggybyte-technology/egg/obsx@latest",
+		// }
+		// for _, dep := range eggDeps {
+		// 	if _, err := serviceRunner.Go(ctx, "get", dep); err != nil {
+		// 		return fmt.Errorf("failed to add dependency %s: %w", dep, err)
+		// 	}
+		// }
+	}
+
+	// Generate service files first
+	if err := g.generateBackendFiles(name, serviceConfig, config); err != nil {
+		return fmt.Errorf("failed to generate service files: %w", err)
+	}
+
+	// Tidy module after generating files with imports
+	if err := serviceRunner.GoModTidy(ctx); err != nil {
+		return fmt.Errorf("failed to tidy module: %w", err)
+	}
+
+	// Update backend go.work using go commands
+	if err := g.updateBackendWorkspace(ctx, name, config); err != nil {
+		return fmt.Errorf("failed to update workspace: %w", err)
+	}
+
+	ui.Success("Backend service created: %s", name)
+	return nil
+}
+
+// generateBackendFiles generates the backend service files.
+//
+// Parameters:
+//   - name: Service name
+//   - serviceConfig: Service configuration
+//   - config: Project configuration
+//
+// Returns:
+//   - error: Generation error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Template-based file generation
+func (g *BackendGenerator) generateBackendFiles(name string, serviceConfig configschema.BackendService, config *configschema.Config) error {
+	data := map[string]interface{}{
+		"ModulePrefix": config.ModulePrefix,
+		"ServiceName":  name,
+	}
+
+	// Generate main.go from template
+	mainGo, err := g.loader.LoadAndRender("backend/main.go.tmpl", data)
+	if err != nil {
+		return fmt.Errorf("failed to load and render main.go template: %w", err)
+	}
+	if err := g.fs.WriteFile(filepath.Join("backend", name, "cmd", "server", "main.go"), mainGo, 0644); err != nil {
+		return fmt.Errorf("failed to write main.go: %w", err)
+	}
+
+	// Generate config/app_config.go from template
+	appConfigGo, err := g.loader.LoadAndRender("backend/app_config.go.tmpl", data)
+	if err != nil {
+		return fmt.Errorf("failed to load and render app_config.go template: %w", err)
+	}
+	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "config", "app_config.go"), appConfigGo, 0644); err != nil {
+		return fmt.Errorf("failed to write app_config.go: %w", err)
+	}
+
+	// Generate service placeholder from template
+	serviceGo, err := g.loader.LoadAndRender("backend/service.go.tmpl", data)
+	if err != nil {
+		return fmt.Errorf("failed to load and render service.go template: %w", err)
+	}
+	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "service", "service.go"), serviceGo, 0644); err != nil {
+		return fmt.Errorf("failed to write service.go: %w", err)
+	}
+
+	// Generate handler placeholder from template
+	handlerGo, err := g.loader.LoadAndRender("backend/handler.go.tmpl", data)
+	if err != nil {
+		return fmt.Errorf("failed to load and render handler.go template: %w", err)
+	}
+	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "handler", "handler.go"), handlerGo, 0644); err != nil {
+		return fmt.Errorf("failed to write handler.go: %w", err)
+	}
+
+	return nil
+}
+
+// updateBackendWorkspace updates the backend go.work file.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - name: Service name
+//   - config: Project configuration
+//
+// Returns:
+//   - error: Update error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Workspace file update
+func (g *BackendGenerator) updateBackendWorkspace(ctx context.Context, name string, config *configschema.Config) error {
+	// Check if go.work exists
+	workPath := filepath.Join("backend", "go.work")
+	exists, err := g.fs.FileExists(workPath)
+	if err != nil {
+		return fmt.Errorf("failed to check go.work existence: %w", err)
+	}
+
+	backendRunner := toolrunner.NewRunner(filepath.Join(g.fs.GetRootDir(), "backend"))
+	backendRunner.SetVerbose(true)
+
+	if !exists {
+		// Create new workspace in backend directory
+		if err := backendRunner.GoWorkInit(ctx, fmt.Sprintf("./%s", name)); err != nil {
+			return fmt.Errorf("failed to initialize workspace: %w", err)
+		}
+	} else {
+		// Add to existing workspace
+		if err := backendRunner.GoWorkUse(ctx, fmt.Sprintf("./%s", name)); err != nil {
+			return fmt.Errorf("failed to add module to workspace: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Create creates a new frontend service.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - name: Service name
+//   - platforms: Target platforms
+//   - config: Project configuration
+//
+// Returns:
+//   - error: Creation error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Flutter project creation
+func (g *FrontendGenerator) Create(ctx context.Context, name string, platforms []string, config *configschema.Config) error {
+	ui.Info("Creating frontend service: %s", name)
+
+	// Validate service name
+	if !isValidServiceName(name) {
+		return fmt.Errorf("invalid service name: %s", name)
+	}
+
+	// Create frontend directory
+	frontendDir := filepath.Join("frontend", name)
+	if err := g.fs.CreateDirectory(frontendDir); err != nil {
+		return fmt.Errorf("failed to create frontend directory: %w", err)
+	}
+
+	// Create Flutter project
+	frontendRunner := toolrunner.NewRunner(filepath.Join(g.fs.GetRootDir(), "frontend"))
+	frontendRunner.SetVerbose(true)
+
+	if err := frontendRunner.FlutterCreate(ctx, name, platforms); err != nil {
+		return fmt.Errorf("failed to create Flutter project: %w", err)
+	}
+
+	ui.Success("Frontend service created: %s", name)
+	return nil
+}
+
+// findEggProjectRoot finds the root directory of the egg project.
+//
+// Parameters:
+//   - None
+//
+// Returns:
+//   - string: Path to egg project root
+//   - error: Error if egg project root not found
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Directory traversal up to project root
+func (g *BackendGenerator) findEggProjectRoot() (string, error) {
+	currentDir := g.fs.GetRootDir()
+
+	// Get absolute path
+	absDir, err := filepath.Abs(currentDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
+	}
+	currentDir = absDir
+
+	if g.fs.GetVerbose() {
+		ui.Debug("Searching for egg project root starting from: %s", currentDir)
+	}
+
+	// Look for go.work file which indicates the egg project root
+	for {
+		if g.fs.GetVerbose() {
+			ui.Debug("Checking directory: %s", currentDir)
+		}
+
+		// Use os.Stat directly since we're checking absolute paths
+		goWorkPath := filepath.Join(currentDir, "go.work")
+		if _, err := os.Stat(goWorkPath); err == nil {
+			if g.fs.GetVerbose() {
+				ui.Debug("Found go.work at: %s", goWorkPath)
+			}
+			// Also check if this directory contains egg modules
+			eggModules := []string{"runtimex", "connectx", "configx", "obsx", "cli"}
+			hasEggModules := true
+			for _, module := range eggModules {
+				modulePath := filepath.Join(currentDir, module)
+				if _, err := os.Stat(modulePath); err != nil {
+					if g.fs.GetVerbose() {
+						ui.Debug("Missing egg module: %s", modulePath)
+					}
+					hasEggModules = false
+					break
+				} else if g.fs.GetVerbose() {
+					ui.Debug("Found egg module: %s", modulePath)
+				}
+			}
+			if hasEggModules {
+				if g.fs.GetVerbose() {
+					ui.Debug("Found egg project root: %s", currentDir)
+				}
+				return currentDir, nil
+			}
+		}
+
+		// Check if we've reached the filesystem root
+		parent := filepath.Dir(currentDir)
+		if parent == currentDir {
+			if g.fs.GetVerbose() {
+				ui.Debug("Reached filesystem root: %s", currentDir)
+			}
+			break
+		}
+		currentDir = parent
+	}
+
+	return "", fmt.Errorf("egg project root not found (looking for go.work file and egg modules)")
+}
+
+// Validation helper functions
+
+func isValidServiceName(name string) bool {
+	if name == "" || len(name) > 50 {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+			return false
+		}
+	}
+	return true
+}
