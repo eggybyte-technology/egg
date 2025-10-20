@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.0.2] - 2025-10-20
+
+### Fixed
+- Added go.sum files for all modules to ensure proper dependency checksums
+- Go modules now properly resolve with Go proxy and checksum database
+- Improved module dependency graph consistency
+
 ## [0.0.1] - 2025-10-20
 
 ### Added
