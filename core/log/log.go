@@ -54,3 +54,9 @@ func Int(k string, v int) any {
 func Dur(k string, v time.Duration) any {
 	return []any{k, v}
 }
+
+// Bool creates a boolean key-value pair for structured logging.
+// This is a convenience function for creating key-value pairs.
+func Bool(k string, v bool) any {
+	return []any{k, v}
+}

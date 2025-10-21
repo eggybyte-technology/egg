@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package user.v1;
+
+option go_package = "github.com/eggybyte-technology/egg/examples/user-service/gen/go/user/v1;userv1";
+
+// UserService provides user management operations.
+service UserService {
+  // CreateUser creates a new user.
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  
+  // GetUser retrieves a user by ID.
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  
+  // UpdateUser updates an existing user.
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  
+  // DeleteUser deletes a user by ID.
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+  
+  // ListUsers lists users with pagination.
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+}
+
+// User represents a user entity.
+message User {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+  int64 created_at = 4;
+  int64 updated_at = 5;
+}
+
+// CreateUserRequest is the request to create a user.
+message CreateUserRequest {
+  string email = 1;
+  string name = 2;
+}
+
+// CreateUserResponse is the response when creating a user.
+message CreateUserResponse {
+  User user = 1;
+}
+
+// GetUserRequest is the request to get a user.
+message GetUserRequest {
+  string id = 1;
+}
+
+// GetUserResponse is the response when getting a user.
+message GetUserResponse {
+  User user = 1;
+}
+
+// UpdateUserRequest is the request to update a user.
+message UpdateUserRequest {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+}
+
+// UpdateUserResponse is the response when updating a user.
+message UpdateUserResponse {
+  User user = 1;
+}
+
+// DeleteUserRequest is the request to delete a user.
+message DeleteUserRequest {
+  string id = 1;
+}
+
+// DeleteUserResponse is the response when deleting a user.
+message DeleteUserResponse {
+  bool success = 1;
+}
+
+// ListUsersRequest is the request to list users.
+message ListUsersRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+// ListUsersResponse is the response when listing users.
+message ListUsersResponse {
+  repeated User users = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}

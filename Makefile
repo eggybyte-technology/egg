@@ -1,179 +1,234 @@
 # Makefile for egg framework
-.PHONY: help build build-cli test test-cli test-cli-keep lint clean tools generate \
+.PHONY: help build build-cli test test-cli test-cli-production test-examples test-all lint clean tools generate \
 	release-snapshot release-test release \
 	tag-all tag-modules tag-cli delete-tags \
-	fmt vet security quality setup example run-example
+	fmt vet security quality setup \
+	docker-build docker-build-alpine docker-backend docker-go-service docker-all docker-clean \
+	deploy-up deploy-down deploy-restart deploy-logs deploy-status deploy-health deploy-clean
+
+# Color definitions for enhanced output
+RED := \033[0;31m
+GREEN := \033[0;32m
+YELLOW := \033[1;33m
+BLUE := \033[0;34m
+CYAN := \033[0;36m
+MAGENTA := \033[0;35m
+BOLD := \033[1m
+RESET := \033[0m
+
+# Output formatting functions
+define print_header
+	@echo ""
+	@echo "$(BLUE)================================================================================$(RESET)"
+	@echo "$(BLUE)$(BOLD)▶ $(1)$(RESET)"
+	@echo "$(BLUE)================================================================================$(RESET)"
+endef
+
+define print_success
+	@echo "$(GREEN)[SUCCESS]$(RESET) $(1)"
+endef
+
+define print_error
+	@echo "$(RED)[ERROR]$(RESET) $(1)"
+endef
+
+define print_info
+	@echo "$(CYAN)[INFO]$(RESET) $(1)"
+endef
+
+define print_warning
+	@echo "$(YELLOW)[WARNING]$(RESET) $(1)"
+endef
 
 # Go modules that need independent tags
 MODULES := core runtimex connectx configx obsx k8sx storex
 
 # Default target
 help:
-	@echo "🥚 Egg Framework - Build & Release Management"
+	@echo "$(BOLD)$(BLUE)Egg Framework - Build & Release Management$(RESET)"
 	@echo ""
-	@echo "Build & Development:"
-	@echo "  build            - Build all modules"
-	@echo "  build-cli        - Build egg CLI tool"
-	@echo "  test             - Run tests for all modules"
-	@echo "  test-cli         - Run CLI integration tests"
-	@echo "  lint             - Run linter on all modules"
-	@echo "  clean            - Clean build artifacts"
-	@echo "  tools            - Install required tools"
-	@echo "  setup            - Setup development environment"
-	@echo "  example          - Build example service"
-	@echo "  run-example      - Run example service"
+	@echo "$(BOLD)Build & Development:$(RESET)"
+	@echo "  $(CYAN)build$(RESET)            - Build all modules"
+	@echo "  $(CYAN)build-cli$(RESET)        - Build egg CLI tool"
+	@echo "  $(CYAN)test$(RESET)             - Run tests for all modules"
+	@echo "  $(CYAN)test-cli$(RESET)         - Run CLI integration tests (local modules)"
+	@echo "  $(CYAN)test-cli-production$(RESET) - Run CLI integration tests (remote modules)"
+	@echo "  $(CYAN)test-examples$(RESET)    - Test example services"
+	@echo "  $(CYAN)test-all$(RESET)         - Run all tests (CLI + examples)"
+	@echo "  $(CYAN)lint$(RESET)             - Run linter on all modules"
+	@echo "  $(CYAN)clean$(RESET)            - Clean build artifacts"
+	@echo "  $(CYAN)tools$(RESET)            - Install required tools"
+	@echo "  $(CYAN)setup$(RESET)           - Setup development environment"
 	@echo ""
-	@echo "Release Management:"
-	@echo "  release          - One-click release (Usage: make release VERSION=v0.0.1)"
-	@echo "  release-snapshot - Build snapshot release locally (test)"
-	@echo "  release-test     - Test release configuration"
-	@echo "  tag-all          - Create tags for all modules (Usage: make tag-all VERSION=v0.0.1)"
-	@echo "  tag-modules      - Create tags for Go modules only"
-	@echo "  tag-cli          - Create tag for CLI only"
-	@echo "  delete-tags      - Delete all tags for a version (Usage: make delete-tags VERSION=v0.0.1)"
+	@echo "$(BOLD)Release Management:$(RESET)"
+	@echo "  $(CYAN)release$(RESET)           - One-click release (Usage: make release VERSION=v0.0.1)"
+	@echo "  $(CYAN)release-snapshot$(RESET) - Build snapshot release locally (test)"
+	@echo "  $(CYAN)release-test$(RESET)     - Test release configuration"
+	@echo "  $(CYAN)tag-all$(RESET)          - Create tags for all modules (Usage: make tag-all VERSION=v0.0.1)"
+	@echo "  $(CYAN)tag-modules$(RESET)      - Create tags for Go modules only"
+	@echo "  $(CYAN)tag-cli$(RESET)          - Create tag for CLI only"
+	@echo "  $(CYAN)delete-tags$(RESET)      - Delete all tags for a version (Usage: make delete-tags VERSION=v0.0.1)"
 	@echo ""
-	@echo "Quality:"
-	@echo "  fmt              - Format code"
-	@echo "  vet              - Run go vet"
-	@echo "  security         - Check for security vulnerabilities"
-	@echo "  quality          - Run all quality checks (fmt, vet, test, lint)"
+	@echo "$(BOLD)Quality:$(RESET)"
+	@echo "  $(CYAN)fmt$(RESET)              - Format code"
+	@echo "  $(CYAN)vet$(RESET)              - Run go vet"
+	@echo "  $(CYAN)security$(RESET)         - Check for security vulnerabilities"
+	@echo "  $(CYAN)quality$(RESET)          - Run all quality checks (fmt, vet, test, lint)"
+	@echo ""
+	@echo "$(BOLD)Docker & Containerization:$(RESET)"
+	@echo "  $(CYAN)docker-build$(RESET)     - Pull eggybyte-go-alpine base image from remote registry"
+	@echo "  $(CYAN)docker-build-alpine$(RESET) - Build and publish eggybyte-go-alpine base image (Usage: make docker-build-alpine [VERSION=latest] [PUSH=true])"
+	@echo "  $(CYAN)docker-backend$(RESET)   - Build backend image (Usage: make docker-backend BINARY=service-name)"
+	@echo "  $(CYAN)docker-go-service$(RESET) - Build Go service (Usage: make docker-go-service SERVICE=path BINARY=name [BUILD_PATH=path])"
+	@echo "  $(CYAN)docker-all$(RESET)       - Build all example services"
+	@echo "  $(CYAN)docker-clean$(RESET)    - Clean Docker images and containers"
+	@echo ""
+	@echo "$(BOLD)Deployment Scripts:$(RESET)"
+	@echo "  $(CYAN)deploy-up$(RESET)        - Start all services"
+	@echo "  $(CYAN)deploy-down$(RESET)      - Stop all services"
+	@echo "  $(CYAN)deploy-restart$(RESET)   - Restart all services"
+	@echo "  $(CYAN)deploy-logs$(RESET)      - Show service logs"
+	@echo "  $(CYAN)deploy-status$(RESET)    - Show service status"
+	@echo "  $(CYAN)deploy-health$(RESET)    - Check service health"
+	@echo "  $(CYAN)deploy-clean$(RESET)     - Clean deployment artifacts"
 
 # Build all modules
 build:
-	@echo "📦 Building all modules..."
+	$(call print_header,Building all modules)
 	@for module in $(MODULES); do \
-		echo "  Building $$module..."; \
+		$(call print_info,Building $$module...); \
 		cd $$module && go build ./... && cd .. || exit 1; \
 	done
-	@echo "✅ Build completed successfully"
+	$(call print_success,Build completed successfully)
 
 # Build egg CLI tool
 build-cli:
-	@echo "📦 Building egg CLI tool..."
+	$(call print_header,Building egg CLI tool)
 	@cd cli && rm -f egg && go build -o egg ./cmd/egg
 	@chmod +x cli/egg
-	@echo "✅ CLI tool built successfully at cli/egg"
+	$(call print_success,CLI tool built successfully at cli/egg)
 
 # Run tests for all modules
 test:
-	@echo "🧪 Running tests for all modules..."
+	$(call print_header,Running tests for all modules)
 	@for module in $(MODULES); do \
-		echo "  Testing $$module..."; \
+		$(call print_info,Testing $$module...); \
 		cd $$module && go test -race -cover ./... && cd .. || exit 1; \
 	done
 	@cd cli && go test -race -cover ./...
-	@echo "✅ All tests passed"
+	$(call print_success,All tests passed)
 
 # Run tests without race detection (for release)
 test-no-race:
-	@echo "🧪 Running tests for all modules (without race detection)..."
+	$(call print_header,Running tests for all modules without race detection)
 	@for module in $(MODULES); do \
-		echo "  Testing $$module..."; \
+		$(call print_info,Testing $$module...); \
 		cd $$module && go test -cover ./... && cd .. || exit 1; \
 	done
 	@cd cli && go test -cover ./...
-	@echo "✅ All tests passed"
+	$(call print_success,All tests passed)
 
 # Run CLI integration tests
 test-cli: build-cli
-	@echo "🧪 Running CLI integration tests..."
+	$(call print_header,Running CLI integration tests with local modules)
 	@./scripts/test-cli.sh
-	@echo "✅ CLI integration tests passed"
+	$(call print_success,CLI integration tests passed)
 
-# Run CLI integration tests and keep test directory
-test-cli-keep: build-cli
-	@echo "🧪 Running CLI integration tests (keeping test directory)..."
-	@./scripts/test-cli.sh --keep
-	@echo "✅ CLI integration tests passed"
+# Run CLI integration tests with remote modules (production)
+test-cli-production: build-cli
+	$(call print_header,Running CLI integration tests with remote modules)
+	@./scripts/test-cli-production.sh
+	$(call print_success,CLI production integration tests passed)
+
+# Test example services
+test-examples:
+	$(call print_header,Testing example services)
+	@./scripts/test.sh examples
+	$(call print_success,Example services tests completed)
+
+# Run all tests (CLI + examples)
+test-all: build-cli
+	$(call print_header,Running all tests)
+	@./scripts/test.sh all
+	$(call print_success,All tests passed)
 
 # Run linter (requires golangci-lint)
 lint:
-	@echo "🔍 Running linter..."
+	$(call print_header,Running linter)
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		for module in $(MODULES) cli; do \
-			echo "  Linting $$module..."; \
+			$(call print_info,Linting $$module...); \
 			cd $$module && golangci-lint run ./... && cd .. || exit 1; \
 		done; \
-		echo "✅ Linting completed"; \
+		$(call print_success,Linting completed); \
 	else \
-		echo "❌ golangci-lint not found. Install with: make tools"; \
+		$(call print_error,golangci-lint not found. Install with: make tools); \
 		exit 1; \
 	fi
 
 # Clean build artifacts
 clean:
-	@echo "🧹 Cleaning build artifacts..."
+	$(call print_header,Cleaning build artifacts)
 	@rm -rf dist/
 	@find . -name "*.exe" -delete
 	@find . -name "*.out" -delete
 	@find . -name "*.test" -delete
 	@find . -name "coverage.out" -delete
 	@rm -f cli/egg
-	@echo "✅ Clean completed"
+	$(call print_success,Clean completed)
 
 # Install required tools
 tools:
-	@echo "🔧 Installing required tools..."
+	$(call print_header,Installing required tools)
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	@go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
 	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 	@go install github.com/goreleaser/goreleaser/v2@latest
 	@go install golang.org/x/vuln/cmd/govulncheck@latest
-	@echo "✅ Tools installed successfully"
+	$(call print_success,Tools installed successfully)
 
 # Format code
 fmt:
-	@echo "🎨 Formatting code..."
+	$(call print_header,Formatting code)
 	@for module in $(MODULES) cli; do \
-		echo "  Formatting $$module..."; \
+		$(call print_info,Formatting $$module...); \
 		cd $$module && go fmt ./... && cd .. || exit 1; \
 	done
-	@echo "✅ Code formatted"
+	$(call print_success,Code formatted)
 
 # Vet code
 vet:
-	@echo "🔍 Running go vet..."
+	$(call print_header,Running go vet)
 	@for module in $(MODULES) cli; do \
-		echo "  Vetting $$module..."; \
+		$(call print_info,Vetting $$module...); \
 		cd $$module && go vet ./... && cd .. || exit 1; \
 	done
-	@echo "✅ Vet completed"
+	$(call print_success,Vet completed)
 
 # Check for security vulnerabilities
 security:
-	@echo "🔒 Checking for security vulnerabilities..."
+	$(call print_header,Checking for security vulnerabilities)
 	@if command -v govulncheck >/dev/null 2>&1; then \
 		for module in $(MODULES) cli; do \
-			echo "  Checking $$module..."; \
+			$(call print_info,Checking $$module...); \
 			cd $$module && govulncheck ./... && cd .. || exit 1; \
 		done; \
-		echo "✅ Security check completed"; \
+		$(call print_success,Security check completed); \
 	else \
-		echo "❌ govulncheck not found. Install with: make tools"; \
+		$(call print_error,govulncheck not found. Install with: make tools); \
 		exit 1; \
 	fi
 
 # Run all quality checks
 quality: fmt vet test lint
-	@echo "✅ All quality checks completed"
+	$(call print_success,All quality checks completed)
 
 # Setup development environment
 setup: tools
-	@echo "🔧 Setting up development environment..."
+	$(call print_header,Setting up development environment)
 	@go work sync
-	@echo "✅ Development environment setup completed"
-
-# Build example service
-example:
-	@echo "📦 Building example service..."
-	@cd examples/minimal-connect-service && go build -o minimal-connect-service .
-	@echo "✅ Example service built successfully"
-
-# Run example service
-run-example: example
-	@echo "🚀 Running example service..."
-	@cd examples/minimal-connect-service && ./minimal-connect-service
+	$(call print_success,Development environment setup completed)
 
 # ==============================================================================
 # Release Management
@@ -181,24 +236,24 @@ run-example: example
 
 # Build snapshot release (local test without pushing)
 release-snapshot:
-	@echo "📦 Building snapshot release..."
+	$(call print_header,Building snapshot release)
 	@if command -v goreleaser >/dev/null 2>&1; then \
 		goreleaser release --snapshot --clean; \
-		echo "✅ Snapshot built in dist/"; \
+		$(call print_success,Snapshot built in dist/); \
 	else \
-		echo "❌ goreleaser not found. Install with: make tools"; \
+		$(call print_error,goreleaser not found. Install with: make tools); \
 		exit 1; \
 	fi
 
 # Test release configuration
 release-test:
-	@echo "🧪 Testing release configuration..."
+	$(call print_header,Testing release configuration)
 	@if command -v goreleaser >/dev/null 2>&1; then \
 		goreleaser check && \
 		goreleaser build --snapshot --clean && \
-		echo "✅ Release configuration is valid"; \
+		$(call print_success,Release configuration is valid); \
 	else \
-		echo "❌ goreleaser not found. Install with: make tools"; \
+		$(call print_error,goreleaser not found. Install with: make tools); \
 		exit 1; \
 	fi
 
@@ -210,97 +265,97 @@ release-test:
 # Usage: make tag-modules VERSION=v0.0.1
 tag-modules:
 	@if [ -z "$(VERSION)" ]; then \
-		echo "❌ Error: VERSION is required"; \
+		$(call print_error,VERSION is required); \
 		echo "Usage: make tag-modules VERSION=v0.0.1"; \
 		exit 1; \
 	fi
-	@echo "🏷️  Creating module tags for version $(VERSION)..."
+	$(call print_header,Creating module tags for version $(VERSION))
 	@for module in $(MODULES); do \
 		tag="$$module/$(VERSION)"; \
-		echo "  Creating tag $$tag..."; \
+		$(call print_info,Creating tag $$tag...); \
 		git tag -a "$$tag" -m "Release $$module $(VERSION)" || exit 1; \
 	done
-	@echo "✅ Module tags created successfully"
+	$(call print_success,Module tags created successfully)
 	@echo ""
-	@echo "📌 Push tags with:"
+	$(call print_info,Push tags with:)
 	@echo "   git push origin --tags"
 
 # Create tag for CLI only
 # Usage: make tag-cli VERSION=v0.0.1
 tag-cli:
 	@if [ -z "$(VERSION)" ]; then \
-		echo "❌ Error: VERSION is required"; \
+		$(call print_error,VERSION is required); \
 		echo "Usage: make tag-cli VERSION=v0.0.1"; \
 		exit 1; \
 	fi
-	@echo "🏷️  Creating CLI tag $(VERSION)..."
+	$(call print_header,Creating CLI tag $(VERSION))
 	@git tag -a "$(VERSION)" -m "Release CLI $(VERSION)" || exit 1
-	@echo "✅ CLI tag created successfully"
+	$(call print_success,CLI tag created successfully)
 	@echo ""
-	@echo "📌 Push tag with:"
+	$(call print_info,Push tag with:)
 	@echo "   git push origin $(VERSION)"
 
 # Create tags for all modules and CLI
 # Usage: make tag-all VERSION=v0.0.1
 tag-all:
 	@if [ -z "$(VERSION)" ]; then \
-		echo "❌ Error: VERSION is required"; \
+		$(call print_error,VERSION is required); \
 		echo "Usage: make tag-all VERSION=v0.0.1"; \
 		exit 1; \
 	fi
-	@echo "🏷️  Creating all tags for version $(VERSION)..."
+	$(call print_header,Creating all tags for version $(VERSION))
 	@echo ""
-	@echo "Step 1: Creating module tags..."
+	$(call print_info,Step 1: Creating module tags...)
 	@for module in $(MODULES); do \
 		tag="$$module/$(VERSION)"; \
-		echo "  Creating tag $$tag..."; \
+		$(call print_info,Creating tag $$tag...); \
 		git tag -a "$$tag" -m "Release $$module $(VERSION)" || exit 1; \
 	done
 	@echo ""
-	@echo "Step 2: Creating CLI tag..."
+	$(call print_info,Step 2: Creating CLI tag...)
 	@git tag -a "$(VERSION)" -m "Release $(VERSION)" || exit 1
 	@echo ""
-	@echo "✅ All tags created successfully!"
+	$(call print_success,All tags created successfully!)
 	@echo ""
-	@echo "📌 Tags created:"
+	$(call print_info,Tags created:)
 	@for module in $(MODULES); do \
 		echo "   - $$module/$(VERSION)"; \
 	done
 	@echo "   - $(VERSION) (CLI)"
 	@echo ""
-	@echo "📌 Push all tags with:"
+	$(call print_info,Push all tags with:)
 	@echo "   git push origin --tags"
 
 # Delete all tags for a version (locally and remotely)
 # Usage: make delete-tags VERSION=v0.0.1
 delete-tags:
 	@if [ -z "$(VERSION)" ]; then \
-		echo "❌ Error: VERSION is required"; \
+		$(call print_error,VERSION is required); \
 		echo "Usage: make delete-tags VERSION=v0.0.1"; \
 		exit 1; \
 	fi
-	@echo "🗑️  Deleting all tags for version $(VERSION)..."
+	$(call print_header,Deleting all tags for version $(VERSION))
 	@echo ""
-	@echo "⚠️  WARNING: This will delete tags both locally and remotely!"
+	$(call print_warning,WARNING: This will delete tags both locally and remotely!)
 	@read -p "Continue? (y/N) " confirm; \
 	if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
-		echo "Cancelled"; \
+		$(call print_info,Cancelled); \
 		exit 0; \
 	fi
 	@echo ""
-	@echo "Deleting module tags..."
+	$(call print_info,Deleting module tags...)
 	@for module in $(MODULES); do \
 		tag="$$module/$(VERSION)"; \
-		echo "  Deleting $$tag..."; \
+		$(call print_info,Deleting $$tag...); \
 		git tag -d "$$tag" 2>/dev/null || echo "  Local tag not found"; \
 		git push --delete origin "$$tag" 2>/dev/null || echo "  Remote tag not found"; \
 	done
 	@echo ""
-	@echo "Deleting CLI tag..."
+	$(call print_info,Deleting CLI tag...)
 	@git tag -d "$(VERSION)" 2>/dev/null || echo "  Local tag not found"
 	@git push --delete origin "$(VERSION)" 2>/dev/null || echo "  Remote tag not found"
 	@echo ""
-	@echo "✅ Tag deletion completed"
+	$(call print_success,Tag deletion completed)
 
 # ==============================================================================
 # One-Click Release
@@ -310,88 +365,199 @@ delete-tags:
 # Usage: make release VERSION=v0.0.1
 release:
 	@if [ -z "$(VERSION)" ]; then \
-		echo "❌ Error: VERSION is required"; \
+		$(call print_error,VERSION is required); \
 		echo "Usage: make release VERSION=v0.0.1"; \
 		exit 1; \
 	fi
 	@if [ -z "$$GITHUB_TOKEN" ]; then \
-		echo "❌ Error: GITHUB_TOKEN environment variable is not set"; \
+		$(call print_error,GITHUB_TOKEN environment variable is not set); \
 		echo "Create a token at: https://github.com/settings/tokens"; \
 		exit 1; \
 	fi
 	@if ! command -v goreleaser >/dev/null 2>&1; then \
-		echo "❌ goreleaser not found. Install with: make tools"; \
+		$(call print_error,goreleaser not found. Install with: make tools); \
 		exit 1; \
 	fi
-	@echo "=========================================================="
-	@echo "  🚀 Releasing Egg Framework $(VERSION)"
-	@echo "=========================================================="
+	$(call print_header,Releasing Egg Framework $(VERSION))
 	@echo ""
-	@echo "Step 1: Checking for existing tags..."
+	$(call print_info,Step 1: Checking for existing tags...)
 	@existing_tags=0; \
 	if git rev-parse $(VERSION) >/dev/null 2>&1; then \
-		echo "  Found existing CLI tag $(VERSION)"; \
+		$(call print_info,Found existing CLI tag $(VERSION)); \
 		existing_tags=1; \
 	fi; \
 	for module in $(MODULES); do \
 		if git rev-parse "$$module/$(VERSION)" >/dev/null 2>&1; then \
-			echo "  Found existing module tag $$module/$(VERSION)"; \
+			$(call print_info,Found existing module tag $$module/$(VERSION)); \
 			existing_tags=1; \
 		fi; \
 	done; \
 	if [ $$existing_tags -eq 1 ]; then \
 		echo ""; \
-		echo "⚠️  WARNING: Some tags already exist!"; \
+		$(call print_warning,WARNING: Some tags already exist!); \
 		echo "This will delete and recreate all tags for version $(VERSION)"; \
 		read -p "Continue? (y/N) " confirm; \
 		if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
-			echo "Cancelled"; \
+			$(call print_info,Cancelled); \
 			exit 0; \
 		fi; \
 		echo ""; \
-		echo "Deleting existing tags..."; \
+		$(call print_info,Deleting existing tags...); \
 		git tag -d $(VERSION) 2>/dev/null || true; \
 		git push --delete origin $(VERSION) 2>/dev/null || true; \
 		for module in $(MODULES); do \
 			git tag -d "$$module/$(VERSION)" 2>/dev/null || true; \
 			git push --delete origin "$$module/$(VERSION)" 2>/dev/null || true; \
 		done; \
-		echo "✅ Old tags deleted"; \
+		$(call print_success,Old tags deleted); \
 	else \
-		echo "  No existing tags found"; \
+		$(call print_info,No existing tags found); \
 	fi
 	@echo ""
-	@echo "Step 2: Running quality checks..."
+	$(call print_info,Step 2: Running quality checks...)
 	@$(MAKE) test-no-race
 	@echo ""
-	@echo "Step 3: Creating module tags..."
+	$(call print_info,Step 3: Creating module tags...)
 	@for module in $(MODULES); do \
 		tag="$$module/$(VERSION)"; \
-		echo "  Creating $$tag..."; \
+		$(call print_info,Creating $$tag...); \
 		git tag -a "$$tag" -m "Release $$module $(VERSION)" || exit 1; \
 	done
 	@echo ""
-	@echo "Step 4: Creating CLI tag..."
+	$(call print_info,Step 4: Creating CLI tag...)
 	@git tag -a $(VERSION) -m "Release $(VERSION)" || exit 1
 	@echo ""
-	@echo "Step 5: Pushing all tags..."
+	$(call print_info,Step 5: Pushing all tags...)
 	@git push origin --tags
 	@echo ""
-	@echo "Step 6: Running goreleaser..."
+	$(call print_info,Step 6: Running goreleaser...)
 	@goreleaser release --clean
 	@echo ""
-	@echo "=========================================================="
-	@echo "  ✅ Release $(VERSION) completed successfully!"
-	@echo "=========================================================="
+	$(call print_header,Release $(VERSION) completed successfully!)
 	@echo ""
-	@echo "📦 Artifacts created:"
+	$(call print_info,Artifacts created:)
 	@echo "   - CLI binaries (goreleaser)"
 	@echo "   - Module tags for Go modules"
 	@echo ""
-	@echo "🔗 Check the release at:"
+	$(call print_info,Check the release at:)
 	@echo "   https://github.com/eggybyte-technology/egg/releases/tag/$(VERSION)"
 	@echo ""
-	@echo "📦 Users can now install modules with:"
+	$(call print_info,Users can now install modules with:)
 	@for module in $(MODULES); do \
 		echo "   go get github.com/eggybyte-technology/egg/$$module@$(VERSION)"; \
 	done
+
+# ==============================================================================
+# Docker & Containerization
+# ==============================================================================
+
+# Pull eggybyte-go-alpine base image
+docker-build:
+	$(call print_header,Pulling eggybyte-go-alpine base image)
+	@./scripts/build.sh base
+	$(call print_success,Base image pulled successfully)
+
+# Build and publish eggybyte-go-alpine base image (multi-arch)
+# Usage: make docker-build-alpine [VERSION=latest] [PUSH=true]
+docker-build-alpine:
+	$(call print_header,Building and publishing eggybyte-go-alpine base image)
+	@if [ "$(PUSH)" = "true" ]; then \
+		$(call print_info,Building and pushing image with version $(VERSION)...); \
+		./scripts/build-eggybyte-go-alpine.sh $(VERSION) --push; \
+	else \
+		$(call print_info,Building image locally with version $(VERSION)...); \
+		./scripts/build-eggybyte-go-alpine.sh $(VERSION); \
+	fi
+	$(call print_success,EggyByte Go Alpine base image build completed)
+
+# Build backend image from pre-built binary
+# Usage: make docker-backend BINARY=service-name [HTTP_PORT=8080] [HEALTH_PORT=8081] [METRICS_PORT=9091] [IMAGE=service-name:latest]
+docker-backend:
+	@if [ -z "$(BINARY)" ]; then \
+		$(call print_error,BINARY is required); \
+		echo "Usage: make docker-backend BINARY=service-name [HTTP_PORT=8080] [HEALTH_PORT=8081] [METRICS_PORT=9091] [IMAGE=service-name:latest]"; \
+		exit 1; \
+	fi
+	$(call print_header,Building backend image for $(BINARY))
+	@./scripts/build.sh service examples/$(BINARY) $(BINARY) . "$(HTTP_PORT)" "$(HEALTH_PORT)" "$(METRICS_PORT)" "$(IMAGE)"
+	$(call print_success,Backend image built successfully)
+
+# Build Go service (compile + build image)
+# Usage: make docker-go-service SERVICE=examples/service BINARY=service-name [BUILD_PATH=.] [HTTP_PORT=8080] [HEALTH_PORT=8081] [METRICS_PORT=9091] [IMAGE=service-name:latest]
+docker-go-service:
+	@if [ -z "$(SERVICE)" ] || [ -z "$(BINARY)" ]; then \
+		$(call print_error,SERVICE and BINARY are required); \
+		echo "Usage: make docker-go-service SERVICE=examples/service BINARY=service-name [BUILD_PATH=.] [HTTP_PORT=8080] [HEALTH_PORT=8081] [METRICS_PORT=9091] [IMAGE=service-name:latest]"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  make docker-go-service SERVICE=examples/minimal-connect-service BINARY=minimal-connect-service"; \
+		echo "  make docker-go-service SERVICE=examples/user-service BINARY=user-service BUILD_PATH=cmd/server"; \
+		exit 1; \
+	fi
+	$(call print_header,Building Go service $(BINARY) from $(SERVICE))
+	@./scripts/build.sh service "$(SERVICE)" "$(BINARY)" "$(BUILD_PATH)" "$(HTTP_PORT)" "$(HEALTH_PORT)" "$(METRICS_PORT)" "$(IMAGE)"
+	$(call print_success,Go service built successfully)
+
+# Build all example services
+docker-all: docker-build
+	$(call print_header,Building all example services)
+	@./scripts/build.sh all
+	$(call print_success,All example services built successfully)
+	@echo ""
+	$(call print_info,Available images:)
+	@echo "  - localhost:5000/eggybyte-go-alpine:latest (base image)"
+	@echo "  - minimal-connect-service:latest"
+	@echo "  - user-service:latest"
+
+# Clean Docker images and containers
+docker-clean:
+	$(call print_header,Cleaning Docker images and containers)
+	@./scripts/build.sh clean
+	$(call print_success,Docker cleanup completed)
+
+# ==============================================================================
+# Deployment Scripts
+# ==============================================================================
+
+# Start all services
+deploy-up:
+	$(call print_header,Starting all services)
+	@./scripts/deploy.sh up
+	$(call print_success,All services started)
+
+# Stop all services
+deploy-down:
+	$(call print_header,Stopping all services)
+	@./scripts/deploy.sh down
+	$(call print_success,All services stopped)
+
+# Restart all services
+deploy-restart:
+	$(call print_header,Restarting all services)
+	@./scripts/deploy.sh restart
+	$(call print_success,All services restarted)
+
+# Show service logs
+# Usage: make deploy-logs [SERVICE=service-name]
+deploy-logs:
+	$(call print_header,Showing service logs)
+	@./scripts/deploy.sh logs $(SERVICE)
+	$(call print_success,Logs displayed)
+
+# Show service status
+deploy-status:
+	$(call print_header,Showing service status)
+	@./scripts/deploy.sh status
+	$(call print_success,Status displayed)
+
+# Check service health
+deploy-health:
+	$(call print_header,Checking service health)
+	@./scripts/deploy.sh health
+	$(call print_success,Health check completed)
+
+# Clean deployment artifacts
+deploy-clean:
+	$(call print_header,Cleaning deployment artifacts)
+	@./scripts/deploy.sh clean
+	$(call print_success,Deployment artifacts cleaned)

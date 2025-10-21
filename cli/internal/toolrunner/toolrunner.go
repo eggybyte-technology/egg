@@ -517,6 +517,49 @@ func (r *Runner) DockerBuild(ctx context.Context, imageName, dockerfile, context
 	return nil
 }
 
+// DockerBuildWithArgs builds a Docker image with build arguments.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - imageName: Image name and tag
+//   - dockerfile: Dockerfile path
+//   - context: Build context path
+//   - buildArgs: Build arguments map
+//
+// Returns:
+//   - error: Execution error if any
+//
+// Concurrency:
+//   - Single-threaded per command
+//
+// Performance:
+//   - Build time depends on image complexity
+func (r *Runner) DockerBuildWithArgs(ctx context.Context, imageName, dockerfile, context string, buildArgs map[string]string) error {
+	args := []string{"build", "-t", imageName}
+	if dockerfile != "" {
+		args = append(args, "-f", dockerfile)
+	}
+
+	// Add build arguments
+	for key, value := range buildArgs {
+		args = append(args, "--build-arg", fmt.Sprintf("%s=%s", key, value))
+	}
+
+	args = append(args, context)
+
+	result, err := r.Docker(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("failed to build Docker image: %w", err)
+	}
+
+	if r.verbose {
+		ui.Debug("Docker image built: %s", imageName)
+		ui.Debug("Output: %s", result.Stdout)
+	}
+
+	return nil
+}
+
 // DockerBuildx builds a multi-platform Docker image using buildx.
 //
 // Parameters:
@@ -551,6 +594,71 @@ func (r *Runner) DockerBuildx(ctx context.Context, imageName, dockerfile, contex
 	// Add dockerfile
 	if dockerfile != "" {
 		args = append(args, "-f", dockerfile)
+	}
+
+	// Add push or load flag
+	if push {
+		args = append(args, "--push")
+	} else if load {
+		args = append(args, "--load")
+	}
+
+	// Add build context
+	args = append(args, context)
+
+	result, err := r.Docker(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("failed to build Docker image with buildx: %w", err)
+	}
+
+	if r.verbose {
+		ui.Debug("Docker image built with buildx: %s (platforms: %s)", imageName, platforms)
+		ui.Debug("Output: %s", result.Stdout)
+	}
+
+	return nil
+}
+
+// DockerBuildxWithArgs builds a multi-platform Docker image using buildx with build arguments.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - imageName: Image name and tag
+//   - dockerfile: Dockerfile path
+//   - context: Build context path
+//   - platforms: Target platforms (e.g., "linux/amd64,linux/arm64")
+//   - push: Whether to push the image to registry
+//   - load: Whether to load the image into local Docker (only works with single platform)
+//   - buildArgs: Build arguments map
+//
+// Returns:
+//   - error: Execution error if any
+//
+// Concurrency:
+//   - Single-threaded per command
+//
+// Performance:
+//   - Multi-platform build time depends on image complexity and number of platforms
+func (r *Runner) DockerBuildxWithArgs(ctx context.Context, imageName, dockerfile, context, platforms string, push, load bool, buildArgs map[string]string) error {
+	// Build buildx command
+	args := []string{"buildx", "build"}
+
+	// Add platform support
+	if platforms != "" {
+		args = append(args, "--platform", platforms)
+	}
+
+	// Add image tag
+	args = append(args, "-t", imageName)
+
+	// Add dockerfile
+	if dockerfile != "" {
+		args = append(args, "-f", dockerfile)
+	}
+
+	// Add build arguments
+	for key, value := range buildArgs {
+		args = append(args, "--build-arg", fmt.Sprintf("%s=%s", key, value))
 	}
 
 	// Add push or load flag

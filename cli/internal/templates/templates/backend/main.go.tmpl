@@ -1,38 +1,106 @@
+// Package main provides the main entry point for the {{.ServiceName}} service.
+//
+// Overview:
+//   - Responsibility: Service initialization using servicex library
+//   - Key Types: Main function with minimal service setup
+//   - Concurrency Model: Graceful shutdown handled by servicex
+//   - Error Semantics: Startup errors are logged and cause exit
+//   - Performance Notes: Optimized for fast startup and graceful shutdown
+//
+// Usage:
+//
+//	go run cmd/server/main.go
+//	./{{.ServiceName}}
 package main
 
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
-	"github.com/eggybyte-technology/egg/runtimex"
-	"github.com/eggybyte-technology/egg/connectx"
-	"github.com/eggybyte-technology/egg/configx"
+	"github.com/eggybyte-technology/egg/core/log"
+	"github.com/eggybyte-technology/egg/servicex"
 	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/config"
+	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/handler"
+	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/model"
+	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/repository"
+	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/service"
+	"gorm.io/gorm"
 )
 
-func main() {
-	ctx := context.Background()
-	var cfg config.AppConfig
-	
-	// Initialize configuration manager
-	_, err := configx.QuickBind(ctx, nil, &cfg)
+// SimpleLogger implements the log.Logger interface for basic logging.
+type SimpleLogger struct{}
+
+func (l *SimpleLogger) With(kv ...any) log.Logger   { return l }
+func (l *SimpleLogger) Debug(msg string, kv ...any) { fmt.Printf("[DEBUG] %s %v\n", msg, kv) }
+func (l *SimpleLogger) Info(msg string, kv ...any)  { fmt.Printf("[INFO] %s %v\n", msg, kv) }
+func (l *SimpleLogger) Warn(msg string, kv ...any)  { fmt.Printf("[WARN] %s %v\n", msg, kv) }
+func (l *SimpleLogger) Error(err error, msg string, kv ...any) {
 	if err != nil {
-		panic(fmt.Sprintf("failed to bind config: %v", err))
+		fmt.Printf("[ERROR] %s: %v %v\n", msg, err, kv)
+	} else {
+		fmt.Printf("[ERROR] %s %v\n", msg, kv)
+	}
+}
+
+func main() {
+	// Initialize logger
+	logger := &SimpleLogger{}
+	logger.Info("Starting {{.ServiceName}} service")
+
+	// Create context
+	ctx := context.Background()
+
+	// Initialize configuration
+	var cfg config.AppConfig
+
+	// Run the service using servicex
+	err := servicex.Run(ctx, servicex.Options{
+		ServiceName: "{{.ServiceName}}",
+		Config:      &cfg,
+		Database: &servicex.DatabaseConfig{
+			Driver:      "mysql",
+			DSN:         "", // Will be set from config
+			MaxIdle:     10,
+			MaxOpen:     100,
+			MaxLifetime: 1 * time.Hour,
+		},
+		Migrate: func(db *gorm.DB) error {
+			return db.AutoMigrate(&model.{{.ServiceNameCamel}}{})
+		},
+		Register: func(app *servicex.App) error {
+			// Initialize repository
+			var {{.ServiceNameCamel}}Repo repository.{{.ServiceNameCamel}}Repository
+			if db := app.DB(); db != nil {
+				{{.ServiceNameCamel}}Repo = repository.New{{.ServiceNameCamel}}Repository(db)
+				logger.Info("Repository initialized successfully")
+			} else {
+				logger.Info("No database connection, repository will be nil")
+			}
+
+			// Initialize service and handler
+			{{.ServiceNameCamel}}Service := service.New{{.ServiceNameCamel}}Service({{.ServiceNameCamel}}Repo, logger)
+			{{.ServiceNameCamel}}Handler := handler.New{{.ServiceNameCamel}}Handler({{.ServiceNameCamel}}Service, logger)
+
+			// Register HTTP routes
+			{{.ServiceNameCamel}}Handler.RegisterRoutes(app.Mux())
+
+			logger.Info("{{.ServiceNameCamel}} service initialized successfully")
+			return nil
+		},
+		EnableTracing:     true,
+		EnableHealthCheck: true,
+		EnableMetrics:     true,
+		EnableDebugLogs:   false,
+		SlowRequestMillis: 1000,
+		PayloadAccounting: true,
+		ShutdownTimeout:   15 * time.Second,
+		Logger:            logger,
+	})
+	if err != nil {
+		logger.Error(err, "Service failed")
+		return
 	}
 
-	mux := http.NewServeMux()
-	_ = connectx.DefaultInterceptors(connectx.Options{SlowRequestMillis: 1000})
-	
-	// TODO: Add your Connect handlers here
-	// path, h := yourapi.NewServiceHandler(..., connect.WithInterceptors(ints...))
-	// mux.Handle(path, h)
-
-	_ = runtimex.Run(ctx, nil, runtimex.Options{
-		HTTP:    &runtimex.HTTPOptions{Addr: ":" + cfg.HTTPPort, H2C: true, Mux: mux},
-		Health:  &runtimex.Endpoint{Addr: ":" + cfg.HealthPort},
-		Metrics: &runtimex.Endpoint{Addr: ":" + cfg.MetricsPort},
-		ShutdownTimeout: 15 * time.Second,
-	})
+	logger.Info("{{.ServiceNameCamel}} service stopped gracefully")
 }

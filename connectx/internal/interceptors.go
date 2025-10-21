@@ -65,9 +65,9 @@ func LoggingInterceptor(logger log.Logger, opts LoggingOptions) connect.UnaryInt
 func IdentityInterceptor(headers HeaderMapping) connect.UnaryInterceptorFunc {
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Extract identity from headers
-			if httpReq := req.Any().(*http.Request); httpReq != nil {
-				userInfo, requestMeta := extractIdentityFromHeaders(httpReq, headers)
+			// Extract identity from headers using Connect's Header() method
+			if req.Header() != nil {
+				userInfo, requestMeta := extractIdentityFromConnectHeaders(req.Header(), headers)
 
 				// Inject into context
 				if userInfo != nil {
@@ -90,8 +90,8 @@ func ErrorMappingInterceptor() connect.UnaryInterceptorFunc {
 			resp, err := next(ctx, req)
 			if err != nil {
 				// Map core/errors to Connect codes
-				_ = mapErrorToConnectCode(err)
-				return resp, connect.NewError(connect.CodeUnknown, err)
+				connectCode := mapErrorToConnectCode(err)
+				return resp, connect.NewError(connectCode, err)
 			}
 			return resp, err
 		}
@@ -112,7 +112,6 @@ type HeaderMapping struct {
 	InternalToken string
 	UserID        string
 	UserName      string
-	Tenant        string
 	Roles         string
 	RealIP        string
 	ForwardedFor  string
@@ -129,7 +128,6 @@ func extractIdentityFromHeaders(req *http.Request, headers HeaderMapping) (*iden
 		userInfo = &identity.UserInfo{
 			UserID:   userID,
 			UserName: req.Header.Get(headers.UserName),
-			Tenant:   req.Header.Get(headers.Tenant),
 		}
 
 		// Parse roles
@@ -163,28 +161,69 @@ func extractIdentityFromHeaders(req *http.Request, headers HeaderMapping) (*iden
 	return userInfo, requestMeta
 }
 
+// extractIdentityFromConnectHeaders extracts user identity and request metadata from Connect headers.
+func extractIdentityFromConnectHeaders(headers http.Header, mapping HeaderMapping) (*identity.UserInfo, *identity.RequestMeta) {
+	var userInfo *identity.UserInfo
+	var requestMeta *identity.RequestMeta
+
+	// Extract user information
+	if userID := headers.Get(mapping.UserID); userID != "" {
+		userInfo = &identity.UserInfo{
+			UserID:   userID,
+			UserName: headers.Get(mapping.UserName),
+		}
+
+		// Parse roles
+		if rolesHeader := headers.Get(mapping.Roles); rolesHeader != "" {
+			userInfo.Roles = strings.Split(rolesHeader, ",")
+			for i, role := range userInfo.Roles {
+				userInfo.Roles[i] = strings.TrimSpace(role)
+			}
+		}
+	}
+
+	// Extract request metadata
+	requestMeta = &identity.RequestMeta{
+		RequestID:     headers.Get(mapping.RequestID),
+		InternalToken: headers.Get(mapping.InternalToken),
+		UserAgent:     headers.Get(mapping.UserAgent),
+	}
+
+	// Determine remote IP
+	if realIP := headers.Get(mapping.RealIP); realIP != "" {
+		requestMeta.RemoteIP = realIP
+	} else if forwardedFor := headers.Get(mapping.ForwardedFor); forwardedFor != "" {
+		// Take the first IP from X-Forwarded-For
+		if firstIP := strings.Split(forwardedFor, ",")[0]; firstIP != "" {
+			requestMeta.RemoteIP = strings.TrimSpace(firstIP)
+		}
+	}
+
+	return userInfo, requestMeta
+}
+
 // mapErrorToConnectCode maps core/errors.Code to Connect error codes.
-func mapErrorToConnectCode(err error) string {
+func mapErrorToConnectCode(err error) connect.Code {
 	code := errors.CodeOf(err)
 	switch code {
 	case errors.CodeInvalidArgument:
-		return "invalid_argument"
+		return connect.CodeInvalidArgument
 	case errors.CodeNotFound:
-		return "not_found"
+		return connect.CodeNotFound
 	case errors.CodeAlreadyExists:
-		return "already_exists"
+		return connect.CodeAlreadyExists
 	case errors.CodePermissionDenied:
-		return "permission_denied"
+		return connect.CodePermissionDenied
 	case errors.CodeUnauthenticated:
-		return "unauthenticated"
+		return connect.CodeUnauthenticated
 	case errors.CodeInternal:
-		return "internal"
+		return connect.CodeInternal
 	case errors.CodeUnavailable:
-		return "unavailable"
+		return connect.CodeUnavailable
 	case errors.CodeDeadlineExceeded:
-		return "deadline_exceeded"
+		return connect.CodeDeadlineExceeded
 	default:
-		return "internal"
+		return connect.CodeInternal
 	}
 }
 
@@ -204,9 +243,6 @@ func logRequestFields(req *http.Request, startTime time.Time, userInfo *identity
 
 	if userInfo != nil {
 		fields = append(fields, log.Str("user_id", userInfo.UserID))
-		if userInfo.Tenant != "" {
-			fields = append(fields, log.Str("tenant", userInfo.Tenant))
-		}
 	}
 
 	return fields

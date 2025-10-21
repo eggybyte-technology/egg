@@ -1,0 +1,145 @@
+// Package repository provides data access layer for the {{.ServiceName}} service.
+//
+// Overview:
+//   - Responsibility: Database operations and data persistence
+//   - Key Types: {{.ServiceNameCamel}}Repository interface and implementation
+//   - Concurrency Model: Thread-safe repository operations
+//   - Error Semantics: Database errors are wrapped and returned
+//   - Performance Notes: Optimized for high-throughput database operations
+//
+// Usage:
+//
+//	repo := repository.New{{.ServiceNameCamel}}Repository(db)
+//	user, err := repo.Create(ctx, &model.{{.ServiceNameCamel}}{Name: "example"})
+package repository
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/eggybyte-technology/egg/core/errors"
+	"gorm.io/gorm"
+	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/model"
+)
+
+// {{.ServiceNameCamel}}Repository defines the interface for {{.ServiceName}} data operations.
+// All methods are context-aware and return structured errors.
+type {{.ServiceNameCamel}}Repository interface {
+	// Create creates a new {{.ServiceName}} in the database.
+	Create(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error)
+
+	// GetByID retrieves a {{.ServiceName}} by ID.
+	GetByID(ctx context.Context, id string) (*model.{{.ServiceNameCamel}}, error)
+
+	// Update updates an existing {{.ServiceName}}.
+	Update(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error)
+
+	// Delete soft deletes a {{.ServiceName}} by ID.
+	Delete(ctx context.Context, id string) error
+
+	// List retrieves {{.ServiceName}}s with pagination.
+	List(ctx context.Context, page, pageSize int) ([]*model.{{.ServiceNameCamel}}, int64, error)
+}
+
+// {{.ServiceNameCamel}}RepositoryImpl implements the {{.ServiceNameCamel}}Repository interface.
+type {{.ServiceNameCamel}}RepositoryImpl struct {
+	db *gorm.DB
+}
+
+// New{{.ServiceNameCamel}}Repository creates a new {{.ServiceNameCamel}}Repository instance.
+// The returned repository is safe for concurrent use.
+func New{{.ServiceNameCamel}}Repository(db *gorm.DB) {{.ServiceNameCamel}}Repository {
+	return &{{.ServiceNameCamel}}RepositoryImpl{
+		db: db,
+	}
+}
+
+// Create creates a new {{.ServiceName}} in the database.
+func (r *{{.ServiceNameCamel}}RepositoryImpl) Create(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error) {
+	if err := {{.ServiceNameVar}}.Validate(); err != nil {
+		return nil, errors.New("INVALID_INPUT", "invalid {{.ServiceName}} data")
+	}
+
+	if err := r.db.WithContext(ctx).Create({{.ServiceNameVar}}).Error; err != nil {
+		return nil, errors.New("DATABASE_ERROR", fmt.Sprintf("failed to create {{.ServiceName}}: %v", err))
+	}
+
+	return {{.ServiceNameVar}}, nil
+}
+
+// GetByID retrieves a {{.ServiceName}} by ID.
+func (r *{{.ServiceNameCamel}}RepositoryImpl) GetByID(ctx context.Context, id string) (*model.{{.ServiceNameCamel}}, error) {
+	if id == "" {
+		return nil, errors.New("INVALID_INPUT", "{{.ServiceName}} ID is required")
+	}
+
+	var {{.ServiceNameVar}} model.{{.ServiceNameCamel}}
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&{{.ServiceNameVar}}).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errors.New("NOT_FOUND", "{{.ServiceName}} not found")
+		}
+		return nil, errors.New("DATABASE_ERROR", fmt.Sprintf("failed to get {{.ServiceName}}: %v", err))
+	}
+
+	return &{{.ServiceNameVar}}, nil
+}
+
+// Update updates an existing {{.ServiceName}}.
+func (r *{{.ServiceNameCamel}}RepositoryImpl) Update(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error) {
+	if err := {{.ServiceNameVar}}.Validate(); err != nil {
+		return nil, errors.New("INVALID_INPUT", "invalid {{.ServiceName}} data")
+	}
+
+	if {{.ServiceNameVar}}.ID == "" {
+		return nil, errors.New("INVALID_INPUT", "{{.ServiceName}} ID is required")
+	}
+
+	if err := r.db.WithContext(ctx).Save({{.ServiceNameVar}}).Error; err != nil {
+		return nil, errors.New("DATABASE_ERROR", fmt.Sprintf("failed to update {{.ServiceName}}: %v", err))
+	}
+
+	return {{.ServiceNameVar}}, nil
+}
+
+// Delete soft deletes a {{.ServiceName}} by ID.
+func (r *{{.ServiceNameCamel}}RepositoryImpl) Delete(ctx context.Context, id string) error {
+	if id == "" {
+		return errors.New("INVALID_INPUT", "{{.ServiceName}} ID is required")
+	}
+
+	if err := r.db.WithContext(ctx).Delete(&model.{{.ServiceNameCamel}}{}, "id = ?", id).Error; err != nil {
+		return errors.New("DATABASE_ERROR", fmt.Sprintf("failed to delete {{.ServiceName}}: %v", err))
+	}
+
+	return nil
+}
+
+// List retrieves {{.ServiceName}}s with pagination.
+func (r *{{.ServiceNameCamel}}RepositoryImpl) List(ctx context.Context, page, pageSize int) ([]*model.{{.ServiceNameCamel}}, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	var {{.ServiceNameVar}}s []*model.{{.ServiceNameCamel}}
+	var total int64
+
+	// Count total records
+	if err := r.db.WithContext(ctx).Model(&model.{{.ServiceNameCamel}}{}).Count(&total).Error; err != nil {
+		return nil, 0, errors.New("DATABASE_ERROR", fmt.Sprintf("failed to count {{.ServiceName}}s: %v", err))
+	}
+
+	// Get paginated records
+	offset := (page - 1) * pageSize
+	if err := r.db.WithContext(ctx).
+		Offset(offset).
+		Limit(pageSize).
+		Order("created_at DESC").
+		Find(&{{.ServiceNameVar}}s).Error; err != nil {
+		return nil, 0, errors.New("DATABASE_ERROR", fmt.Sprintf("failed to list {{.ServiceName}}s: %v", err))
+	}
+
+	return {{.ServiceNameVar}}s, total, nil
+}

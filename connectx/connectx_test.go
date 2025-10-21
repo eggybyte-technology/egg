@@ -38,10 +38,6 @@ func TestDefaultHeaderMapping(t *testing.T) {
 		t.Errorf("UserName = %v, want X-User-Name", mapping.UserName)
 	}
 
-	if mapping.Tenant != "X-User-Tenant" {
-		t.Errorf("Tenant = %v, want X-User-Tenant", mapping.Tenant)
-	}
-
 	if mapping.Roles != "X-User-Roles" {
 		t.Errorf("Roles = %v, want X-User-Roles", mapping.Roles)
 	}
@@ -82,7 +78,6 @@ func TestDefaultInterceptors(t *testing.T) {
 					InternalToken: "X-Custom-Token",
 					UserID:        "X-Custom-User-Id",
 					UserName:      "X-Custom-User-Name",
-					Tenant:        "X-Custom-Tenant",
 					Roles:         "X-Custom-Roles",
 					RealIP:        "X-Custom-Real-IP",
 					ForwardedFor:  "X-Custom-Forwarded-For",

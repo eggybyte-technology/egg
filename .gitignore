@@ -1,96 +1,69 @@
-# Binaries for programs and plugins
+# Generated code
+gen/
+
+# Build outputs
+dist/
+build/*.tar.gz
+build/*.zip
+
+# Go workspace
+go.work
+go.work.sum
+
+# Go build artifacts
 *.exe
-*.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
-
-# Output of the go coverage tool
 *.out
-coverage.html
-coverage.out
 
 # Dependency directories
 vendor/
 
-# Go workspace file
-go.work.sum
-
-# Build artifacts
-bin/
-dist/
-build/
-
-# CLI binaries
-cli/egg
-cli/egg-new
-
-# Example binaries
-examples/minimal-connect-service/minimal-connect-service
-test-cli-project/backend/user-service/server
-test-cli-project/backend/*/server
-example-project/backend/*/server
-
-# IDE files
+# IDE and editor files
 .vscode/
 .idea/
-.cursor/
 *.swp
 *.swo
 *~
-
-# OS generated files
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Logs
-*.log
-logs/
-
-# Temporary files
-tmp/
-temp/
-.tmp/
 
 # Environment files
 .env
 .env.local
 .env.*.local
 
-# Database files
-*.db
-*.sqlite
-*.sqlite3
+# Test coverage
+*.coverprofile
+coverage.html
 
-# Configuration files with sensitive data
-config.local.*
-secrets.*
+# Temporary files
+tmp/
+temp/
+*.tmp
 
 # Docker
 .dockerignore
 
-# Kubernetes
-kustomization.yaml.local
+# Kubernetes secrets
+deploy/secrets/
+*.secret.yaml
 
-# Generated files
-*.pb.go
-*.pb.gw.go
-*_grpc.pb.go
-*.connect.go
-*.swagger.json
-gen/
+# Logs
+*.log
+logs/
 
-# Profiling
-*.prof
-*.pprof
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+.fvm/
 
-# Air (live reload) config
-.air.toml
+# Node modules (if using any JS tooling)
+node_modules/
+

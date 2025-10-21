@@ -1,0 +1,24 @@
+Build Information
+=================
+Build Time: 2025-10-21 18:07:19 UTC
+Git Commit: f900fa45458b317bbc3b2aaf35ccb1c96a571e73
+Git Branch: main
+Go Version: go version go1.25.1 darwin/arm64
+OS: Darwin
+Arch: arm64
+
+Modules:
+github.com/eggybyte-technology/egg/cli
+github.com/eggybyte-technology/egg/configx
+github.com/eggybyte-technology/egg/connectx
+github.com/eggybyte-technology/egg/core
+github.com/eggybyte-technology/egg/examples/minimal-connect-service
+github.com/eggybyte-technology/egg/examples/user-service
+github.com/eggybyte-technology/egg/k8sx
+github.com/eggybyte-technology/egg/obsx
+github.com/eggybyte-technology/egg/runtimex
+github.com/eggybyte-technology/egg/storex
+
+Binaries:
+-rwxr-xr-x@ 1 fengguangyao  staff  19272258 Oct 22 02:07 /Users/fengguangyao/eggybyte/projects/go/egg/bin/minimal-connect-service
+-rwxr-xr-x@ 1 fengguangyao  staff  75259426 Oct 22 02:07 /Users/fengguangyao/eggybyte/projects/go/egg/bin/user-service

@@ -6,8 +6,10 @@ use (
 	./connectx
 	./core
 	./examples/minimal-connect-service
+	./examples/user-service
 	./k8sx
 	./obsx
 	./runtimex
+	./servicex
 	./storex
 )

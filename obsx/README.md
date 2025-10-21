@@ -1,397 +1,597 @@
-# ObsX Module
+# 📊 ObsX Package
 
-<div align="center">
+The `obsx` package provides OpenTelemetry integration for the EggyByte framework.
 
-**OpenTelemetry observability provider for Egg services**
+## Overview
 
-[![Go Version](https://img.shields.io/badge/Go-1.21%2B-blue.svg)](https://golang.org/dl/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+This package offers a comprehensive observability solution with metrics, tracing, and logging integration using OpenTelemetry. It's designed to be production-ready with minimal configuration and maximum observability.
 
-</div>
+## Features
 
-## 📦 Overview
+- **OpenTelemetry integration** - Full OpenTelemetry support
+- **Metrics collection** - Prometheus-compatible metrics
+- **Distributed tracing** - Request tracing across services
+- **Logging integration** - Structured logging with trace correlation
+- **Zero configuration** - Works out of the box
+- **Production ready** - Optimized for production environments
 
-The `obsx` module provides OpenTelemetry observability provider for Egg services. It offers tracing, metrics, and logging integration with OTLP exporters and runtime metrics collection.
-
-## ✨ Features
-
-- 📊 **OpenTelemetry Integration** - Full OpenTelemetry support
-- 🔍 **Distributed Tracing** - Request tracing across services
-- 📈 **Metrics Collection** - Prometheus metrics
-- 📝 **Structured Logging** - Context-aware logging
-- 🌐 **OTLP Exporters** - OpenTelemetry Protocol exporters
-- ⚡ **Runtime Metrics** - Automatic runtime metrics collection
-- 🔧 **Easy Configuration** - Simple setup and configuration
-- 🎯 **Service Integration** - Seamless integration with Egg services
-
-## 🏗️ Architecture
-
-```
-obsx/
-├── obsx.go        # Main observability provider
-└── obsx_test.go   # Tests
-```
-
-## 🚀 Quick Start
-
-### Installation
-
-```bash
-go get github.com/eggybyte-technology/egg/obsx@latest
-```
-
-### Basic Usage
+## Quick Start
 
 ```go
-package main
-
-import (
-    "context"
-    "time"
-
-    "github.com/eggybyte-technology/egg/obsx"
-    "github.com/eggybyte-technology/egg/core/log"
-)
+import "github.com/eggybyte-technology/egg/obsx"
 
 func main() {
-    // Create logger
-    logger := &YourLogger{} // Implement log.Logger interface
-
-    // Create OpenTelemetry provider
-    ctx := context.Background()
-    otel, err := obsx.NewProvider(ctx, obsx.Options{
-        ServiceName:    "my-service",
+    // Initialize OpenTelemetry
+    provider, err := obsx.NewProvider(ctx, logger, obsx.Options{
+        ServiceName:    "user-service",
         ServiceVersion: "1.0.0",
-        Environment:   "production",
-        OTLPEndpoint:  "http://otel-collector:4317",
+        Environment:    "production",
     })
     if err != nil {
-        log.Fatal("Failed to create OpenTelemetry provider:", err)
+        log.Fatal(err)
     }
-    defer otel.Shutdown(ctx)
-
-    // Your application logic
-    runApplication(ctx, otel)
+    defer provider.Shutdown(ctx)
+    
+    // Use in Connect interceptors
+    interceptors := connectx.DefaultInterceptors(connectx.Options{
+        Logger: logger,
+        Otel:   provider,
+    })
+    
+    // Create Connect handler
+    path, handler := userv1connect.NewUserServiceHandler(
+        service,
+        connect.WithInterceptors(interceptors...),
+    )
+    
+    // Register handler
+    mux.Handle(path, handler)
 }
 ```
 
-## 📖 API Reference
+## API Reference
 
-### Provider Options
+### Types
+
+#### Provider
+
+```go
+type Provider struct {
+    TracerProvider trace.TracerProvider
+    MeterProvider  metric.MeterProvider
+    Logger         log.Logger
+}
+
+// Shutdown shuts down the provider
+func (p *Provider) Shutdown(ctx context.Context) error
+
+// GetTracer returns a tracer
+func (p *Provider) GetTracer(name string) trace.Tracer
+
+// GetMeter returns a meter
+func (p *Provider) GetMeter(name string) metric.Meter
+```
+
+#### Options
 
 ```go
 type Options struct {
-    ServiceName    string
-    ServiceVersion string
-    Environment    string
-    OTLPEndpoint   string
-    OTLPHeaders    map[string]string
-    SamplingRate   float64
-    MetricsPort    string
-    LogLevel       string
-}
-
-type Provider interface {
-    Shutdown(ctx context.Context) error
-    Tracer(name string) trace.Tracer
-    Meter(name string) metric.Meter
-    Logger() log.Logger
+    ServiceName    string        // Service name for tracing
+    ServiceVersion string        // Service version
+    Environment    string        // Environment (dev, staging, production)
+    Endpoint       string        // OTLP endpoint
+    Insecure       bool          // Use insecure connection
+    Headers        map[string]string // Additional headers
+    Timeout        time.Duration // Export timeout
+    BatchTimeout   time.Duration // Batch timeout
+    BatchSize      int           // Batch size
 }
 ```
 
-### Main Functions
+### Functions
 
 ```go
 // NewProvider creates a new OpenTelemetry provider
-func NewProvider(ctx context.Context, opts Options) (Provider, error)
+func NewProvider(ctx context.Context, logger log.Logger, opts Options) (*Provider, error)
 
-// DefaultProvider creates a provider with default options
-func DefaultProvider(ctx context.Context, serviceName string) (Provider, error)
+// NewNoOpProvider creates a no-op provider for testing
+func NewNoOpProvider() *Provider
+
+// NewTracer creates a new tracer
+func NewTracer(provider *Provider, name string) trace.Tracer
+
+// NewMeter creates a new meter
+func NewMeter(provider *Provider, name string) metric.Meter
 ```
 
-## 🔧 Configuration
+## Usage Examples
 
-### Environment Variables
-
-```bash
-# Service identification
-export SERVICE_NAME="my-service"
-export SERVICE_VERSION="1.0.0"
-export ENV="production"
-
-# OpenTelemetry
-export OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector:4317"
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer token"
-export OTEL_SAMPLING_RATE="1.0"
-
-# Metrics
-export METRICS_PORT=":9091"
-
-# Logging
-export LOG_LEVEL="info"
-```
-
-### Configuration File
-
-```yaml
-# config.yaml
-service_name: "my-service"
-service_version: "1.0.0"
-environment: "production"
-
-otel_exporter_otlp_endpoint: "http://otel-collector:4317"
-otel_exporter_otlp_headers:
-  Authorization: "Bearer token"
-otel_sampling_rate: 1.0
-
-metrics_port: ":9091"
-log_level: "info"
-```
-
-## 🛠️ Advanced Usage
-
-### Custom Tracer
+### Basic Setup
 
 ```go
 func main() {
-    // Create provider
-    otel, err := obsx.NewProvider(ctx, obsx.Options{
-        ServiceName:    "my-service",
+    // Initialize OpenTelemetry
+    provider, err := obsx.NewProvider(ctx, logger, obsx.Options{
+        ServiceName:    "user-service",
         ServiceVersion: "1.0.0",
-        OTLPEndpoint:  "http://otel-collector:4317",
+        Environment:    "production",
     })
     if err != nil {
-        log.Fatal("Failed to create provider:", err)
+        log.Fatal(err)
     }
-    defer otel.Shutdown(ctx)
+    defer provider.Shutdown(ctx)
+    
+    // Use in Connect interceptors
+    interceptors := connectx.DefaultInterceptors(connectx.Options{
+        Logger: logger,
+        Otel:   provider,
+    })
+    
+    // Create Connect handler
+    path, handler := userv1connect.NewUserServiceHandler(
+        service,
+        connect.WithInterceptors(interceptors...),
+    )
+    
+    // Register handler
+    mux.Handle(path, handler)
+}
+```
 
+### With Custom Configuration
+
+```go
+func main() {
+    // Initialize OpenTelemetry with custom configuration
+    provider, err := obsx.NewProvider(ctx, logger, obsx.Options{
+        ServiceName:    "user-service",
+        ServiceVersion: "1.0.0",
+        Environment:    "production",
+        Endpoint:       "otel-collector:4317",
+        Insecure:       true,
+        Headers: map[string]string{
+            "Authorization": "Bearer token",
+        },
+        Timeout:      10 * time.Second,
+        BatchTimeout: 5 * time.Second,
+        BatchSize:    512,
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer provider.Shutdown(ctx)
+    
+    // Use provider
+    useProvider(provider)
+}
+```
+
+### Manual Tracing
+
+```go
+func (s *UserService) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
     // Get tracer
-    tracer := otel.Tracer("my-service")
-
-    // Create span
-    ctx, span := tracer.Start(ctx, "operation")
+    tracer := s.provider.GetTracer("user-service")
+    
+    // Start span
+    ctx, span := tracer.Start(ctx, "GetUser")
     defer span.End()
-
+    
     // Add attributes
     span.SetAttributes(
-        attribute.String("user.id", "user123"),
-        attribute.Int("request.id", 456),
+        attribute.String("user.id", req.Msg.UserId),
+        attribute.String("service.name", "user-service"),
     )
+    
+    // Business logic
+    user, err := s.repo.GetUser(ctx, req.Msg.UserId)
+    if err != nil {
+        span.RecordError(err)
+        span.SetStatus(codes.Error, err.Error())
+        return nil, err
+    }
+    
+    // Add result attributes
+    span.SetAttributes(
+        attribute.String("user.name", user.Name),
+        attribute.String("user.email", user.Email),
+    )
+    
+    return connect.NewResponse(&GetUserResponse{User: user}), nil
+}
+```
 
-    // Your business logic
-    result, err := performOperation(ctx)
+### Manual Metrics
+
+```go
+func (s *UserService) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
+    // Get meter
+    meter := s.provider.GetMeter("user-service")
+    
+    // Create counters
+    requestCounter, _ := meter.Int64Counter("requests_total")
+    durationHistogram, _ := meter.Int64Histogram("request_duration_ms")
+    
+    // Record metrics
+    start := time.Now()
+    requestCounter.Add(ctx, 1, attribute.String("method", "GetUser"))
+    
+    defer func() {
+        duration := time.Since(start).Milliseconds()
+        durationHistogram.Record(ctx, duration, attribute.String("method", "GetUser"))
+    }()
+    
+    // Business logic
+    user, err := s.repo.GetUser(ctx, req.Msg.UserId)
+    if err != nil {
+        requestCounter.Add(ctx, 1, attribute.String("method", "GetUser"), attribute.String("status", "error"))
+        return nil, err
+    }
+    
+    requestCounter.Add(ctx, 1, attribute.String("method", "GetUser"), attribute.String("status", "success"))
+    return connect.NewResponse(&GetUserResponse{User: user}), nil
+}
+```
+
+### Database Tracing
+
+```go
+func (r *UserRepository) GetUser(ctx context.Context, userID string) (*User, error) {
+    // Get tracer
+    tracer := r.provider.GetTracer("user-repository")
+    
+    // Start span
+    ctx, span := tracer.Start(ctx, "GetUser")
+    defer span.End()
+    
+    // Add database attributes
+    span.SetAttributes(
+        attribute.String("db.system", "mysql"),
+        attribute.String("db.operation", "SELECT"),
+        attribute.String("db.table", "users"),
+        attribute.String("user.id", userID),
+    )
+    
+    // Execute query
+    var user User
+    err := r.db.WithContext(ctx).Where("id = ?", userID).First(&user).Error
+    if err != nil {
+        span.RecordError(err)
+        span.SetStatus(codes.Error, err.Error())
+        return nil, err
+    }
+    
+    // Add result attributes
+    span.SetAttributes(
+        attribute.String("user.name", user.Name),
+        attribute.String("user.email", user.Email),
+    )
+    
+    return &user, nil
+}
+```
+
+### External Service Tracing
+
+```go
+func (c *EmailClient) SendEmail(ctx context.Context, email *Email) error {
+    // Get tracer
+    tracer := c.provider.GetTracer("email-client")
+    
+    // Start span
+    ctx, span := tracer.Start(ctx, "SendEmail")
+    defer span.End()
+    
+    // Add external service attributes
+    span.SetAttributes(
+        attribute.String("http.method", "POST"),
+        attribute.String("http.url", c.endpoint),
+        attribute.String("email.to", email.To),
+        attribute.String("email.subject", email.Subject),
+    )
+    
+    // Make HTTP request
+    req, err := http.NewRequestWithContext(ctx, "POST", c.endpoint, bytes.NewBuffer(email.Body))
     if err != nil {
         span.RecordError(err)
         span.SetStatus(codes.Error, err.Error())
         return err
     }
-
-    span.SetAttributes(attribute.String("result", result))
+    
+    resp, err := c.client.Do(req)
+    if err != nil {
+        span.RecordError(err)
+        span.SetStatus(codes.Error, err.Error())
+        return err
+    }
+    defer resp.Body.Close()
+    
+    // Add response attributes
+    span.SetAttributes(
+        attribute.Int("http.status_code", resp.StatusCode),
+    )
+    
+    if resp.StatusCode >= 400 {
+        err := errors.New("EXTERNAL_SERVICE_ERROR", "email service returned error")
+        span.RecordError(err)
+        span.SetStatus(codes.Error, err.Error())
+        return err
+    }
+    
     return nil
 }
 ```
 
-### Custom Metrics
+## Configuration
+
+### Environment Variables
+
+```bash
+# OpenTelemetry configuration
+OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+OTEL_EXPORTER_OTLP_INSECURE=true
+OTEL_SERVICE_NAME=user-service
+OTEL_SERVICE_VERSION=1.0.0
+OTEL_RESOURCE_ATTRIBUTES=environment=production
+
+# Custom configuration
+OBSX_TIMEOUT=10s
+OBSX_BATCH_TIMEOUT=5s
+OBSX_BATCH_SIZE=512
+```
+
+### Configuration Integration
 
 ```go
+type AppConfig struct {
+    configx.BaseConfig
+    
+    // Observability configuration
+    Observability ObservabilityConfig
+}
+
+type ObservabilityConfig struct {
+    Enabled       bool              `env:"OBSX_ENABLED" default:"true"`
+    Endpoint      string            `env:"OTEL_EXPORTER_OTLP_ENDPOINT" default:"otel-collector:4317"`
+    Insecure      bool              `env:"OTEL_EXPORTER_OTLP_INSECURE" default:"true"`
+    Timeout       time.Duration     `env:"OBSX_TIMEOUT" default:"10s"`
+    BatchTimeout  time.Duration     `env:"OBSX_BATCH_TIMEOUT" default:"5s"`
+    BatchSize     int               `env:"OBSX_BATCH_SIZE" default:"512"`
+}
+
 func main() {
-    // Create provider
-    otel, err := obsx.NewProvider(ctx, obsx.Options{
-        ServiceName:    "my-service",
-        ServiceVersion: "1.0.0",
-        OTLPEndpoint:  "http://otel-collector:4317",
+    // Load configuration
+    var cfg AppConfig
+    if err := configManager.Bind(&cfg); err != nil {
+        log.Fatal(err)
+    }
+    
+    // Initialize OpenTelemetry
+    var provider *obsx.Provider
+    if cfg.Observability.Enabled {
+        var err error
+        provider, err = obsx.NewProvider(ctx, logger, obsx.Options{
+            ServiceName:    cfg.ServiceName,
+            ServiceVersion: cfg.ServiceVersion,
+            Environment:    cfg.Env,
+            Endpoint:       cfg.Observability.Endpoint,
+            Insecure:       cfg.Observability.Insecure,
+            Timeout:        cfg.Observability.Timeout,
+            BatchTimeout:   cfg.Observability.BatchTimeout,
+            BatchSize:      cfg.Observability.BatchSize,
+        })
+        if err != nil {
+            log.Fatal(err)
+        }
+        defer provider.Shutdown(ctx)
+    }
+    
+    // Use provider
+    useProvider(provider)
+}
+```
+
+## Testing
+
+```go
+func TestObservability(t *testing.T) {
+    // Create no-op provider for testing
+    provider := obsx.NewNoOpProvider()
+    
+    // Test tracer
+    tracer := provider.GetTracer("test-service")
+    ctx, span := tracer.Start(context.Background(), "TestSpan")
+    span.End()
+    
+    // Test meter
+    meter := provider.GetMeter("test-service")
+    counter, _ := meter.Int64Counter("test_counter")
+    counter.Add(ctx, 1)
+    
+    // Test shutdown
+    err := provider.Shutdown(ctx)
+    assert.NoError(t, err)
+}
+
+func TestServiceWithObservability(t *testing.T) {
+    // Create test provider
+    provider := obsx.NewNoOpProvider()
+    
+    // Create test service
+    service := &TestUserService{provider: provider}
+    
+    // Test service method
+    resp, err := service.GetUser(context.Background(), &connect.Request[GetUserRequest]{
+        Msg: &GetUserRequest{UserId: "test-user"},
     })
-    if err != nil {
-        log.Fatal("Failed to create provider:", err)
-    }
-    defer otel.Shutdown(ctx)
+    
+    assert.NoError(t, err)
+    assert.NotNil(t, resp)
+}
 
-    // Get meter
-    meter := otel.Meter("my-service")
+type TestUserService struct {
+    provider *obsx.Provider
+}
 
-    // Create counter
-    counter, err := meter.Int64Counter(
-        "requests_total",
-        metric.WithDescription("Total number of requests"),
+func (s *TestUserService) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
+    // Get tracer
+    tracer := s.provider.GetTracer("test-service")
+    
+    // Start span
+    ctx, span := tracer.Start(ctx, "GetUser")
+    defer span.End()
+    
+    // Add attributes
+    span.SetAttributes(attribute.String("user.id", req.Msg.UserId))
+    
+    // Return test response
+    return connect.NewResponse(&GetUserResponse{
+        User: &User{Id: req.Msg.UserId, Name: "Test User"},
+    }), nil
+}
+```
+
+## Best Practices
+
+### 1. Use Structured Attributes
+
+```go
+func (s *UserService) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
+    tracer := s.provider.GetTracer("user-service")
+    ctx, span := tracer.Start(ctx, "GetUser")
+    defer span.End()
+    
+    // Use structured attributes
+    span.SetAttributes(
+        attribute.String("user.id", req.Msg.UserId),
+        attribute.String("service.name", "user-service"),
+        attribute.String("service.version", "1.0.0"),
     )
+    
+    // Business logic
+    user, err := s.repo.GetUser(ctx, req.Msg.UserId)
     if err != nil {
-        log.Fatal("Failed to create counter:", err)
+        span.RecordError(err)
+        span.SetStatus(codes.Error, err.Error())
+        return nil, err
     }
-
-    // Create histogram
-    histogram, err := meter.Float64Histogram(
-        "request_duration_seconds",
-        metric.WithDescription("Request duration in seconds"),
+    
+    // Add result attributes
+    span.SetAttributes(
+        attribute.String("user.name", user.Name),
+        attribute.String("user.email", user.Email),
     )
-    if err != nil {
-        log.Fatal("Failed to create histogram:", err)
-    }
+    
+    return connect.NewResponse(&GetUserResponse{User: user}), nil
+}
+```
 
+### 2. Record Errors Properly
+
+```go
+func (s *UserService) CreateUser(ctx context.Context, req *connect.Request[CreateUserRequest]) (*connect.Response[CreateUserResponse], error) {
+    tracer := s.provider.GetTracer("user-service")
+    ctx, span := tracer.Start(ctx, "CreateUser")
+    defer span.End()
+    
+    // Business logic
+    user, err := s.repo.CreateUser(ctx, req.Msg.User)
+    if err != nil {
+        // Record error with context
+        span.RecordError(err)
+        span.SetStatus(codes.Error, err.Error())
+        span.SetAttributes(
+            attribute.String("error.type", "database_error"),
+            attribute.String("error.message", err.Error()),
+        )
+        return nil, err
+    }
+    
+    return connect.NewResponse(&CreateUserResponse{User: user}), nil
+}
+```
+
+### 3. Use Metrics for Business Logic
+
+```go
+func (s *UserService) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
+    meter := s.provider.GetMeter("user-service")
+    
+    // Create counters
+    requestCounter, _ := meter.Int64Counter("requests_total")
+    durationHistogram, _ := meter.Int64Histogram("request_duration_ms")
+    
     // Record metrics
-    counter.Add(ctx, 1, metric.WithAttributes(
-        attribute.String("method", "GET"),
-        attribute.String("status", "200"),
-    ))
-
-    histogram.Record(ctx, 0.1, metric.WithAttributes(
-        attribute.String("method", "GET"),
-        attribute.String("status", "200"),
-    ))
+    start := time.Now()
+    requestCounter.Add(ctx, 1, attribute.String("method", "GetUser"))
+    
+    defer func() {
+        duration := time.Since(start).Milliseconds()
+        durationHistogram.Record(ctx, duration, attribute.String("method", "GetUser"))
+    }()
+    
+    // Business logic
+    user, err := s.repo.GetUser(ctx, req.Msg.UserId)
+    if err != nil {
+        requestCounter.Add(ctx, 1, attribute.String("method", "GetUser"), attribute.String("status", "error"))
+        return nil, err
+    }
+    
+    requestCounter.Add(ctx, 1, attribute.String("method", "GetUser"), attribute.String("status", "success"))
+    return connect.NewResponse(&GetUserResponse{User: user}), nil
 }
 ```
 
-### Custom Logger
+### 4. Handle Provider Lifecycle
 
 ```go
 func main() {
-    // Create provider
-    otel, err := obsx.NewProvider(ctx, obsx.Options{
-        ServiceName:    "my-service",
+    // Initialize OpenTelemetry
+    provider, err := obsx.NewProvider(ctx, logger, obsx.Options{
+        ServiceName:    "user-service",
         ServiceVersion: "1.0.0",
-        OTLPEndpoint:  "http://otel-collector:4317",
+        Environment:    "production",
     })
     if err != nil {
-        log.Fatal("Failed to create provider:", err)
+        log.Fatal(err)
     }
-    defer otel.Shutdown(ctx)
-
-    // Get logger
-    logger := otel.Logger()
-
-    // Log with context
-    logger.Log(ctx, log.LevelInfo, "Processing request",
-        log.Attr{Key: "user.id", Value: "user123"},
-        log.Attr{Key: "request.id", Value: "req456"},
-    )
+    
+    // Ensure proper shutdown
+    defer func() {
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        
+        if err := provider.Shutdown(ctx); err != nil {
+            logger.Error(err, "Failed to shutdown OpenTelemetry provider")
+        }
+    }()
+    
+    // Use provider
+    useProvider(provider)
 }
 ```
 
-## 🔧 Integration with Other Modules
+## Thread Safety
 
-### ConnectX Integration
+All functions in this package are safe for concurrent use. The OpenTelemetry provider is designed to handle concurrent access safely.
 
-```go
-func main() {
-    // Create observability provider
-    otel, err := obsx.NewProvider(ctx, obsx.Options{
-        ServiceName:    "my-service",
-        ServiceVersion: "1.0.0",
-        OTLPEndpoint:  "http://otel-collector:4317",
-    })
-    if err != nil {
-        log.Fatal("Failed to create provider:", err)
-    }
-    defer otel.Shutdown(ctx)
+## Dependencies
 
-    // Create Connect interceptors with observability
-    interceptors := connectx.DefaultInterceptors(connectx.Options{
-        Logger: otel.Logger(),
-        Otel:   otel,
-    })
+- **Go 1.21+** required
+- **OpenTelemetry Go** - Core observability
+- **OpenTelemetry OTLP** - Export functionality
+- **Standard library** - Core functionality
 
-    // Use interceptors in Connect service
-    handler := NewMyServiceHandler(service, connect.WithInterceptors(interceptors...))
-}
-```
+## Version Compatibility
 
-### RuntimeX Integration
+- **Go 1.21+** required
+- **API Stability**: Evolving (L3 module)
+- **Breaking Changes**: Possible in minor versions
 
-```go
-func main() {
-    // Create observability provider
-    otel, err := obsx.NewProvider(ctx, obsx.Options{
-        ServiceName:    "my-service",
-        ServiceVersion: "1.0.0",
-        OTLPEndpoint:  "http://otel-collector:4317",
-    })
-    if err != nil {
-        log.Fatal("Failed to create provider:", err)
-    }
-    defer otel.Shutdown(ctx)
+## Contributing
 
-    // Configure runtime with observability
-    opts := runtimex.Options{
-        Logger: otel.Logger(),
-        HTTP: &runtimex.HTTPOptions{
-            Addr: ":8080",
-            H2C:  true,
-            Mux:  mux,
-        },
-        Health:  &runtimex.Endpoint{Addr: ":8081"},
-        Metrics: &runtimex.Endpoint{Addr: ":9091"},
-    }
+Contributions are welcome! Please see the main project [Contributing Guide](../CONTRIBUTING.md) for details.
 
-    // Run service
-    runtimex.Run(ctx, nil, opts)
-}
-```
+## License
 
-## 🧪 Testing
-
-Run tests:
-
-```bash
-go test ./...
-```
-
-Run tests with coverage:
-
-```bash
-go test -cover ./...
-```
-
-## 📈 Test Coverage
-
-| Component | Coverage |
-|-----------|----------|
-| ObsX | Good |
-
-## 🔍 Troubleshooting
-
-### Common Issues
-
-1. **OTLP Endpoint Not Reachable**
-   ```bash
-   # Check if OTLP endpoint is accessible
-   curl -v http://otel-collector:4317/v1/traces
-   ```
-
-2. **Metrics Not Collected**
-   ```go
-   // Ensure metrics port is configured
-   otel, err := obsx.NewProvider(ctx, obsx.Options{
-       ServiceName:    "my-service",
-       ServiceVersion: "1.0.0",
-       MetricsPort:   ":9091",
-   })
-   ```
-
-3. **Tracing Not Working**
-   ```go
-   // Check sampling rate
-   otel, err := obsx.NewProvider(ctx, obsx.Options{
-       ServiceName:    "my-service",
-       ServiceVersion: "1.0.0",
-       SamplingRate:  1.0, // 100% sampling
-   })
-   ```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Create a Pull Request
-
-## 📄 License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](../../LICENSE) file for details.
-
----
-
-<div align="center">
-
-**Built with ❤️ by EggyByte Technology**
-
-</div>
+This package is part of the EggyByte framework and is licensed under the MIT License.

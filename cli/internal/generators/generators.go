@@ -267,6 +267,8 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 	internalDirs := []string{
 		filepath.Join(serviceDir, "internal", "config"),
 		filepath.Join(serviceDir, "internal", "handler"),
+		filepath.Join(serviceDir, "internal", "model"),
+		filepath.Join(serviceDir, "internal", "repository"),
 		filepath.Join(serviceDir, "internal", "service"),
 	}
 	for _, dir := range internalDirs {
@@ -303,11 +305,13 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 
 		// Add replace directives to use local modules directly
 		replaceDeps := map[string]string{
-			"github.com/eggybyte-technology/egg/runtimex": filepath.Join(eggRoot, "runtimex"),
-			"github.com/eggybyte-technology/egg/connectx": filepath.Join(eggRoot, "connectx"),
-			"github.com/eggybyte-technology/egg/configx":  filepath.Join(eggRoot, "configx"),
-			"github.com/eggybyte-technology/egg/obsx":     filepath.Join(eggRoot, "obsx"),
-			"github.com/eggybyte-technology/egg/core":     filepath.Join(eggRoot, "core"),
+			"github.com/eggybyte-technology/egg/bootstrap": filepath.Join(eggRoot, "bootstrap"),
+			"github.com/eggybyte-technology/egg/runtimex":  filepath.Join(eggRoot, "runtimex"),
+			"github.com/eggybyte-technology/egg/connectx":  filepath.Join(eggRoot, "connectx"),
+			"github.com/eggybyte-technology/egg/configx":   filepath.Join(eggRoot, "configx"),
+			"github.com/eggybyte-technology/egg/obsx":      filepath.Join(eggRoot, "obsx"),
+			"github.com/eggybyte-technology/egg/core":      filepath.Join(eggRoot, "core"),
+			"github.com/eggybyte-technology/egg/storex":    filepath.Join(eggRoot, "storex"),
 		}
 
 		for modulePath, localPath := range replaceDeps {
@@ -316,22 +320,46 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 			}
 		}
 
-		// Dependencies will be added automatically by go mod tidy when files are generated
+		// Add required dependencies explicitly
+		requiredDeps := []string{
+			"github.com/eggybyte-technology/egg/bootstrap@latest",
+			"github.com/eggybyte-technology/egg/runtimex@latest",
+			"github.com/eggybyte-technology/egg/connectx@latest",
+			"github.com/eggybyte-technology/egg/configx@latest",
+			"github.com/eggybyte-technology/egg/obsx@latest",
+			"github.com/eggybyte-technology/egg/core@latest",
+			"github.com/eggybyte-technology/egg/storex@latest",
+			"connectrpc.com/connect@latest",
+			"gorm.io/gorm@latest",
+			"gorm.io/driver/mysql@latest",
+			"github.com/google/uuid@latest",
+		}
+		for _, dep := range requiredDeps {
+			if _, err := serviceRunner.Go(ctx, "get", dep); err != nil {
+				return fmt.Errorf("failed to add dependency %s: %w", dep, err)
+			}
+		}
 	} else {
 		// Use published modules (when available)
 		ui.Info("Using published egg modules...")
-		// Note: This will be enabled when egg modules are published
-		// eggDeps := []string{
-		// 	"github.com/eggybyte-technology/egg/runtimex@latest",
-		// 	"github.com/eggybyte-technology/egg/connectx@latest",
-		// 	"github.com/eggybyte-technology/egg/configx@latest",
-		// 	"github.com/eggybyte-technology/egg/obsx@latest",
-		// }
-		// for _, dep := range eggDeps {
-		// 	if _, err := serviceRunner.Go(ctx, "get", dep); err != nil {
-		// 		return fmt.Errorf("failed to add dependency %s: %w", dep, err)
-		// 	}
-		// }
+		eggDeps := []string{
+			"github.com/eggybyte-technology/egg/bootstrap@latest",
+			"github.com/eggybyte-technology/egg/runtimex@latest",
+			"github.com/eggybyte-technology/egg/connectx@latest",
+			"github.com/eggybyte-technology/egg/configx@latest",
+			"github.com/eggybyte-technology/egg/obsx@latest",
+			"github.com/eggybyte-technology/egg/core@latest",
+			"github.com/eggybyte-technology/egg/storex@latest",
+			"connectrpc.com/connect@latest",
+			"gorm.io/gorm@latest",
+			"gorm.io/driver/mysql@latest",
+			"github.com/google/uuid@latest",
+		}
+		for _, dep := range eggDeps {
+			if _, err := serviceRunner.Go(ctx, "get", dep); err != nil {
+				return fmt.Errorf("failed to add dependency %s: %w", dep, err)
+			}
+		}
 	}
 
 	// Generate service files first
@@ -370,8 +398,10 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 //   - Template-based file generation
 func (g *BackendGenerator) generateBackendFiles(name string, serviceConfig configschema.BackendService, config *configschema.Config) error {
 	data := map[string]interface{}{
-		"ModulePrefix": config.ModulePrefix,
-		"ServiceName":  name,
+		"ModulePrefix":     config.ModulePrefix,
+		"ServiceName":      name,
+		"ServiceNameCamel": camelCaseServiceName(name),
+		"ServiceNameVar":   serviceNameToVar(name),
 	}
 
 	// Generate main.go from template
@@ -408,6 +438,24 @@ func (g *BackendGenerator) generateBackendFiles(name string, serviceConfig confi
 	}
 	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "handler", "handler.go"), handlerGo, 0644); err != nil {
 		return fmt.Errorf("failed to write handler.go: %w", err)
+	}
+
+	// Generate model from template
+	modelGo, err := g.loader.LoadAndRender("backend/model.go.tmpl", data)
+	if err != nil {
+		return fmt.Errorf("failed to load and render model.go template: %w", err)
+	}
+	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "model", "model.go"), modelGo, 0644); err != nil {
+		return fmt.Errorf("failed to write model.go: %w", err)
+	}
+
+	// Generate repository from template
+	repositoryGo, err := g.loader.LoadAndRender("backend/repository.go.tmpl", data)
+	if err != nil {
+		return fmt.Errorf("failed to load and render repository.go template: %w", err)
+	}
+	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "repository", "repository.go"), repositoryGo, 0644); err != nil {
+		return fmt.Errorf("failed to write repository.go: %w", err)
 	}
 
 	return nil
@@ -500,6 +548,50 @@ func (g *FrontendGenerator) Create(ctx context.Context, name string, platforms [
 
 	ui.Success("Frontend service created: %s", dartPackageName)
 	ui.Info("To use a specific Flutter version, use FVM: https://fvm.app")
+	return nil
+}
+
+// GenerateCompose generates docker-compose.yaml for the project.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - config: Project configuration
+//
+// Returns:
+//   - error: Generation error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Template-based file generation
+func (g *BackendGenerator) GenerateCompose(ctx context.Context, config *configschema.Config) error {
+	ui.Info("Generating docker-compose.yaml...")
+
+	data := map[string]interface{}{
+		"ProjectName":     config.ProjectName,
+		"BackendServices": config.Backend,
+	}
+
+	// Generate docker-compose.yaml from template
+	composeYAML, err := g.loader.LoadAndRender("compose/docker-compose.yaml.tmpl", data)
+	if err != nil {
+		return fmt.Errorf("failed to load and render docker-compose.yaml template: %w", err)
+	}
+	if err := g.fs.WriteFile("docker-compose.yaml", composeYAML, 0644); err != nil {
+		return fmt.Errorf("failed to write docker-compose.yaml: %w", err)
+	}
+
+	// Generate Dockerfile.backend from template
+	dockerfileBackend, err := g.loader.LoadAndRender("build/Dockerfile.backend.tmpl", data)
+	if err != nil {
+		return fmt.Errorf("failed to load and render Dockerfile.backend template: %w", err)
+	}
+	if err := g.fs.WriteFile("build/Dockerfile.backend", dockerfileBackend, 0644); err != nil {
+		return fmt.Errorf("failed to write Dockerfile.backend: %w", err)
+	}
+
+	ui.Success("docker-compose.yaml generated")
 	return nil
 }
 
@@ -665,4 +757,73 @@ func isValidDartPackageName(name string) bool {
 	}
 
 	return true
+}
+
+// camelCaseServiceName converts a service name to CamelCase for Go identifiers.
+// It replaces hyphens and underscores with camelCase boundaries and capitalizes the first letter.
+//
+// Parameters:
+//   - name: Service name to convert
+//
+// Returns:
+//   - string: CamelCase service name
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - O(n) string conversion
+func camelCaseServiceName(name string) string {
+	if name == "" {
+		return ""
+	}
+
+	parts := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '-' || r == '_'
+	})
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	// Capitalize the first part
+	result := strings.Title(strings.ToLower(parts[0]))
+	for _, part := range parts[1:] {
+		if part != "" {
+			result += strings.Title(strings.ToLower(part))
+		}
+	}
+
+	return result
+}
+
+// serviceNameToVar converts a service name to a valid Go variable name.
+// It replaces hyphens and underscores with underscores and ensures the name is valid.
+//
+// Parameters:
+//   - name: Service name to convert
+//
+// Returns:
+//   - string: Valid Go variable name
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - O(n) string conversion
+func serviceNameToVar(name string) string {
+	if name == "" {
+		return ""
+	}
+
+	// Replace hyphens and underscores with underscores
+	result := strings.ReplaceAll(name, "-", "_")
+	result = strings.ReplaceAll(result, "_", "_")
+
+	// Ensure it starts with a letter
+	if len(result) > 0 && (result[0] < 'a' || result[0] > 'z') {
+		result = "service_" + result
+	}
+
+	return result
 }

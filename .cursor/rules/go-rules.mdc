@@ -1,0 +1,336 @@
+---
+alwaysApply: true
+---
+# 🎯 Goal
+
+Generate **production-grade Go code** for EggyByte projects that is:
+
+* **Exhaustively documented in English** (every exported type/function/method and each package/file has clear purpose, usage, parameters, returns, errors, concurrency, and performance traits).
+* **Modern and highly decoupled**, with clean module boundaries and reasonable file splits by behavior.
+* **CLI-driven for workspace & module management** — *never* hand-edit `go.mod`/`go.work`; use `go` commands and `buf`/`protoc` invocations.
+
+> Use these rules whenever creating or editing Go code, project scaffolds, or documentation.
+
+---
+
+## 0) Global Behaviors (Must Follow)
+
+1. **Prefer clarity over cleverness**. Small, testable units. Cohesive packages.
+2. **No global state** beyond constants; pass `context.Context` as the first param for all I/O or long-running calls.
+3. **Error handling**: return wrapped errors (`fmt.Errorf("...: %w", err)`), define sentinel errors when needed; avoid panics in library code.
+4. **Logs**: use `log/slog` with structured fields; no print-style logging.
+5. **Concurrency**: document goroutines and cancellation; avoid leaking goroutines; use `errgroup` when appropriate.
+6. **APIs**: design for interfaces at the boundary; inject dependencies; keep concrete types unexported where possible.
+7. **Testing**: table-driven tests, subtests, fuzz tests where relevant; keep external effects behind interfaces for easy mocking.
+8. **Security**: never log secrets; validate input; use time-constant compares for tokens.
+9. **Performance**: measure with benchmarks before optimizing; document any intentional trade-offs.
+
+---
+
+## 1) Directory & Package Layout (Monorepo-Friendly)
+
+Use a pragmatic structure. Favor **feature-based** splits over type-based splits.
+
+```
+repo-root/
+  go.work                     # Managed by `go work` commands (do not edit manually)
+  api/                        # Protobuf & Buf configs
+    buf.yaml
+    buf.gen.yaml
+    yao/oracle/v1/*.proto
+  cmd/                        # Entrypoints (each main has minimal wiring only)
+    proxy/
+      main.go
+    node/
+      main.go
+    admin/
+      main.go
+  internal/                   # Non-exported app code
+    proxy/...
+    node/...
+    admin/...
+    platform/...
+  pkg/                        # Reusable public go packages (if intended for reuse)
+    hash/...
+    kv/...
+    connectx/...
+  configs/                    # K8s manifests, ConfigMaps, Secrets templates
+  scripts/                    # Helper scripts (bash/Makefile)
+  docs/                       # Architecture docs, ADRs, how-tos
+```
+
+**Rules**
+
+* `cmd/<service>` contains **only composition and wiring**; all logic lives in `internal/...` or `pkg/...`.
+* Split files by behavior (e.g., `handler_*.go`, `store_*.go`, `service_*.go`, `http_*.go`, `grpc_*.go`).
+* Avoid circular deps; use small interfaces to invert dependencies.
+
+---
+
+## 2) Documentation Standards (GoDoc + File/Pkg Headers)
+
+**Every exported symbol MUST be documented** with GoDoc-style comments that begin with the identifier name.
+
+**File Header Template** (top of each `.go` file):
+
+```go
+// Package <pkg> provides <one-sentence purpose>.
+//
+// Overview:
+//   - Responsibility:
+//   - Key Types:
+//   - Concurrency Model:
+//   - Error Semantics:
+//   - Performance Notes:
+//
+// Usage:
+//   <brief usage snippet>
+```
+
+**Type/Func Doc Template**:
+
+```go
+// <Name> <succinct verb phrase>.
+//
+// Parameters:
+//   - ctx: request-scoped context; must not be nil.
+//   - <p1>: <what it is and constraints>.
+//
+// Returns:
+//   - <T>: <meaning>.
+//   - error: <error classes and when they occur>.
+//
+// Concurrency:
+//   - <safe for concurrent use? goroutine lifecycle?>
+//
+// Performance:
+//   - <any complexity notes/caches/batching>
+func <Name>(ctx context.Context, ...) (...) { ... }
+```
+
+**Interfaces** must document contracts and side effects. **Unexported helpers** still receive brief comments summarizing intent.
+
+---
+
+## 3) Modern Go Patterns
+
+* **Contexts**: First param for I/O-bound functions; honor cancellation and deadlines.
+* **Generics**: Use where they simplify containers/utilities—avoid over-generalization.
+* **Errors**: define domain errors (e.g., `var ErrNotFound = errors.New("...")`).
+* **Configuration**: read from env with defaults; allow overrides via functional options.
+* **HTTP/gRPC**: keep transport adapters thin; business logic in services independent of transport.
+* **Clean Boundaries**: domain → ports (interfaces) → adapters (e.g., store, http, grpc).
+* **K8s**: client-go informers for dynamic config, decoupled from business packages (hide behind interfaces).
+
+---
+
+## 4) CLI-Driven Workspace & Modules (No Manual Editing)
+
+**Never** hand-edit `go.work` or `go.mod`. Use the following commands.
+
+### Initialize/Manage a `go.work` workspace
+
+```bash
+# from repo root
+GOFLAGS=-mod=mod go work init ./cmd/proxy ./cmd/node ./cmd/admin ./internal/... ./pkg/... || true
+# Add new modules as they are created
+GOFLAGS=-mod=mod go work use ./cmd/proxy ./cmd/node ./cmd/admin ./internal/... ./pkg/...
+# Verify
+go work edit -json
+```
+
+### Create a new module
+
+```bash
+cd pkg/hash
+go mod init github.com/eggybyte-technology/egg/pkg/hash
+go mod tidy
+```
+
+### Add/Upgrade dependencies
+
+```bash
+# Add
+go get example.com/lib@latest
+# Upgrade everything conservatively
+go get -u ./...
+# Tidy after changes
+go mod tidy
+```
+
+### Install tool plugins with `go install` (no manual PATH hacks)
+
+```bash
+# Protobuf toolchain for Go & Connect
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
+# (Optional) gRPC for interoperability
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+```
+
+> Tools are versioned by module proxy; pin with `@vX.Y.Z` for reproducibility. Document required versions in `docs/devtools.md`.
+
+---
+
+## 5) Protobuf / Buf (Optional but Recommended)
+
+* Keep `.proto` files under `api/` with `buf.yaml` and `buf.gen.yaml`.
+* Generate Go stubs into module-specific paths; do **not** commit generated code across modules unless necessary.
+
+**Example `buf.gen.yaml` (excerpt)**
+
+```yaml
+version: v2
+plugins:
+  - plugin: buf.build/protocolbuffers/go
+    out: ../pkg/connectx/gen
+    opt: paths=source_relative
+  - plugin: buf.build/connectrpc/go
+    out: ../pkg/connectx/gen
+    opt: paths=source_relative
+```
+
+Generation command:
+
+```bash
+cd api && buf generate
+```
+
+---
+
+## 6) File Organization Rules
+
+* Split by **feature/behavior** (e.g., `service_*.go`, `repository_*.go`, `informer_*.go`).
+* Keep files < 400 LOC when possible; extract helpers.
+* One public type per file where it aids discoverability.
+* Keep constructors near types; tests mirror layout under `_test.go`.
+
+---
+
+## 7) Testing & Tooling
+
+* **Tests**: table-driven; use `testing`, `quick` for fuzzing, and `testscript` for CLI tools.
+* **Mocks**: define tiny interfaces and hand-write fakes, or use `mockgen` if needed.
+* **Static Analysis**: adopt `golangci-lint` with sane presets; fix or justify suppressions.
+* **CI**: `go vet`, `golangci-lint`, `go test ./...`, and `buf lint` if using Buf.
+
+**Makefile targets (suggested)**
+
+```make
+.PHONY: tools generate test lint
+
+TOOLS := \
+	google.golang.org/protobuf/cmd/protoc-gen-go \
+	connectrpc.com/connect/cmd/protoc-gen-connect-go
+
+tools:
+	@for t in $(TOOLS); do go install $$t@latest; done
+
+generate:
+	cd api && buf generate
+
+test:
+	go test -race -cover ./...
+
+lint:
+	golangci-lint run
+```
+
+---
+
+## 8) Comment Quality Checklist (Apply Before Saving)
+
+* [ ] Each exported symbol has a GoDoc starting with its name.
+* [ ] Comments explain **why** and **when** to use, not only **what**.
+* [ ] Error classes and concurrency guarantees are documented.
+* [ ] Examples/snippets show typical usage.
+* [ ] Any non-obvious complexity/perf trade-offs are stated.
+
+---
+
+## 9) Sample Snippets (For the Assistant to Imitate)
+
+**Constructor + Interface Injection**
+
+```go
+// Store provides read/write access to a key-value backend.
+// Implementations must be safe for concurrent use.
+type Store interface {
+	Get(ctx context.Context, ns, key string) (value []byte, ok bool, err error)
+	Set(ctx context.Context, ns, key string, value []byte, ttl time.Duration) error
+}
+
+// Service orchestrates business logic independent of transport.
+type Service struct { store Store }
+
+// NewService constructs a Service with the given Store dependency.
+// The returned Service is safe for concurrent use.
+func NewService(store Store) *Service { return &Service{store: store} }
+```
+
+**HTTP Adapter (Thin)**
+
+```go
+// RegisterHTTP mounts HTTP handlers for the Service on mux.
+// Handlers honor context cancellation and return structured errors.
+func RegisterHTTP(mux *http.ServeMux, svc *Service) {
+	mux.HandleFunc("/v1/get", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		// ... decode, call svc, encode JSON, map errors
+	})
+}
+```
+
+**K8s Informer Boundary**
+
+```go
+// ConfigSource supplies dynamic configuration snapshots independent of client-go.
+type ConfigSource interface {
+	Watch(ctx context.Context) (<-chan Snapshot, error)
+}
+```
+
+---
+
+## 10) Forbidden / Anti-Patterns
+
+* Hand-editing `go.mod` or `go.work`.
+* Mixing transport code with domain logic.
+* Exporting concrete types that should stay internal.
+* Silent error drops; panics in libraries.
+* Global mutable state; hidden goroutines without lifecycle control.
+
+---
+
+## 11) Quickstart (Command-Only, No Manual Edits)
+
+```bash
+# 1) Create workspace
+GOFLAGS=-mod=mod go work init ./cmd/proxy ./cmd/node ./cmd/admin ./pkg/connectx || true
+
+# 2) Create a new module (example)
+mkdir -p pkg/connectx && cd pkg/connectx
+go mod init github.com/eggybyte-technology/egg/pkg/connectx
+
+# 3) Add tools
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
+
+# 4) Generate stubs
+cd $REPO/api && buf generate
+
+# 5) Tidy
+cd $REPO && go mod tidy && go work use ./pkg/connectx
+```
+
+---
+
+## 12) Assistant Compliance
+
+When generating code or edits, the assistant MUST:
+
+1. Emit **complete GoDoc comments** for all exported items.
+2. Keep transport adapters thin; push logic into services.
+3. Use `go`/`buf`/**CLI** commands for workspace, module, deps, and codegen. *Never* suggest manual edits to `go.mod`/`go.work`.
+4. Provide file splits and package choices explicitly in the proposal before writing large code.
+5. Add tests and examples where appropriate.

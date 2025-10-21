@@ -1,0 +1,94 @@
+// Package config provides configuration management for the user service.
+//
+// Overview:
+//   - Responsibility: Application configuration and environment management
+//   - Key Types: AppConfig struct with validation and defaults
+//   - Concurrency Model: Thread-safe configuration access
+//   - Error Semantics: Configuration errors are wrapped and returned
+//   - Performance Notes: Optimized for hot reload and validation
+//
+// Usage:
+//
+//	var cfg AppConfig
+//	mgr.Bind(&cfg)
+//	dbURL := cfg.Database.DSN
+package config
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/eggybyte-technology/egg/configx"
+)
+
+// AppConfig extends BaseConfig with application-specific settings.
+// It includes database configuration, business settings, and feature flags.
+type AppConfig struct {
+	configx.BaseConfig
+
+	// Database configuration
+	Database DatabaseConfig
+
+	// Business configuration
+	Business BusinessConfig
+
+	// Feature flags
+	Features FeatureConfig
+}
+
+// DatabaseConfig contains database connection settings.
+type DatabaseConfig struct {
+	Driver      string        `env:"DB_DRIVER" default:"mysql"`
+	DSN         string        `env:"DB_DSN" default:""`
+	MaxIdle     int           `env:"DB_MAX_IDLE" default:"10"`
+	MaxOpen     int           `env:"DB_MAX_OPEN" default:"100"`
+	MaxLifetime time.Duration `env:"DB_MAX_LIFETIME" default:"1h"`
+}
+
+// BusinessConfig contains business logic settings.
+type BusinessConfig struct {
+	DefaultPageSize int   `env:"DEFAULT_PAGE_SIZE" default:"10"`
+	MaxPageSize     int   `env:"MAX_PAGE_SIZE" default:"100"`
+	SlowQueryMillis int64 `env:"SLOW_QUERY_MILLIS" default:"1000"`
+}
+
+// FeatureConfig contains feature flag settings.
+type FeatureConfig struct {
+	EnableDebugLogs   bool `env:"ENABLE_DEBUG_LOGS" default:"false"`
+	EnableMetrics     bool `env:"ENABLE_METRICS" default:"true"`
+	EnableTracing     bool `env:"ENABLE_TRACING" default:"true"`
+	EnableHealthCheck bool `env:"ENABLE_HEALTH_CHECK" default:"true"`
+}
+
+// Validate performs configuration validation.
+// Returns an error if validation fails.
+func (c *AppConfig) Validate() error {
+	// Database DSN is now optional - if not provided, database features will be disabled
+	if c.Database.DSN != "" {
+		if c.Business.DefaultPageSize < 1 {
+			return fmt.Errorf("default page size must be positive")
+		}
+
+		if c.Business.MaxPageSize < c.Business.DefaultPageSize {
+			return fmt.Errorf("max page size must be >= default page size")
+		}
+	}
+
+	return nil
+}
+
+// GetDatabaseDSN returns the database DSN for the current environment.
+// It applies environment-specific transformations if needed.
+func (c *AppConfig) GetDatabaseDSN() string {
+	return c.Database.DSN
+}
+
+// IsDevelopment returns true if the service is running in development mode.
+func (c *AppConfig) IsDevelopment() bool {
+	return c.BaseConfig.Env == "development"
+}
+
+// IsProduction returns true if the service is running in production mode.
+func (c *AppConfig) IsProduction() bool {
+	return c.BaseConfig.Env == "production"
+}

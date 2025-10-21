@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package greet.v1;
+
+option go_package = "github.com/eggybyte-technology/egg/examples/minimal-connect-service/gen/go/greet/v1;greetv1";
+
+// GreeterService provides greeting operations.
+service GreeterService {
+  // SayHello sends a greeting to the specified name.
+  rpc SayHello(SayHelloRequest) returns (SayHelloResponse);
+
+  // SayHelloStream sends a streaming greeting.
+  rpc SayHelloStream(SayHelloStreamRequest) returns (stream SayHelloStreamResponse);
+}
+
+// SayHelloRequest is the request to send a greeting.
+message SayHelloRequest {
+  string name = 1;
+  string language = 2;
+}
+
+// SayHelloResponse is the response from sending a greeting.
+message SayHelloResponse {
+  string message = 1;
+  string timestamp = 2;
+}
+
+// SayHelloStreamRequest is the request for streaming greetings.
+message SayHelloStreamRequest {
+  string name = 1;
+  int32 count = 2;
+}
+
+// SayHelloStreamResponse is the response for streaming greetings.
+message SayHelloStreamResponse {
+  string message = 1;
+  int32 sequence = 2;
+}

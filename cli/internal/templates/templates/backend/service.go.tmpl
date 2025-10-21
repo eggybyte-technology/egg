@@ -1,21 +1,332 @@
+// Package service provides business logic for the {{.ServiceName}} service.
+//
+// Overview:
+//   - Responsibility: Business logic and domain operations
+//   - Key Types: {{.ServiceNameCamel}}Service interface and implementation
+//   - Concurrency Model: Thread-safe service operations
+//   - Error Semantics: Domain errors are wrapped and returned
+//   - Performance Notes: Optimized for high-throughput operations
+//
+// Usage:
+//
+//	service := New{{.ServiceNameCamel}}Service(repo)
+//	result, err := service.Create{{.ServiceNameCamel}}(ctx, &Create{{.ServiceNameCamel}}Request{Name: "example"})
 package service
 
-import "context"
+import (
+	"context"
 
-// Service provides business logic for {{.ServiceName}}.
-type Service struct {
-	// Add your dependencies here
+	"github.com/eggybyte-technology/egg/core/errors"
+	"github.com/eggybyte-technology/egg/core/log"
+	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/model"
+	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/repository"
+)
+
+// {{.ServiceNameCamel}}Service defines the interface for {{.ServiceName}} business operations.
+// All methods are context-aware and return structured errors.
+type {{.ServiceNameCamel}}Service interface {
+	// Create{{.ServiceNameCamel}} creates a new {{.ServiceName}} with business validation.
+	Create{{.ServiceNameCamel}}(ctx context.Context, req *Create{{.ServiceNameCamel}}Request) (*Create{{.ServiceNameCamel}}Response, error)
+
+	// Get{{.ServiceNameCamel}} retrieves a {{.ServiceName}} by ID with proper error handling.
+	Get{{.ServiceNameCamel}}(ctx context.Context, req *Get{{.ServiceNameCamel}}Request) (*Get{{.ServiceNameCamel}}Response, error)
+
+	// Update{{.ServiceNameCamel}} updates an existing {{.ServiceName}} with validation.
+	Update{{.ServiceNameCamel}}(ctx context.Context, req *Update{{.ServiceNameCamel}}Request) (*Update{{.ServiceNameCamel}}Response, error)
+
+	// Delete{{.ServiceNameCamel}} removes a {{.ServiceName}} by ID.
+	Delete{{.ServiceNameCamel}}(ctx context.Context, req *Delete{{.ServiceNameCamel}}Request) (*Delete{{.ServiceNameCamel}}Response, error)
+
+	// List{{.ServiceNameCamel}}s retrieves {{.ServiceName}}s with pagination.
+	List{{.ServiceNameCamel}}s(ctx context.Context, req *List{{.ServiceNameCamel}}sRequest) (*List{{.ServiceNameCamel}}sResponse, error)
 }
 
-// NewService creates a new service instance.
-func NewService() *Service {
-	return &Service{
-		// Initialize dependencies
+// {{.ServiceNameCamel}}ServiceRequest represents a generic {{.ServiceName}} service request.
+type {{.ServiceNameCamel}}ServiceRequest struct {
+	Name string `json:"name"`
+}
+
+// {{.ServiceNameCamel}}ServiceResponse represents a generic {{.ServiceName}} service response.
+type {{.ServiceNameCamel}}ServiceResponse struct {
+	Message string `json:"message"`
+}
+
+// Create{{.ServiceNameCamel}}Request represents a create {{.ServiceName}} request.
+type Create{{.ServiceNameCamel}}Request struct {
+	Name string `json:"name"`
+}
+
+// Create{{.ServiceNameCamel}}Response represents a create {{.ServiceName}} response.
+type Create{{.ServiceNameCamel}}Response struct {
+	{{.ServiceNameCamel}} *{{.ServiceNameCamel}} `json:"{{.ServiceName}}"`
+}
+
+// Get{{.ServiceNameCamel}}Request represents a get {{.ServiceName}} request.
+type Get{{.ServiceNameCamel}}Request struct {
+	ID string `json:"id"`
+}
+
+// Get{{.ServiceNameCamel}}Response represents a get {{.ServiceName}} response.
+type Get{{.ServiceNameCamel}}Response struct {
+	{{.ServiceNameCamel}} *{{.ServiceNameCamel}} `json:"{{.ServiceName}}"`
+}
+
+// Update{{.ServiceNameCamel}}Request represents an update {{.ServiceName}} request.
+type Update{{.ServiceNameCamel}}Request struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// Update{{.ServiceNameCamel}}Response represents an update {{.ServiceName}} response.
+type Update{{.ServiceNameCamel}}Response struct {
+	{{.ServiceNameCamel}} *{{.ServiceNameCamel}} `json:"{{.ServiceName}}"`
+}
+
+// Delete{{.ServiceNameCamel}}Request represents a delete {{.ServiceName}} request.
+type Delete{{.ServiceNameCamel}}Request struct {
+	ID string `json:"id"`
+}
+
+// Delete{{.ServiceNameCamel}}Response represents a delete {{.ServiceName}} response.
+type Delete{{.ServiceNameCamel}}Response struct {
+	Success bool `json:"success"`
+}
+
+// List{{.ServiceNameCamel}}sRequest represents a list {{.ServiceName}}s request.
+type List{{.ServiceNameCamel}}sRequest struct {
+	Page     int32 `json:"page"`
+	PageSize int32 `json:"page_size"`
+}
+
+// List{{.ServiceNameCamel}}sResponse represents a list {{.ServiceName}}s response.
+type List{{.ServiceNameCamel}}sResponse struct {
+	{{.ServiceNameCamel}}s []*{{.ServiceNameCamel}} `json:"{{.ServiceName}}s"`
+	Total    int32          `json:"total"`
+	Page     int32          `json:"page"`
+	PageSize int32          `json:"page_size"`
+}
+
+// {{.ServiceNameCamel}} represents a {{.ServiceName}} entity.
+type {{.ServiceNameCamel}} struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CreatedAt int64  `json:"created_at"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
+// {{.ServiceNameCamel}}ServiceImpl implements the {{.ServiceNameCamel}}Service interface.
+type {{.ServiceNameCamel}}ServiceImpl struct {
+	repo   repository.{{.ServiceNameCamel}}Repository
+	logger log.Logger
+}
+
+// New{{.ServiceNameCamel}}Service creates a new {{.ServiceNameCamel}}Service instance.
+// The returned service is safe for concurrent use.
+func New{{.ServiceNameCamel}}Service(repo repository.{{.ServiceNameCamel}}Repository, logger log.Logger) {{.ServiceNameCamel}}Service {
+	return &{{.ServiceNameCamel}}ServiceImpl{
+		repo:   repo,
+		logger: logger,
 	}
 }
 
-// ExampleMethod demonstrates service method structure.
-func (s *Service) ExampleMethod(ctx context.Context) error {
-	// TODO: Implement your business logic
-	return nil
+// Create{{.ServiceNameCamel}} creates a new {{.ServiceName}} with business validation.
+func (s *{{.ServiceNameCamel}}ServiceImpl) Create{{.ServiceNameCamel}}(ctx context.Context, req *Create{{.ServiceNameCamel}}Request) (*Create{{.ServiceNameCamel}}Response, error) {
+	// Check if repository is available
+	if s.repo == nil {
+		return nil, errors.New("SERVICE_UNAVAILABLE", "database repository not available")
+	}
+
+	// Validate request
+	if req.Name == "" {
+		return nil, errors.New("INVALID_REQUEST", "name is required")
+	}
+
+	// Create {{.ServiceName}} model
+	{{.ServiceNameVar}} := &model.{{.ServiceNameCamel}}{
+		Name: req.Name,
+	}
+
+	// Create {{.ServiceName}} in repository
+	created{{.ServiceNameCamel}}, err := s.repo.Create(ctx, {{.ServiceNameVar}})
+	if err != nil {
+		s.logger.Error(err, "Failed to create {{.ServiceName}}", log.Str("name", req.Name))
+		return nil, err
+	}
+
+	s.logger.Info("{{.ServiceNameCamel}} created successfully",
+		log.Str("{{.ServiceName}}_id", created{{.ServiceNameCamel}}.ID),
+		log.Str("name", created{{.ServiceNameCamel}}.Name))
+
+	// Convert to response
+	response := &Create{{.ServiceNameCamel}}Response{
+		{{.ServiceNameCamel}}: &{{.ServiceNameCamel}}{
+			ID:        created{{.ServiceNameCamel}}.ID,
+			Name:      created{{.ServiceNameCamel}}.Name,
+			CreatedAt: created{{.ServiceNameCamel}}.CreatedAt.Unix(),
+			UpdatedAt: created{{.ServiceNameCamel}}.UpdatedAt.Unix(),
+		},
+	}
+
+	return response, nil
+}
+
+// Get{{.ServiceNameCamel}} retrieves a {{.ServiceName}} by ID with proper error handling.
+func (s *{{.ServiceNameCamel}}ServiceImpl) Get{{.ServiceNameCamel}}(ctx context.Context, req *Get{{.ServiceNameCamel}}Request) (*Get{{.ServiceNameCamel}}Response, error) {
+	// Check if repository is available
+	if s.repo == nil {
+		return nil, errors.New("SERVICE_UNAVAILABLE", "database repository not available")
+	}
+
+	// Validate request
+	if req.ID == "" {
+		return nil, errors.New("INVALID_REQUEST", "{{.ServiceName}} ID is required")
+	}
+
+	// Get {{.ServiceName}} from repository
+	{{.ServiceNameVar}}, err := s.repo.GetByID(ctx, req.ID)
+	if err != nil {
+		s.logger.Error(err, "Failed to get {{.ServiceName}}", log.Str("{{.ServiceName}}_id", req.ID))
+		return nil, err
+	}
+
+	s.logger.Info("{{.ServiceNameCamel}} retrieved successfully", log.Str("{{.ServiceName}}_id", {{.ServiceNameVar}}.ID))
+
+	// Convert to response
+	response := &Get{{.ServiceNameCamel}}Response{
+		{{.ServiceNameCamel}}: &{{.ServiceNameCamel}}{
+			ID:        {{.ServiceNameVar}}.ID,
+			Name:      {{.ServiceNameVar}}.Name,
+			CreatedAt: {{.ServiceNameVar}}.CreatedAt.Unix(),
+			UpdatedAt: {{.ServiceNameVar}}.UpdatedAt.Unix(),
+		},
+	}
+
+	return response, nil
+}
+
+// Update{{.ServiceNameCamel}} updates an existing {{.ServiceName}} with validation.
+func (s *{{.ServiceNameCamel}}ServiceImpl) Update{{.ServiceNameCamel}}(ctx context.Context, req *Update{{.ServiceNameCamel}}Request) (*Update{{.ServiceNameCamel}}Response, error) {
+	// Check if repository is available
+	if s.repo == nil {
+		return nil, errors.New("SERVICE_UNAVAILABLE", "database repository not available")
+	}
+
+	// Validate request
+	if req.ID == "" {
+		return nil, errors.New("INVALID_REQUEST", "{{.ServiceName}} ID is required")
+	}
+	if req.Name == "" {
+		return nil, errors.New("INVALID_REQUEST", "name is required")
+	}
+
+	// Create {{.ServiceName}} model
+	{{.ServiceNameVar}} := &model.{{.ServiceNameCamel}}{
+		ID:   req.ID,
+		Name: req.Name,
+	}
+
+	// Update {{.ServiceName}} in repository
+	updated{{.ServiceNameCamel}}, err := s.repo.Update(ctx, {{.ServiceNameVar}})
+	if err != nil {
+		s.logger.Error(err, "Failed to update {{.ServiceName}}", log.Str("{{.ServiceName}}_id", req.ID))
+		return nil, err
+	}
+
+	s.logger.Info("{{.ServiceNameCamel}} updated successfully",
+		log.Str("{{.ServiceName}}_id", updated{{.ServiceNameCamel}}.ID),
+		log.Str("name", updated{{.ServiceNameCamel}}.Name))
+
+	// Convert to response
+	response := &Update{{.ServiceNameCamel}}Response{
+		{{.ServiceNameCamel}}: &{{.ServiceNameCamel}}{
+			ID:        updated{{.ServiceNameCamel}}.ID,
+			Name:      updated{{.ServiceNameCamel}}.Name,
+			CreatedAt: updated{{.ServiceNameCamel}}.CreatedAt.Unix(),
+			UpdatedAt: updated{{.ServiceNameCamel}}.UpdatedAt.Unix(),
+		},
+	}
+
+	return response, nil
+}
+
+// Delete{{.ServiceNameCamel}} removes a {{.ServiceName}} by ID.
+func (s *{{.ServiceNameCamel}}ServiceImpl) Delete{{.ServiceNameCamel}}(ctx context.Context, req *Delete{{.ServiceNameCamel}}Request) (*Delete{{.ServiceNameCamel}}Response, error) {
+	// Check if repository is available
+	if s.repo == nil {
+		return nil, errors.New("SERVICE_UNAVAILABLE", "database repository not available")
+	}
+
+	// Validate request
+	if req.ID == "" {
+		return nil, errors.New("INVALID_REQUEST", "{{.ServiceName}} ID is required")
+	}
+
+	// Delete {{.ServiceName}} from repository
+	err := s.repo.Delete(ctx, req.ID)
+	if err != nil {
+		s.logger.Error(err, "Failed to delete {{.ServiceName}}", log.Str("{{.ServiceName}}_id", req.ID))
+		return nil, err
+	}
+
+	s.logger.Info("{{.ServiceNameCamel}} deleted successfully", log.Str("{{.ServiceName}}_id", req.ID))
+
+	// Convert to response
+	response := &Delete{{.ServiceNameCamel}}Response{
+		Success: true,
+	}
+
+	return response, nil
+}
+
+// List{{.ServiceNameCamel}}s retrieves {{.ServiceName}}s with pagination.
+func (s *{{.ServiceNameCamel}}ServiceImpl) List{{.ServiceNameCamel}}s(ctx context.Context, req *List{{.ServiceNameCamel}}sRequest) (*List{{.ServiceNameCamel}}sResponse, error) {
+	// Check if repository is available
+	if s.repo == nil {
+		return nil, errors.New("SERVICE_UNAVAILABLE", "database repository not available")
+	}
+
+	// Set default pagination
+	page := int(req.Page)
+	if page < 1 {
+		page = 1
+	}
+
+	pageSize := int(req.PageSize)
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	// Get {{.ServiceName}}s from repository
+	{{.ServiceNameVar}}s, total, err := s.repo.List(ctx, page, pageSize)
+	if err != nil {
+		s.logger.Error(err, "Failed to list {{.ServiceName}}s",
+			log.Int("page", page),
+			log.Int("page_size", pageSize))
+		return nil, err
+	}
+
+	s.logger.Info("{{.ServiceNameCamel}}s listed successfully",
+		log.Int("count", len({{.ServiceNameVar}}s)),
+		log.Int("total", int(total)),
+		log.Int("page", page))
+
+	// Convert to response
+	response{{.ServiceNameCamel}}s := make([]*{{.ServiceNameCamel}}, len({{.ServiceNameVar}}s))
+	for i, {{.ServiceNameVar}} := range {{.ServiceNameVar}}s {
+		response{{.ServiceNameCamel}}s[i] = &{{.ServiceNameCamel}}{
+			ID:        {{.ServiceNameVar}}.ID,
+			Name:      {{.ServiceNameVar}}.Name,
+			CreatedAt: {{.ServiceNameVar}}.CreatedAt.Unix(),
+			UpdatedAt: {{.ServiceNameVar}}.UpdatedAt.Unix(),
+		}
+	}
+
+	response := &List{{.ServiceNameCamel}}sResponse{
+		{{.ServiceNameCamel}}s: response{{.ServiceNameCamel}}s,
+		Total:    int32(total),
+		Page:     int32(page),
+		PageSize: int32(pageSize),
+	}
+
+	return response, nil
 }

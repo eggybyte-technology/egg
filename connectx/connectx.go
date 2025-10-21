@@ -32,7 +32,6 @@ type HeaderMapping struct {
 	InternalToken string // "X-Internal-Token"
 	UserID        string // "X-User-Id"
 	UserName      string // "X-User-Name"
-	Tenant        string // "X-User-Tenant"
 	Roles         string // "X-User-Roles"
 	RealIP        string // "X-Real-IP"
 	ForwardedFor  string // "X-Forwarded-For"
@@ -46,7 +45,6 @@ func DefaultHeaderMapping() HeaderMapping {
 		InternalToken: "X-Internal-Token",
 		UserID:        "X-User-Id",
 		UserName:      "X-User-Name",
-		Tenant:        "X-User-Tenant",
 		Roles:         "X-User-Roles",
 		RealIP:        "X-Real-IP",
 		ForwardedFor:  "X-Forwarded-For",
@@ -96,7 +94,6 @@ func DefaultInterceptors(opts Options) []connect.Interceptor {
 		InternalToken: opts.Headers.InternalToken,
 		UserID:        opts.Headers.UserID,
 		UserName:      opts.Headers.UserName,
-		Tenant:        opts.Headers.Tenant,
 		Roles:         opts.Headers.Roles,
 		RealIP:        opts.Headers.RealIP,
 		ForwardedFor:  opts.Headers.ForwardedFor,

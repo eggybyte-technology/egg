@@ -23,7 +23,6 @@ import (
 type UserInfo struct {
 	UserID   string   // Unique user identifier
 	UserName string   // Human-readable user name
-	Tenant   string   // Tenant/organization identifier
 	Roles    []string // User roles/permissions
 }
 
@@ -66,4 +65,50 @@ func WithMeta(ctx context.Context, m *RequestMeta) context.Context {
 func MetaFrom(ctx context.Context) (*RequestMeta, bool) {
 	m, ok := ctx.Value(metaKey).(*RequestMeta)
 	return m, ok
+}
+
+// HasRole checks if the user in the context has the specified role.
+// Returns false if no user is found in the context.
+func HasRole(ctx context.Context, role string) bool {
+	user, ok := UserFrom(ctx)
+	if !ok {
+		return false
+	}
+
+	for _, userRole := range user.Roles {
+		if userRole == role {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAnyRole checks if the user in the context has any of the specified roles.
+// Returns false if no user is found in the context.
+func HasAnyRole(ctx context.Context, roles ...string) bool {
+	user, ok := UserFrom(ctx)
+	if !ok {
+		return false
+	}
+
+	for _, userRole := range user.Roles {
+		for _, role := range roles {
+			if userRole == role {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// IsInternalService checks if the request is from an internal service.
+// This is determined by checking if the internal token matches the expected service name.
+func IsInternalService(ctx context.Context, serviceName string) bool {
+	meta, ok := MetaFrom(ctx)
+	if !ok {
+		return false
+	}
+
+	// Simple check: if internal token is not empty and matches service name
+	return meta.InternalToken != "" && meta.InternalToken == serviceName
 }

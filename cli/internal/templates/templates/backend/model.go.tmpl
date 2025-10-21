@@ -1,0 +1,54 @@
+// Package model provides data models for the {{.ServiceName}} service.
+//
+// Overview:
+//   - Responsibility: Domain entities and data structures
+//   - Key Types: {{.ServiceNameCamel}} model with GORM annotations
+//   - Concurrency Model: Thread-safe model operations
+//   - Error Semantics: Model validation errors
+//   - Performance Notes: Optimized for database operations
+//
+// Usage:
+//
+//	user := &model.{{.ServiceNameCamel}}{Name: "example"}
+//	db.Create(user)
+package model
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
+// {{.ServiceNameCamel}} represents a {{.ServiceName}} entity in the database.
+type {{.ServiceNameCamel}} struct {
+	ID        string    `gorm:"type:varchar(36);primaryKey" json:"id"`
+	Name      string    `gorm:"type:varchar(255);not null" json:"name"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+}
+
+// TableName returns the table name for the {{.ServiceNameCamel}} model.
+func ({{.ServiceNameCamel}}) TableName() string {
+	return "{{.ServiceName}}s"
+}
+
+// BeforeCreate generates a UUID for the {{.ServiceNameCamel}} before creating it.
+func (u *{{.ServiceNameCamel}}) BeforeCreate(tx *gorm.DB) error {
+	if u.ID == "" {
+		u.ID = uuid.New().String()
+	}
+	return nil
+}
+
+// Validate performs basic validation on the {{.ServiceNameCamel}} model.
+func (u *{{.ServiceNameCamel}}) Validate() error {
+	if u.Name == "" {
+		return gorm.ErrInvalidValue
+	}
+	if len(u.Name) > 255 {
+		return gorm.ErrInvalidValue
+	}
+	return nil
+}

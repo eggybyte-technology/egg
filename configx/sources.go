@@ -295,7 +295,11 @@ func (s *K8sConfigMapSource) Load(ctx context.Context) (map[string]string, error
 	// This is a placeholder implementation
 	// Real implementation would use k8s.io/client-go
 	s.logger.Info("loading ConfigMap", log.Str("name", s.name), log.Str("namespace", s.namespace))
-	return make(map[string]string), nil
+
+	// In non-Kubernetes environments, return nil to avoid overriding env vars
+	// This allows environment variables to take precedence
+	// Return nil map and nil error to indicate no data from this source
+	return nil, nil
 }
 
 // Watch monitors the ConfigMap for changes.

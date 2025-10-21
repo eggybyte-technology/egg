@@ -4,10 +4,10 @@ github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1x
 github.com/cenkalti/backoff/v5 v5.0.3/go.mod h1:rkhZdG3JZukswDf7f0cwqPNk4K0sa+F97BxZthm/crw=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/eggybyte-technology/egg/core v0.0.1 h1:mp65virgWm6aD7InSFQD/Gsb9CTurRJm1ZVomgUYKsk=
-github.com/eggybyte-technology/egg/core v0.0.1/go.mod h1:euhQJG5z+1k3siHB/0gsWrIx/kg3txG6R1ov2XvFMLc=
-github.com/eggybyte-technology/egg/obsx v0.0.1 h1:gSDwWqSlGC0Td/guwlDaAkqqjguiYQd+3uPby3ht4IE=
-github.com/eggybyte-technology/egg/obsx v0.0.1/go.mod h1:wRe//03JnN6quBhEgiM5W901N7YN4mZ23fDgZnMRzHU=
+github.com/eggybyte-technology/egg/core v0.0.2 h1:QDc0q6uN6o/6IzBRh2nIqNaQW7JwB865aQ5UE9kFjSI=
+github.com/eggybyte-technology/egg/core v0.0.2/go.mod h1:euhQJG5z+1k3siHB/0gsWrIx/kg3txG6R1ov2XvFMLc=
+github.com/eggybyte-technology/egg/obsx v0.0.2 h1:PCEJ9gdi5fT7cpNhwtXL1dGHFMyaJNfizM/FQMKrAVI=
+github.com/eggybyte-technology/egg/obsx v0.0.2/go.mod h1:Vvdhr52zhaaWkH/2zkj+jkU0o8nwUDfPaUT5aDLPxg0=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=
 github.com/go-logr/logr v1.4.3/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
@@ -61,7 +61,6 @@ google.golang.org/genproto/googleapis/rpc v0.0.0-20250825161204-c5933d9347a5 h1:
 google.golang.org/genproto/googleapis/rpc v0.0.0-20250825161204-c5933d9347a5/go.mod h1:M4/wBTSeyLxupu3W3tJtOgB14jILAS/XWPSSa3TAlJc=
 google.golang.org/grpc v1.75.0 h1:+TW+dqTd2Biwe6KKfhE5JpiYIBWq865PhKGSXiivqt4=
 google.golang.org/grpc v1.75.0/go.mod h1:JtPAzKiq4v1xcAB2hydNlWI2RnF85XXcV0mhKXr2ecQ=
-google.golang.org/protobuf v1.36.9 h1:w2gp2mA27hUeUzj9Ex9FBjsBm40zfaDtEWow293U7Iw=
-google.golang.org/protobuf v1.36.9/go.mod h1:fuxRtAxBytpl4zzqUh6/eyUujkJdNiuEkXntxiD/uRU=
+google.golang.org/protobuf v1.36.10 h1:AYd7cD/uASjIL6Q9LiTjz8JLcrh/88q5UObnmY3aOOE=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=

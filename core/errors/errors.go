@@ -89,7 +89,7 @@ func Wrapf(code Code, op string, err error, format string, args ...any) error {
 // Returns empty string if the error doesn't have a code.
 func CodeOf(err error) Code {
 	var e *E
-	if err != nil && As(err, &e) {
+	if err != nil && errors.As(err, &e) {
 		return e.Code
 	}
 	return ""
@@ -97,6 +97,18 @@ func CodeOf(err error) Code {
 
 // As is a type assertion helper for error unwrapping.
 // This is a convenience function that works with the standard library's errors.As.
-func As(err error, target **E) bool {
+func As(err error, target interface{}) bool {
 	return errors.As(err, target)
+}
+
+// Is checks if an error has a specific code.
+// This is a convenience function for error code checking.
+func IsCode(err error, code Code) bool {
+	return CodeOf(err) == code
+}
+
+// Is checks if an error is of a specific type.
+// This is a convenience function for error type checking.
+func Is(err error, target error) bool {
+	return errors.Is(err, target)
 }

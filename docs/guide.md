@@ -1,14 +1,17 @@
-# 1) 愿景与基线原则
+# EggyByte Go 微服务框架设计指南
 
-* **极薄内核 + 可插拔卫星库**：只引入需要的模块，最小依赖、最快构建。
-* **Connect-first**：统一拦截器栈（恢复、日志、追踪、指标、身份注入），0 业务侵入。
-* **统一端口策略**：默认**单端口**承载 HTTP/Connect/gRPC-Web，**健康/指标独立端口**。
-* **K8s “名称法”**：ConfigMap 仅注入**名称**，运行时监听并热更新；Secret 用 `secretKeyRef`，服务发现区分 `headless/clusterip`。
-* **稳定 API**：`core` 与 `runtimex` 尽量稳定；其余模块小步快跑。
+## 1) 愿景与基线原则
+
+* **极薄内核 + 可插拔卫星库**：只引入需要的模块，最小依赖、最快构建
+* **Connect-first**：统一拦截器栈（恢复、日志、追踪、指标、身份注入），0 业务侵入
+* **统一端口策略**：默认**单端口**承载 HTTP/Connect/gRPC-Web，**健康/指标独立端口**
+* **K8s "名称法"**：ConfigMap 仅注入**名称**，运行时监听并热更新；Secret 用 `secretKeyRef`，服务发现区分 `headless/clusterip`
+* **分层认证模型**：Higress 层负责认证与身份注入，微服务层专注权限检查与业务逻辑
+* **稳定 API**：`core` 与 `runtimex` 尽量稳定；其余模块小步快跑
 
 ---
 
-# 2) 仓库与模块布局
+## 2) 仓库与模块布局
 
 **仓库**：`github.com/eggybyte-technology/egg`
 
@@ -17,25 +20,37 @@ egg/
 ├─ go.work
 ├─ README.md
 ├─ docs/
-│  ├─ ARCHITECTURE.md
-│  ├─ RELEASING.md
+│  ├─ guide.md                  # 框架设计指南
+│  ├─ egg-cli.md                # CLI 工具使用说明
 │  └─ CONTRIBUTING.md
 ├─ core/        # L1：零依赖的接口与通用工具（稳定）
-│  └─ go.mod -> module github.com/eggybyte-technology/egg/core
+│  ├─ go.mod -> module github.com/eggybyte-technology/egg/core
+│  ├─ identity/                 # 身份容器与权限检查
+│  ├─ errors/                   # 结构化错误处理
+│  ├─ log/                      # 日志接口
+│  └─ utils/                     # 通用工具函数
 ├─ runtimex/    # L2：运行时（生命周期/服务器/健康/指标/基础配置；不含 Connect/K8s）
 │  └─ go.mod -> module github.com/eggybyte-technology/egg/runtimex
-├─ connectx/    # L3：Connect 绑定 + 统一拦截器 + 身份注入（无鉴权）
-│  └─ go.mod -> module github.com/eggybyte-technology/egg/connectx
+├─ connectx/    # L3：Connect 绑定 + 统一拦截器 + 身份注入 + 权限检查
+│  ├─ go.mod -> module github.com/eggybyte-technology/egg/connectx
+│  └─ internal/                 # 内部拦截器实现
 ├─ configx/     # L3：统一配置（Env/File + K8s ConfigMap 热更新）
 │  └─ go.mod -> module github.com/eggybyte-technology/egg/configx
 ├─ obsx/        # L3：OpenTelemetry/Prometheus 初始化
 │  └─ go.mod -> module github.com/eggybyte-technology/egg/obsx
 ├─ k8sx/        # L3：ConfigMap 名称法监听、服务发现、Secret 契约
-│  └─ go.mod -> module github.com/eggybyte-technology/egg/k8sx
+│  ├─ go.mod -> module github.com/eggybyte-technology/egg/k8sx
+│  └─ internal/                 # 内部实现
 ├─ storex/      # L3：TiDB/MySQL/GORM、仓库注册与健康探针（可选）
-│  └─ go.mod -> module github.com/eggybyte-technology/egg/storex
+│  ├─ go.mod -> module github.com/eggybyte-technology/egg/storex
+│  └─ internal/                 # 内部实现
+├─ cli/         # CLI 工具（独立模块）
+│  ├─ go.mod -> module github.com/eggybyte-technology/egg/cli
+│  ├─ cmd/egg/                  # CLI 命令实现
+│  └─ internal/                 # CLI 内部实现
 └─ examples/
-   └─ minimal-connect-service/   # 最小可运行服务示例（独立 go.mod）
+   ├─ minimal-connect-service/   # 最小可运行服务示例（独立 go.mod）
+   └─ user-service/              # 完整业务服务示例（独立 go.mod）
 ```
 
 **依赖方向（只许向下）**
@@ -54,13 +69,15 @@ use (
   ./obsx
   ./k8sx
   ./storex
+  ./cli
   ./examples/minimal-connect-service
+  ./examples/user-service
 )
 ```
 
 ---
 
-# 3) 模块职责与对外 API（精简而完备）
+## 3) 模块职责与对外 API（精简而完备）
 
 ## 3.1 `core`（零依赖，极稳定）
 
@@ -90,22 +107,32 @@ use (
   func Wrap(code Code, op string, err error) error
   func CodeOf(err error) Code
   ```
-* `identity`（仅做“身份容器”，不做鉴权）
+* `identity`（身份容器与权限检查工具）
 
   ```go
   package identity
   type UserInfo struct {
-    UserID, UserName, Tenant string
-    Roles []string
+    UserID   string   // 用户唯一标识
+    UserName string   // 用户显示名称
+    Roles    []string // 用户角色列表
   }
   type RequestMeta struct {
-    RequestID, InternalToken string
-    RemoteIP, UserAgent      string
+    RequestID     string // 请求追踪ID
+    InternalToken string // 内部服务令牌
+    RemoteIP      string // 客户端IP
+    UserAgent     string // 客户端用户代理
   }
+  
+  // 身份注入与获取
   func WithUser(ctx context.Context, u *UserInfo) context.Context
   func UserFrom(ctx context.Context) (*UserInfo, bool)
   func WithMeta(ctx context.Context, m *RequestMeta) context.Context
   func MetaFrom(ctx context.Context) (*RequestMeta, bool)
+  
+  // 权限检查便捷方法
+  func HasRole(ctx context.Context, role string) bool
+  func HasAnyRole(ctx context.Context, roles ...string) bool
+  func IsInternalService(ctx context.Context, serviceName string) bool
   ```
 * `utils`：时间/重试/切片/并发 helpers（真通用，慎增）。
 
@@ -139,33 +166,33 @@ use (
 
 ## 3.3 `connectx`（Connect 绑定 + 统一拦截器 + 身份注入）
 
-* **默认从 Higress 注入的请求头提取身份**，注入 `core/identity`，不做鉴权。
+* **分层认证模型**：Higress 层通过 ext-auth 插件完成认证，将用户身份注入请求头；微服务层仅需提取身份信息并进行权限检查
+* **零业务侵入**：统一拦截器栈自动处理身份注入、错误映射、日志记录等横切关注点
 
-* 统一拦截器（恢复、日志、追踪、指标、错误映射、身份注入）。
+* 统一拦截器（恢复、日志、追踪、指标、错误映射、身份注入）
 
   ```go
   package connectx
 
   type HeaderMapping struct {
-    RequestID      string // "X-Request-Id"
-    InternalToken  string // "X-Internal-Token"
-    UserID         string // "X-User-Id"
-    UserName       string // "X-User-Name"
-    Tenant         string // "X-User-Tenant"
-    Roles          string // "X-User-Roles"
-    RealIP         string // "X-Real-IP"
-    ForwardedFor   string // "X-Forwarded-For"
-    UserAgent      string // "User-Agent"
+    RequestID     string // "X-Request-Id"
+    InternalToken string // "X-Internal-Token"
+    UserID        string // "X-User-Id"
+    UserName      string // "X-User-Name"
+    Roles         string // "X-User-Roles"
+    RealIP        string // "X-Real-IP"
+    ForwardedFor  string // "X-Forwarded-For"
+    UserAgent     string // "User-Agent"
   }
 
   type Options struct {
-    Logger             log.Logger
-    Otel               *obsx.Provider // nil 时禁用 trace/metrics
-    Headers            HeaderMapping  // 可覆盖默认映射
-    WithRequestBody    bool           // 生产默认 false
-    WithResponseBody   bool
-    SlowRequestMillis  int64          // 慢请求阈值
-    PayloadAccounting  bool           // 记录入出站字节
+    Logger            log.Logger
+    Otel              *obsx.Provider // nil 时禁用 trace/metrics
+    Headers           HeaderMapping  // 可覆盖默认映射
+    WithRequestBody   bool           // 生产默认 false
+    WithResponseBody  bool
+    SlowRequestMillis int64          // 慢请求阈值
+    PayloadAccounting bool           // 记录入出站字节
   }
 
   func DefaultInterceptors(o Options) []connect.Interceptor
@@ -174,14 +201,32 @@ use (
   func Bind(mux *http.ServeMux, path string, h http.Handler)
   ```
 
-* **错误映射（建议）**
+* **错误映射**
   `core/errors` → Connect `Code` → HTTP：
-
   * `INVALID_ARGUMENT` → `CodeInvalidArgument` → 400
   * `NOT_FOUND` → `CodeNotFound` → 404
-  * `ALREADY_EXISTS` → 409
-  * `INTERNAL`/默认 → 500
-    （如需 `PERMISSION_DENIED/UNAUTHENTICATED` 也可映射，但本框架不做校验）
+  * `ALREADY_EXISTS` → `CodeAlreadyExists` → 409
+  * `PERMISSION_DENIED` → `CodePermissionDenied` → 403
+  * `UNAUTHENTICATED` → `CodeUnauthenticated` → 401
+  * `INTERNAL`/默认 → `CodeInternal` → 500
+
+* **权限检查便捷方法**
+  ```go
+  // 检查用户是否具有指定角色
+  if identity.HasRole(ctx, "admin") {
+    // 管理员操作
+  }
+  
+  // 检查用户是否具有任一角色
+  if identity.HasAnyRole(ctx, "admin", "editor") {
+    // 管理员或编辑者操作
+  }
+  
+  // 检查是否为内部服务调用
+  if identity.IsInternalService(ctx, "user-service") {
+    // 内部服务调用，跳过权限检查
+  }
+  ```
 
 * **日志字段口径（最低集）**
   `ts, level, service, version, env, instance, trace_id, span_id, req_id, rpc_system=connect, rpc_service, rpc_method, status, latency_ms, remote_ip, user_agent, payload_in, payload_out`
@@ -365,7 +410,7 @@ func Resolve(ctx context.Context, service string, kind ServiceKind) ([]string /*
 
 ---
 
-# 4) 统一配置与端口策略
+## 4) 统一配置与端口策略
 
 * 环境变量（建议默认；可由 `configx.EnvSource` 读取）
   `SERVICE_NAME`、`SERVICE_VERSION`、`ENV`
@@ -388,127 +433,323 @@ func Resolve(ctx context.Context, service string, kind ServiceKind) ([]string /*
 
 ---
 
-# 5) 最小可运行示例（examples/minimal-connect-service）
+## 5) 实际项目示例
+
+### 5.1 最小服务示例（examples/minimal-connect-service）
+
+**特点**：演示框架基础功能，包含配置管理、拦截器、健康检查等核心特性。
 
 **`main.go`**
 
 ```go
 func main() {
-  ctx := context.Background()
-  logger := newYourLogger() // 实现 core/log.Logger
+  // 初始化日志器
+  logger := &SimpleLogger{}
+  
+  // 创建上下文用于优雅关闭
+  ctx, cancel := context.WithCancel(context.Background())
+  defer cancel()
 
-  otel, _ := obsx.NewProvider(ctx, obsx.Options{
-    ServiceName: os.Getenv("SERVICE_NAME"),
-    ServiceVersion: os.Getenv("SERVICE_VERSION"),
-    OTLPEndpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
-    EnableRuntimeMetrics: true,
+  // 初始化配置管理
+  configManager, err := configx.DefaultManager(ctx, logger)
+  if err != nil {
+    logger.Error(err, "Failed to initialize configuration manager")
+    os.Exit(1)
+  }
+
+  // 加载应用配置
+  var cfg AppConfig
+  if err := configManager.Bind(&cfg); err != nil {
+    logger.Error(err, "Failed to bind configuration")
+    os.Exit(1)
+  }
+
+  // 设置配置热更新
+  configManager.OnUpdate(func(snapshot map[string]string) {
+    logger.Info("Configuration updated", log.Int("keys", len(snapshot)))
+    // 重新加载配置并更新应用设置
   })
-  defer otel.Shutdown(ctx)
 
-  // Connect-only：单端口承载 HTTP/Connect/gRPC-Web（h2/h2c）
+  // 创建 HTTP mux
   mux := http.NewServeMux()
-  ints := connectx.DefaultInterceptors(connectx.Options{
+
+  // 设置 Connect 拦截器
+  interceptors := connectx.DefaultInterceptors(connectx.Options{
     Logger: logger,
-    Otel:   otel,
   })
 
-  // 由 protoc-gen-connect-go 生成
-  path, handler := yourapi.NewGreeterServiceHandler(
-    NewGreeterImpl(),
-    connect.WithInterceptors(ints...),
+  // 创建 Connect 处理器
+  greeterService := &GreeterService{}
+  path, handler := greetv1connect.NewGreeterServiceHandler(
+    greeterService, 
+    connect.WithInterceptors(interceptors...),
   )
-  connectx.Bind(mux, path, handler)
 
-  _ = runtimex.Run(ctx, nil, runtimex.Options{
-    Logger:  logger,
-    HTTP:    &runtimex.HTTPOptions{Addr: getenv("HTTP_PORT", ":8080"), H2C: true, Mux: mux},
-    Health:  &runtimex.Endpoint{Addr: getenv("HEALTH_PORT", ":8081")},
-    Metrics: &runtimex.Endpoint{Addr: getenv("METRICS_PORT", ":9091")},
+  // 绑定处理器到 mux
+  mux.Handle(path, handler)
+
+  // 添加健康检查和指标端点
+  mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("OK"))
+  })
+
+  // 启动运行时
+  err = runtimex.Run(ctx, nil, runtimex.Options{
+    Logger: logger,
+    HTTP: &runtimex.HTTPOptions{
+      Addr: cfg.HTTPPort,
+      H2C:  true, // 启用 HTTP/2 Cleartext
+      Mux:  mux,
+    },
+    Health: &runtimex.Endpoint{Addr: cfg.HealthPort},
+    Metrics: &runtimex.Endpoint{Addr: cfg.MetricsPort},
     ShutdownTimeout: 15 * time.Second,
   })
+
+  if err != nil {
+    logger.Error(err, "Runtime failed")
+    os.Exit(1)
+  }
 }
 ```
 
-**使用 `configx` 进行配置加载与热更新（片段）**
+### 5.2 完整业务服务示例（examples/user-service）
+
+**特点**：演示完整的分层架构，包含数据库集成、业务逻辑、错误处理等企业级特性。
+
+**项目结构**
+```
+user-service/
+├── cmd/server/main.go          # 服务入口
+├── internal/
+│   ├── config/                 # 配置管理
+│   │   ├── app_config.go       # 应用配置
+│   │   └── k8s_watcher.go      # K8s 配置监听
+│   ├── handler/                # Connect 协议处理
+│   │   └── user_handler.go     # 用户服务处理器
+│   ├── service/                # 业务逻辑层
+│   │   └── user_service.go     # 用户业务服务
+│   ├── repository/             # 数据访问层
+│   │   └── user_repository.go  # 用户数据仓库
+│   └── model/                  # 数据模型
+│       ├── user.go             # 用户模型
+│       └── errors.go           # 领域错误
+├── api/                        # Protobuf 定义
+└── gen/                        # 生成的代码
+```
+
+**分层架构实现**
 
 ```go
-// 继承 BaseConfig 的应用配置：静态基线来自环境变量；动态键（如限流/开关）
-// 在启用 K8s 模式时由 ConfigMap 覆盖。
+// 1. 配置层 - 继承 BaseConfig 并扩展业务配置
 type AppConfig struct {
   configx.BaseConfig
-  SlowMillis   int64 `env:"SLOW_REQUEST_MILLIS" default:"1000"`
-  RateLimitQPS int   `env:"RATE_LIMIT_QPS" default:"100"`
+  
+  // 数据库配置
+  Database DatabaseConfig `env:"DATABASE" yaml:"database"`
+  
+  // 业务配置
+  Business BusinessConfig `env:"BUSINESS" yaml:"business"`
+  
+  // 功能开关
+  Features FeatureConfig `env:"FEATURES" yaml:"features"`
 }
 
-func setupConfig(ctx context.Context, logger log.Logger) (configx.Manager, AppConfig, error) {
-  env := configx.NewEnvSource(configx.EnvOptions{Prefix: ""})
-  var sources []configx.Source
-  sources = append(sources, env)
-  if name := os.Getenv("APP_CONFIGMAP_NAME"); name != "" {
-    cms := configx.NewK8sConfigMapSource(name, configx.K8sOptions{Namespace: os.Getenv("NAMESPACE")})
-    sources = append(sources, cms)
-  }
-  m, err := configx.NewManager(ctx, configx.Options{Logger: logger, Sources: sources, Debounce: 200 * time.Millisecond})
-  if err != nil { return nil, AppConfig{}, err }
-  var ac AppConfig
-  if err := m.Bind(&ac); err != nil { return nil, AppConfig{}, err }
-  // 可选：监听热更新，仅针对动态键重建依赖
-  m.OnUpdate(func(snap map[string]string){
-    var next AppConfig
-    _ = m.Bind(&next)
-    // 依据 next 更新限流/白名单等运行时对象（避免变更静态端口/身份等）
-  })
-  return m, ac, nil
+// 2. 数据模型层 - 定义领域实体
+type User struct {
+  ID        string    `gorm:"primaryKey;type:varchar(36)" json:"id"`
+  Email     string    `gorm:"uniqueIndex;not null;size:255" json:"email"`
+  Name      string    `gorm:"not null;size:255" json:"name"`
+  CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+  UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+// 3. 仓储层 - 数据访问接口
+type UserRepository interface {
+  Create(ctx context.Context, user *model.User) (*model.User, error)
+  GetByID(ctx context.Context, id string) (*model.User, error)
+  Update(ctx context.Context, user *model.User) (*model.User, error)
+  Delete(ctx context.Context, id string) error
+  List(ctx context.Context, page, pageSize int) ([]*model.User, int64, error)
+}
+
+// 4. 业务服务层 - 核心业务逻辑
+type UserService interface {
+  CreateUser(ctx context.Context, req *userv1.CreateUserRequest) (*userv1.CreateUserResponse, error)
+  GetUser(ctx context.Context, req *userv1.GetUserRequest) (*userv1.GetUserResponse, error)
+  UpdateUser(ctx context.Context, req *userv1.UpdateUserRequest) (*userv1.UpdateUserResponse, error)
+  DeleteUser(ctx context.Context, req *userv1.DeleteUserRequest) (*userv1.DeleteUserResponse, error)
+  ListUsers(ctx context.Context, req *userv1.ListUsersRequest) (*userv1.ListUsersResponse, error)
+}
+
+// 5. 处理器层 - Connect 协议适配
+type UserHandler struct {
+  userv1connect.UnimplementedUserServiceHandler
+  service service.UserService
+  logger  log.Logger
 }
 ```
 
-**最小服务（超简聚合版，推荐）**
+**服务启动流程**
 
 ```go
-// main.go（聚合式拉起，最少样板代码）
 func main() {
-  ctx := context.Background()
-  logger := newYourLogger() // 实现 core/log.Logger
+  // 1. 初始化基础组件
+  logger := &SimpleLogger{}
+  ctx, cancel := context.WithCancel(context.Background())
+  defer cancel()
 
-  // 1) 配置：Env 基线 + 可选多 ConfigMap（APP/CACHE/ACL）
-  sources, _ := buildSources(ctx, logger)
-  m, _ := configx.NewManager(ctx, configx.Options{Logger: logger, Sources: sources, Debounce: time.Duration(configDebounceMs()) * time.Millisecond})
-  var cfg AppConfig
-  _ = m.Bind(&cfg)
+  // 2. 配置管理
+  configManager, err := configx.DefaultManager(ctx, logger)
+  if err != nil {
+    logger.Error(err, "Failed to initialize configuration manager")
+    os.Exit(1)
+  }
 
-  // 2) 观测
-  otel, _ := obsx.NewProvider(ctx, obsx.Options{
-    ServiceName: cfg.ServiceName, ServiceVersion: cfg.ServiceVersion,
-    OTLPEndpoint: cfg.OTLPEndpoint, EnableRuntimeMetrics: true,
+  var cfg config.AppConfig
+  if err := configManager.Bind(&cfg); err != nil {
+    logger.Error(err, "Failed to bind configuration")
+    os.Exit(1)
+  }
+
+  // 3. 观测组件（可选）
+  otel, err := obsx.NewProvider(ctx, obsx.Options{
+    ServiceName:    "user-service",
+    ServiceVersion: "1.0.0",
+    OTLPEndpoint:   cfg.OTLPEndpoint,
   })
+  if err != nil {
+    logger.Error(err, "Failed to initialize OpenTelemetry provider")
+    os.Exit(1)
+  }
   defer otel.Shutdown(ctx)
 
-  // 3) Connect-only 路由 + 拦截器
-  mux := http.NewServeMux()
-  ints := connectx.DefaultInterceptors(connectx.Options{Logger: logger, Otel: otel, SlowRequestMillis: cfg.SlowMillis})
-  path, handler := yourapi.NewGreeterServiceHandler(NewGreeterImpl(), connect.WithInterceptors(ints...))
-  connectx.Bind(mux, path, handler)
+  // 4. 数据库连接（可选）
+  var db *gorm.DB
+  if cfg.Database.DSN != "" {
+    db, err = gorm.Open(mysql.Open(cfg.Database.DSN), &gorm.Config{})
+    if err != nil {
+      logger.Error(err, "Failed to initialize database connection")
+      os.Exit(1)
+    }
+    // 自动迁移
+    db.AutoMigrate(&model.User{})
+  }
 
-  // 4) 运行时（单端口 + 健康/指标独立端口）
-  _ = runtimex.Run(ctx, nil, runtimex.Options{
-    Logger:  logger,
-    HTTP:    &runtimex.HTTPOptions{Addr: cfg.HTTPPort, H2C: true, Mux: mux},
+  // 5. 依赖注入
+  var userRepo repository.UserRepository
+  if db != nil {
+    userRepo = repository.NewUserRepository(db)
+  }
+  
+  userService := service.NewUserService(userRepo, logger)
+  userHandler := handler.NewUserHandler(userService, logger)
+
+  // 6. Connect 服务
+  mux := http.NewServeMux()
+  interceptors := connectx.DefaultInterceptors(connectx.Options{
+    Logger:            logger,
+    Otel:              otel,
+    WithRequestBody:   cfg.Features.EnableDebugLogs,
+    WithResponseBody:  cfg.Features.EnableDebugLogs,
+    SlowRequestMillis: cfg.Business.SlowQueryMillis,
+    PayloadAccounting: true,
+  })
+
+  path, connectHandler := userv1connect.NewUserServiceHandler(
+    userHandler, 
+    connect.WithInterceptors(interceptors...),
+  )
+  mux.Handle(path, connectHandler)
+
+  // 7. 健康检查（包含数据库状态）
+  mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+    if db != nil {
+      sqlDB, _ := db.DB()
+      if err := sqlDB.PingContext(r.Context()); err != nil {
+        w.WriteHeader(http.StatusServiceUnavailable)
+        w.Write([]byte("Database unhealthy"))
+        return
+      }
+    }
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Healthy"))
+  })
+
+  // 8. 启动运行时
+  err = runtimex.Run(ctx, nil, runtimex.Options{
+    Logger: logger,
+    HTTP: &runtimex.HTTPOptions{
+      Addr: cfg.HTTPPort,
+      H2C:  true,
+      Mux:  mux,
+    },
     Health:  &runtimex.Endpoint{Addr: cfg.HealthPort},
     Metrics: &runtimex.Endpoint{Addr: cfg.MetricsPort},
     ShutdownTimeout: 15 * time.Second,
   })
-}
 
-// configDebounceMs 从环境变量读取去抖时长，缺省 200ms。
-func configDebounceMs() int {
-  if v := os.Getenv("CONFIG_DEBOUNCE_MS"); v != "" { i, _ := strconv.Atoi(v); return i }
-  return 200
+  if err != nil {
+    logger.Error(err, "Runtime failed")
+    os.Exit(1)
+  }
 }
 ```
 
+### 5.3 架构模式与最佳实践
+
+**分层架构原则**
+- **Handler 层**：负责 Connect 协议适配，处理请求/响应转换
+- **Service 层**：包含核心业务逻辑，不依赖传输协议
+- **Repository 层**：数据访问抽象，支持多种存储后端
+- **Model 层**：领域实体和错误定义
+
+**错误处理策略**
+```go
+// 领域错误定义
+var (
+  ErrUserNotFound = errors.New("USER_NOT_FOUND", "user not found")
+  ErrInvalidEmail = errors.New("INVALID_EMAIL", "invalid email address")
+  ErrEmailExists  = errors.New("EMAIL_EXISTS", "email already exists")
+)
+
+// 错误包装和传播
+func (s *userService) CreateUser(ctx context.Context, req *userv1.CreateUserRequest) (*userv1.CreateUserResponse, error) {
+  if s.repo == nil {
+    return nil, errors.New("SERVICE_UNAVAILABLE", "database repository not available")
+  }
+  
+  user, err := s.repo.Create(ctx, user)
+  if err != nil {
+    return nil, err // 错误已在 repository 层包装
+  }
+  
+  return response, nil
+}
+```
+
+**配置管理最佳实践**
+- 继承 `configx.BaseConfig` 获取基础配置
+- 使用环境变量提供默认值
+- 支持 K8s ConfigMap 热更新
+- 配置验证确保数据完整性
+
+**数据库集成模式**
+- 使用 GORM 进行 ORM 映射
+- 支持自动迁移和连接池配置
+- 优雅处理数据库不可用的情况
+- 健康检查包含数据库状态
+
+**观测性集成**
+- OpenTelemetry 自动追踪
+- 结构化日志记录
+- 性能指标收集
+- 慢请求检测
+
 ---
 
-# 6) 版本、发版与 CI/CD（Monorepo 的子目录 Tag）
+## 6) 版本、发版与 CI/CD（Monorepo 的子目录 Tag）
 
 * **子目录 Tag 规范**
 
@@ -528,7 +769,7 @@ func configDebounceMs() int {
 
 ---
 
-# 7) 质量与治理
+## 7) 质量与治理
 
 * **接口稳定性**：
 
@@ -552,7 +793,7 @@ func configDebounceMs() int {
 
 ---
 
-# 8) 迁移与落地顺序（不含任何异步承诺，仅操作顺序）
+## 8) 迁移与落地顺序（不含任何异步承诺，仅操作顺序）
 
 1. 创建仓库 **egg** 并按上面结构初始化 `core/runtimex/connectx/obsx/k8sx/storex` 与 `go.work`。
 2. 先发布 `core/v1.0.0` 与 `runtimex/v1.0.0`（子目录 Tag）。
@@ -562,16 +803,18 @@ func configDebounceMs() int {
 
 ---
 
-## 小结
+## 9) 小结
 
 * **egg = Monorepo 的多模块通用库族**：
-
-  * `core`（零依赖的基础接口与容器）
+  * `core`（零依赖的基础接口与身份容器）
   * `runtimex`（与传输无关的运行时内核）
-  * `connectx`（Higress 头 → 身份注入 + 统一拦截器 + 错误映射 + 绑定工具）
+  * `connectx`（Higress 身份注入 + 统一拦截器 + 错误映射 + 权限检查工具）
   * `configx`（统一配置：Env/File + K8s ConfigMap 热更新）
-  * `obsx`（Otel/Prom 初始化）
-  * `k8sx`（名称法监听/发现/Secret 契约）
-  * `storex`（可选的 DB 适配）
+  * `obsx`（OpenTelemetry/Prometheus 初始化）
+  * `k8sx`（名称法监听/服务发现/Secret 契约）
+  * `storex`（可选的数据库适配）
 
-* **用什么引什么**：不需要 K8s/DB 的服务，不会被动带入；默认单端口统一、健康/指标独立端口；日志/指标/追踪/错误口径平台一致。
+* **分层认证模型**：Higress 层负责认证与身份注入，微服务层专注权限检查与业务逻辑
+* **按需引入**：不需要 K8s/DB 的服务不会被动带入依赖
+* **统一端口策略**：默认单端口承载 HTTP/Connect/gRPC-Web，健康/指标独立端口
+* **统一观测口径**：日志/指标/追踪/错误处理平台一致

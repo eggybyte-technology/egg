@@ -170,8 +170,11 @@ func (m *manager) loadInitial(ctx context.Context) error {
 		}
 
 		// Merge with later sources taking precedence
+		// Only set values that are non-empty to avoid overriding env vars with empty ConfigMap values
 		for k, v := range snapshot {
-			merged[k] = v
+			if v != "" {
+				merged[k] = v
+			}
 		}
 	}
 
@@ -179,7 +182,7 @@ func (m *manager) loadInitial(ctx context.Context) error {
 	m.snapshot = merged
 	m.mu.Unlock()
 
-	m.logger.Info("configuration loaded", log.Int("keys", len(merged)))
+	m.logger.Info("configuration loaded", log.Int("keys", len(merged)), log.Str("SERVICE_NAME", merged["SERVICE_NAME"]), log.Str("HTTP_PORT", merged["HTTP_PORT"]))
 	return nil
 }
 
@@ -250,7 +253,9 @@ func (m *manager) applyUpdate(sourceIndex int, update map[string]string) {
 		}
 
 		for k, v := range snapshot {
-			merged[k] = v
+			if v != "" {
+				merged[k] = v
+			}
 		}
 	}
 
@@ -336,7 +341,11 @@ func bindToStruct(snapshot map[string]string, target any, onUpdate func()) error
 		return fmt.Errorf("target must be a pointer to struct")
 	}
 
-	structValue := targetValue.Elem()
+	return bindStructFields(snapshot, targetValue.Elem())
+}
+
+// bindStructFields recursively binds configuration values to struct fields.
+func bindStructFields(snapshot map[string]string, structValue reflect.Value) error {
 	structType := structValue.Type()
 
 	for i := 0; i < structValue.NumField(); i++ {
@@ -345,6 +354,14 @@ func bindToStruct(snapshot map[string]string, target any, onUpdate func()) error
 
 		// Skip unexported fields
 		if !field.CanSet() {
+			continue
+		}
+
+		// Handle nested structs (embedded or regular)
+		if field.Kind() == reflect.Struct {
+			if err := bindStructFields(snapshot, field); err != nil {
+				return fmt.Errorf("failed to bind nested struct %s: %w", fieldType.Name, err)
+			}
 			continue
 		}
 

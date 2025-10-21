@@ -269,7 +269,8 @@ func buildServiceImage(ctx context.Context, runner *toolrunner.Runner, config *c
 	var dockerfile string
 
 	if serviceType == "backend" {
-		buildContext = fmt.Sprintf("./backend/%s", serviceName)
+		// Use root directory as build context to access bin directory
+		buildContext = "."
 		dockerfile = "build/Dockerfile.backend"
 	} else {
 		buildContext = fmt.Sprintf("./frontend/%s", serviceName)
@@ -287,12 +288,18 @@ func buildServiceImage(ctx context.Context, runner *toolrunner.Runner, config *c
 		load := !push && !strings.Contains(platforms, ",")
 
 		ui.Info("Building with buildx for platforms: %s", platforms)
-		if err := runner.DockerBuildx(ctx, fullImageName, dockerfile, buildContext, platforms, push, load); err != nil {
+		buildArgs := map[string]string{
+			"BINARY_NAME": serviceName,
+		}
+		if err := runner.DockerBuildxWithArgs(ctx, fullImageName, dockerfile, buildContext, platforms, push, load, buildArgs); err != nil {
 			return fmt.Errorf("failed to build Docker image with buildx: %w", err)
 		}
 	} else {
 		// Use regular docker build
-		if err := runner.DockerBuild(ctx, fullImageName, dockerfile, buildContext); err != nil {
+		buildArgs := map[string]string{
+			"BINARY_NAME": serviceName,
+		}
+		if err := runner.DockerBuildWithArgs(ctx, fullImageName, dockerfile, buildContext, buildArgs); err != nil {
 			return fmt.Errorf("failed to build Docker image: %w", err)
 		}
 	}
@@ -319,17 +326,23 @@ func buildServiceImage(ctx context.Context, runner *toolrunner.Runner, config *c
 //   - Local build operations
 func buildServiceLocally(ctx context.Context, runner *toolrunner.Runner, serviceName, serviceType string) error {
 	if serviceType == "backend" {
-		// Build Go binary
+		// Build Go binary to bin directory
 		serviceDir := fmt.Sprintf("./backend/%s", serviceName)
 		serviceRunner := toolrunner.NewRunner(serviceDir)
 		serviceRunner.SetVerbose(true)
 
-		// Build the binary
-		if _, err := serviceRunner.Go(ctx, "build", "-o", "server", "./cmd/server"); err != nil {
+		// Ensure bin directory exists
+		if _, err := runner.Exec(ctx, "mkdir", "-p", "bin"); err != nil {
+			return fmt.Errorf("failed to create bin directory: %w", err)
+		}
+
+		// Build the binary to bin directory
+		binaryPath := fmt.Sprintf("../../bin/%s", serviceName)
+		if _, err := serviceRunner.Go(ctx, "build", "-o", binaryPath, "./cmd/server"); err != nil {
 			return fmt.Errorf("failed to build Go binary: %w", err)
 		}
 
-		ui.Debug("Go binary built: %s/server", serviceDir)
+		ui.Debug("Go binary built: bin/%s", serviceName)
 	} else {
 		// Build Flutter web assets
 		serviceDir := fmt.Sprintf("./frontend/%s", serviceName)

@@ -1,224 +1,171 @@
-# K8sX Module
+# ☸️ K8sX Package
 
-<div align="center">
+The `k8sx` package provides Kubernetes integration for the EggyByte framework.
 
-**Kubernetes integration for Egg services**
+## Overview
 
-[![Go Version](https://img.shields.io/badge/Go-1.21%2B-blue.svg)](https://golang.org/dl/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+This package offers Kubernetes-native functionality including ConfigMap monitoring, service discovery, and resource management. It's designed to be production-ready with proper error handling and resource management.
 
-</div>
+## Features
 
-## 📦 Overview
+- **ConfigMap monitoring** - Watch ConfigMap changes and hot updates
+- **Service discovery** - Kubernetes service discovery
+- **Resource management** - Proper resource lifecycle management
+- **Error handling** - Robust error handling and retry logic
+- **Production ready** - Optimized for production Kubernetes environments
 
-The `k8sx` module provides Kubernetes integration for Egg services. It offers ConfigMap name-based watching, service discovery, and Secret contracts for seamless Kubernetes-native development.
-
-## ✨ Features
-
-- ☸️ **ConfigMap Watching** - Name-based ConfigMap watching with hot reload
-- 🔍 **Service Discovery** - Headless and ClusterIP service discovery
-- 🔐 **Secret Contracts** - Secret injection via env + secretKeyRef
-- 🔄 **Hot Reload** - Configuration changes without service restart
-- 📝 **Structured Logging** - Context-aware logging
-- 🛡️ **Error Handling** - Robust error handling and recovery
-- 🎯 **Kubernetes Native** - Designed for Kubernetes environments
-- 🔧 **Easy Configuration** - Simple setup and configuration
-
-## 🏗️ Architecture
-
-```
-k8sx/
-├── k8sx.go           # Main Kubernetes integration
-├── internal/
-│   ├── watcher.go    # ConfigMap watcher
-│   └── resolver.go   # Service resolver
-└── k8sx_test.go      # Tests
-```
-
-## 🚀 Quick Start
-
-### Installation
-
-```bash
-go get github.com/eggybyte-technology/egg/k8sx@latest
-```
-
-### Basic Usage
+## Quick Start
 
 ```go
-package main
-
-import (
-    "context"
-    "time"
-
-    "github.com/eggybyte-technology/egg/k8sx"
-    "github.com/eggybyte-technology/egg/core/log"
-)
+import "github.com/eggybyte-technology/egg/k8sx"
 
 func main() {
-    // Create logger
-    logger := &YourLogger{} // Implement log.Logger interface
-
     // Create Kubernetes client
-    ctx := context.Background()
-    client, err := k8sx.NewClient(ctx, k8sx.Options{
-        Namespace: "default",
-        Logger:    logger,
-    })
+    client, err := k8sx.NewClient(ctx, logger)
     if err != nil {
-        log.Fatal("Failed to create Kubernetes client:", err)
+        log.Fatal(err)
     }
     defer client.Close()
-
+    
     // Watch ConfigMap
-    configMapName := "my-service-config"
-    if err := client.WatchConfigMap(ctx, configMapName, func(data map[string]string) {
-        log.Info("ConfigMap updated", "name", configMapName, "data", data)
-        // Handle configuration changes
-        handleConfigChange(data)
-    }); err != nil {
-        log.Fatal("Failed to watch ConfigMap:", err)
-    }
-
-    // Resolve service
-    serviceName := "my-service"
-    endpoints, err := client.ResolveService(ctx, serviceName, k8sx.ServiceTypeClusterIP)
+    watcher, err := client.WatchConfigMap(ctx, "app-config", "default")
     if err != nil {
-        log.Fatal("Failed to resolve service:", err)
+        log.Fatal(err)
     }
-
-    log.Info("Service resolved", "service", serviceName, "endpoints", endpoints)
+    
+    // Handle ConfigMap changes
+    go func() {
+        for event := range watcher.Events() {
+            switch event.Type {
+            case k8sx.EventAdded, k8sx.EventModified:
+                logger.Info("ConfigMap updated", log.Str("name", event.Name))
+                // Reload configuration
+            case k8sx.EventDeleted:
+                logger.Info("ConfigMap deleted", log.Str("name", event.Name))
+            }
+        }
+    }()
 }
 ```
 
-## 📖 API Reference
+## API Reference
 
-### Client Options
+### Types
+
+#### Client
 
 ```go
-type Options struct {
+type Client struct {
+    clientset kubernetes.Interface
+    logger    log.Logger
+}
+
+// Close closes the client
+func (c *Client) Close() error
+
+// WatchConfigMap watches a ConfigMap for changes
+func (c *Client) WatchConfigMap(ctx context.Context, name, namespace string) (*Watcher, error)
+
+// GetConfigMap gets a ConfigMap
+func (c *Client) GetConfigMap(ctx context.Context, name, namespace string) (*corev1.ConfigMap, error)
+
+// ListServices lists services in a namespace
+func (c *Client) ListServices(ctx context.Context, namespace string) ([]corev1.Service, error)
+```
+
+#### Watcher
+
+```go
+type Watcher struct {
+    events chan Event
+    stop   chan struct{}
+}
+
+// Events returns a channel of events
+func (w *Watcher) Events() <-chan Event
+
+// Stop stops the watcher
+func (w *Watcher) Stop()
+```
+
+#### Event
+
+```go
+type Event struct {
+    Type      EventType
+    Name      string
     Namespace string
-    Logger    log.Logger
-    KubeConfig string
-    InCluster  bool
+    Data      map[string]string
+    Error     error
 }
 
-type Client interface {
-    WatchConfigMap(ctx context.Context, name string, callback func(map[string]string)) error
-    ResolveService(ctx context.Context, name string, serviceType ServiceType) ([]string, error)
-    GetSecret(ctx context.Context, name string) (map[string][]byte, error)
-    Close() error
-}
-```
-
-### Service Types
-
-```go
-type ServiceType int
+type EventType int
 
 const (
-    ServiceTypeClusterIP ServiceType = iota
-    ServiceTypeHeadless
+    EventAdded EventType = iota
+    EventModified
+    EventDeleted
+    EventError
 )
 ```
 
-### Main Functions
+### Functions
 
 ```go
 // NewClient creates a new Kubernetes client
-func NewClient(ctx context.Context, opts Options) (Client, error)
+func NewClient(ctx context.Context, logger log.Logger) (*Client, error)
 
-// DefaultClient creates a client with default options
-func DefaultClient(ctx context.Context, namespace string) (Client, error)
+// NewClientFromConfig creates a new Kubernetes client from config
+func NewClientFromConfig(ctx context.Context, logger log.Logger, config *rest.Config) (*Client, error)
 ```
 
-## 🔧 Configuration
+## Usage Examples
 
-### Environment Variables
-
-```bash
-# Kubernetes configuration
-export NAMESPACE="default"
-export KUBECONFIG="/path/to/kubeconfig"
-
-# Service discovery
-export SERVICE_NAME="my-service"
-export SERVICE_TYPE="clusterip"
-
-# ConfigMap watching
-export CONFIGMAP_NAME="my-service-config"
-```
-
-### Kubernetes RBAC
-
-```yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: my-service
-  namespace: default
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: my-service
-  namespace: default
-rules:
-- apiGroups: [""]
-  resources: ["configmaps", "secrets", "services", "endpoints"]
-  verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: my-service
-  namespace: default
-subjects:
-- kind: ServiceAccount
-  name: my-service
-  namespace: default
-roleRef:
-  kind: Role
-  name: my-service
-  apiGroup: rbac.authorization.k8s.io
-```
-
-## 🛠️ Advanced Usage
-
-### ConfigMap Watching
+### Basic ConfigMap Watching
 
 ```go
 func main() {
-    // Create client
-    client, err := k8sx.NewClient(ctx, k8sx.Options{
-        Namespace: "default",
-        Logger:    logger,
-    })
+    // Create Kubernetes client
+    client, err := k8sx.NewClient(ctx, logger)
     if err != nil {
-        log.Fatal("Failed to create client:", err)
+        log.Fatal(err)
     }
     defer client.Close()
-
-    // Watch multiple ConfigMaps
-    configMaps := []string{
-        "my-service-config",
-        "shared-config",
-        "feature-flags",
+    
+    // Watch ConfigMap
+    watcher, err := client.WatchConfigMap(ctx, "app-config", "default")
+    if err != nil {
+        log.Fatal(err)
     }
-
-    for _, name := range configMaps {
-        go func(configMapName string) {
-            if err := client.WatchConfigMap(ctx, configMapName, func(data map[string]string) {
-                log.Info("ConfigMap updated", "name", configMapName)
-                // Handle specific ConfigMap changes
-                handleConfigMapChange(configMapName, data)
-            }); err != nil {
-                log.Error("Failed to watch ConfigMap", "name", configMapName, "error", err)
+    defer watcher.Stop()
+    
+    // Handle ConfigMap changes
+    go func() {
+        for event := range watcher.Events() {
+            switch event.Type {
+            case k8sx.EventAdded, k8sx.EventModified:
+                logger.Info("ConfigMap updated",
+                    log.Str("name", event.Name),
+                    log.Str("namespace", event.Namespace),
+                )
+                
+                // Reload configuration
+                if err := reloadConfiguration(event.Data); err != nil {
+                    logger.Error(err, "Failed to reload configuration")
+                }
+                
+            case k8sx.EventDeleted:
+                logger.Info("ConfigMap deleted",
+                    log.Str("name", event.Name),
+                    log.Str("namespace", event.Namespace),
+                )
+                
+            case k8sx.EventError:
+                logger.Error(event.Error, "ConfigMap watch error")
             }
-        }(name)
-    }
-
+        }
+    }()
+    
     // Keep running
     select {}
 }
@@ -228,207 +175,438 @@ func main() {
 
 ```go
 func main() {
-    // Create client
-    client, err := k8sx.NewClient(ctx, k8sx.Options{
-        Namespace: "default",
-        Logger:    logger,
-    })
+    // Create Kubernetes client
+    client, err := k8sx.NewClient(ctx, logger)
     if err != nil {
-        log.Fatal("Failed to create client:", err)
+        log.Fatal(err)
     }
     defer client.Close()
-
-    // Resolve ClusterIP service
-    endpoints, err := client.ResolveService(ctx, "my-service", k8sx.ServiceTypeClusterIP)
+    
+    // List services
+    services, err := client.ListServices(ctx, "default")
     if err != nil {
-        log.Fatal("Failed to resolve service:", err)
+        log.Fatal(err)
     }
-
-    log.Info("ClusterIP endpoints", "endpoints", endpoints)
-
-    // Resolve Headless service
-    headlessEndpoints, err := client.ResolveService(ctx, "my-service", k8sx.ServiceTypeHeadless)
-    if err != nil {
-        log.Fatal("Failed to resolve headless service:", err)
+    
+    // Process services
+    for _, service := range services {
+        logger.Info("Found service",
+            log.Str("name", service.Name),
+            log.Str("namespace", service.Namespace),
+            log.Str("type", string(service.Spec.Type)),
+        )
+        
+        // Extract service endpoints
+        if service.Spec.Type == corev1.ServiceTypeClusterIP {
+            endpoint := fmt.Sprintf("%s.%s.svc.cluster.local:%d",
+                service.Name,
+                service.Namespace,
+                service.Spec.Ports[0].Port,
+            )
+            logger.Info("Service endpoint", log.Str("endpoint", endpoint))
+        }
     }
-
-    log.Info("Headless endpoints", "endpoints", headlessEndpoints)
 }
 ```
 
-### Secret Management
+### Configuration Management Integration
 
 ```go
-func main() {
-    // Create client
-    client, err := k8sx.NewClient(ctx, k8sx.Options{
-        Namespace: "default",
-        Logger:    logger,
-    })
-    if err != nil {
-        log.Fatal("Failed to create client:", err)
-    }
-    defer client.Close()
+type K8sConfigManager struct {
+    client    *k8sx.Client
+    logger    log.Logger
+    configMap string
+    namespace string
+    data      map[string]string
+    watcher   *k8sx.Watcher
+}
 
-    // Get secret
-    secretName := "my-service-secrets"
-    secrets, err := client.GetSecret(ctx, secretName)
+func NewK8sConfigManager(ctx context.Context, logger log.Logger, configMap, namespace string) (*K8sConfigManager, error) {
+    // Create Kubernetes client
+    client, err := k8sx.NewClient(ctx, logger)
     if err != nil {
-        log.Fatal("Failed to get secret:", err)
+        return nil, err
     }
+    
+    manager := &K8sConfigManager{
+        client:    client,
+        logger:    logger,
+        configMap: configMap,
+        namespace: namespace,
+        data:      make(map[string]string),
+    }
+    
+    // Load initial configuration
+    if err := manager.loadConfig(ctx); err != nil {
+        return nil, err
+    }
+    
+    // Start watching for changes
+    if err := manager.startWatching(ctx); err != nil {
+        return nil, err
+    }
+    
+    return manager, nil
+}
 
-    // Use secrets
-    for key, value := range secrets {
-        log.Info("Secret loaded", "key", key, "length", len(value))
-        // Use secret value (be careful not to log sensitive data)
+func (m *K8sConfigManager) loadConfig(ctx context.Context) error {
+    configMap, err := m.client.GetConfigMap(ctx, m.configMap, m.namespace)
+    if err != nil {
+        return err
     }
+    
+    m.data = configMap.Data
+    m.logger.Info("Configuration loaded from ConfigMap",
+        log.Str("name", m.configMap),
+        log.Str("namespace", m.namespace),
+    )
+    
+    return nil
+}
+
+func (m *K8sConfigManager) startWatching(ctx context.Context) error {
+    watcher, err := m.client.WatchConfigMap(ctx, m.configMap, m.namespace)
+    if err != nil {
+        return err
+    }
+    
+    m.watcher = watcher
+    
+    go func() {
+        for event := range watcher.Events() {
+            switch event.Type {
+            case k8sx.EventAdded, k8sx.EventModified:
+                m.data = event.Data
+                m.logger.Info("Configuration updated from ConfigMap")
+                
+            case k8sx.EventDeleted:
+                m.logger.Warn("ConfigMap deleted, using cached configuration")
+                
+            case k8sx.EventError:
+                m.logger.Error(event.Error, "ConfigMap watch error")
+            }
+        }
+    }()
+    
+    return nil
+}
+
+func (m *K8sConfigManager) Get(key string) (string, bool) {
+    value, exists := m.data[key]
+    return value, exists
+}
+
+func (m *K8sConfigManager) Close() error {
+    if m.watcher != nil {
+        m.watcher.Stop()
+    }
+    return m.client.Close()
 }
 ```
 
-## 🔧 Integration with Other Modules
-
-### ConfigX Integration
+### Health Check Integration
 
 ```go
 func main() {
     // Create Kubernetes client
-    client, err := k8sx.NewClient(ctx, k8sx.Options{
-        Namespace: "default",
-        Logger:    logger,
-    })
+    client, err := k8sx.NewClient(ctx, logger)
     if err != nil {
-        log.Fatal("Failed to create client:", err)
+        log.Fatal(err)
     }
     defer client.Close()
-
-    // Create configuration manager with Kubernetes source
-    mgr, err := configx.NewManager(ctx, logger,
-        configx.WithSources(
-            configx.EnvironmentSource(),
-            configx.FileSource("config.yaml"),
-            configx.ConfigMapSource("my-service-config", "default"),
-        ),
-    )
-    if err != nil {
-        log.Fatal("Failed to create config manager:", err)
+    
+    // Create health check handler
+    mux := http.NewServeMux()
+    mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+        // Check Kubernetes connectivity
+        if err := checkK8sConnectivity(client); err != nil {
+            w.WriteHeader(http.StatusServiceUnavailable)
+            w.Write([]byte("Kubernetes connectivity failed"))
+            return
+        }
+        
+        // Check ConfigMap availability
+        if err := checkConfigMapAvailability(client); err != nil {
+            w.WriteHeader(http.StatusServiceUnavailable)
+            w.Write([]byte("ConfigMap unavailable"))
+            return
+        }
+        
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte("OK"))
+    })
+    
+    // Start server
+    server := &http.Server{
+        Addr:    ":8081",
+        Handler: mux,
     }
-
-    // Bind configuration
-    var cfg AppConfig
-    if err := mgr.Bind(&cfg); err != nil {
-        log.Fatal("Failed to bind configuration:", err)
+    
+    go func() {
+        if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            log.Fatal(err)
+        }
+    }()
+    
+    // Graceful shutdown
+    sigChan := make(chan os.Signal, 1)
+    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+    <-sigChan
+    
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    
+    if err := server.Shutdown(ctx); err != nil {
+        log.Fatal(err)
     }
+}
 
-    // Watch for configuration changes
-    if err := mgr.Watch(ctx, func() {
-        log.Info("Configuration reloaded from Kubernetes")
-    }); err != nil {
-        log.Fatal("Failed to watch configuration:", err)
-    }
+func checkK8sConnectivity(client *k8sx.Client) error {
+    // Try to list services to check connectivity
+    _, err := client.ListServices(context.Background(), "default")
+    return err
+}
+
+func checkConfigMapAvailability(client *k8sx.Client) error {
+    // Try to get ConfigMap to check availability
+    _, err := client.GetConfigMap(context.Background(), "app-config", "default")
+    return err
 }
 ```
 
-### Service Discovery Integration
+## Configuration
+
+### Environment Variables
+
+```bash
+# Kubernetes configuration
+KUBECONFIG=/path/to/kubeconfig
+KUBERNETES_SERVICE_HOST=kubernetes.default.svc.cluster.local
+KUBERNETES_SERVICE_PORT=443
+
+# ConfigMap configuration
+CONFIGMAP_NAME=app-config
+CONFIGMAP_NAMESPACE=default
+```
+
+### Kubernetes RBAC
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-service-account
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: app-config-reader
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: app-config-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: app-config-reader
+subjects:
+- kind: ServiceAccount
+  name: app-service-account
+  namespace: default
+```
+
+## Testing
+
+```go
+func TestK8sClient(t *testing.T) {
+    // Create test client
+    client, err := k8sx.NewClient(context.Background(), &TestLogger{})
+    assert.NoError(t, err)
+    defer client.Close()
+    
+    // Test ConfigMap operations
+    configMap, err := client.GetConfigMap(context.Background(), "test-config", "default")
+    if err != nil {
+        // ConfigMap might not exist in test environment
+        t.Logf("ConfigMap not found: %v", err)
+    } else {
+        assert.NotNil(t, configMap)
+    }
+    
+    // Test service listing
+    services, err := client.ListServices(context.Background(), "default")
+    assert.NoError(t, err)
+    assert.NotNil(t, services)
+}
+
+func TestConfigMapWatcher(t *testing.T) {
+    // Create test client
+    client, err := k8sx.NewClient(context.Background(), &TestLogger{})
+    assert.NoError(t, err)
+    defer client.Close()
+    
+    // Create watcher
+    watcher, err := client.WatchConfigMap(context.Background(), "test-config", "default")
+    if err != nil {
+        // Watcher might not work in test environment
+        t.Logf("Watcher creation failed: %v", err)
+        return
+    }
+    defer watcher.Stop()
+    
+    // Test watcher events channel
+    assert.NotNil(t, watcher.Events())
+}
+
+type TestLogger struct{}
+
+func (l *TestLogger) With(kv ...any) log.Logger { return l }
+func (l *TestLogger) Debug(msg string, kv ...any) {}
+func (l *TestLogger) Info(msg string, kv ...any) {}
+func (l *TestLogger) Warn(msg string, kv ...any) {}
+func (l *TestLogger) Error(err error, msg string, kv ...any) {}
+```
+
+## Best Practices
+
+### 1. Proper Resource Management
 
 ```go
 func main() {
-    // Create client
-    client, err := k8sx.NewClient(ctx, k8sx.Options{
-        Namespace: "default",
-        Logger:    logger,
-    })
+    // Create Kubernetes client
+    client, err := k8sx.NewClient(ctx, logger)
     if err != nil {
-        log.Fatal("Failed to create client:", err)
+        log.Fatal(err)
     }
-    defer client.Close()
-
-    // Resolve dependencies
-    dependencies := []string{
-        "user-service",
-        "order-service",
-        "payment-service",
-    }
-
-    for _, serviceName := range dependencies {
-        endpoints, err := client.ResolveService(ctx, serviceName, k8sx.ServiceTypeClusterIP)
-        if err != nil {
-            log.Error("Failed to resolve service", "service", serviceName, "error", err)
-            continue
+    
+    // Ensure proper cleanup
+    defer func() {
+        if err := client.Close(); err != nil {
+            logger.Error(err, "Failed to close Kubernetes client")
         }
-
-        log.Info("Service resolved", "service", serviceName, "endpoints", endpoints)
-        // Use endpoints for service communication
-    }
+    }()
+    
+    // Use client
+    useClient(client)
 }
 ```
 
-## 🧪 Testing
+### 2. Error Handling
 
-Run tests:
-
-```bash
-go test ./...
+```go
+func watchConfigMap(ctx context.Context, client *k8sx.Client) error {
+    watcher, err := client.WatchConfigMap(ctx, "app-config", "default")
+    if err != nil {
+        return errors.Wrap(err, "K8S_ERROR", "failed to watch ConfigMap")
+    }
+    defer watcher.Stop()
+    
+    for event := range watcher.Events() {
+        switch event.Type {
+        case k8sx.EventError:
+            logger.Error(event.Error, "ConfigMap watch error")
+            // Implement retry logic if needed
+            
+        case k8sx.EventAdded, k8sx.EventModified:
+            if err := handleConfigUpdate(event.Data); err != nil {
+                logger.Error(err, "Failed to handle config update")
+            }
+            
+        case k8sx.EventDeleted:
+            logger.Warn("ConfigMap deleted, using cached configuration")
+        }
+    }
+    
+    return nil
+}
 ```
 
-Run tests with coverage:
+### 3. Context Usage
 
-```bash
-go test -cover ./...
+```go
+func getConfigMap(ctx context.Context, client *k8sx.Client) (*corev1.ConfigMap, error) {
+    // Use context for cancellation and timeouts
+    ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+    defer cancel()
+    
+    configMap, err := client.GetConfigMap(ctx, "app-config", "default")
+    if err != nil {
+        return nil, errors.Wrap(err, "K8S_ERROR", "failed to get ConfigMap")
+    }
+    
+    return configMap, nil
+}
 ```
 
-## 📈 Test Coverage
+### 4. Graceful Shutdown
 
-| Component | Coverage |
-|-----------|----------|
-| K8sX | Good |
+```go
+func main() {
+    // Create Kubernetes client
+    client, err := k8sx.NewClient(ctx, logger)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Start watcher
+    watcher, err := client.WatchConfigMap(ctx, "app-config", "default")
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Handle shutdown signals
+    sigChan := make(chan os.Signal, 1)
+    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+    
+    go func() {
+        <-sigChan
+        logger.Info("Shutting down...")
+        
+        // Stop watcher
+        watcher.Stop()
+        
+        // Close client
+        if err := client.Close(); err != nil {
+            logger.Error(err, "Failed to close Kubernetes client")
+        }
+        
+        os.Exit(0)
+    }()
+    
+    // Keep running
+    select {}
+}
+```
 
-## 🔍 Troubleshooting
+## Thread Safety
 
-### Common Issues
+All functions in this package are safe for concurrent use. The Kubernetes client is designed to handle concurrent access safely.
 
-1. **Kubernetes Client Not Connected**
-   ```bash
-   # Check if kubeconfig is valid
-   kubectl cluster-info
-   
-   # Check if service account has permissions
-   kubectl auth can-i get configmaps --as=system:serviceaccount:default:my-service
-   ```
+## Dependencies
 
-2. **ConfigMap Not Found**
-   ```bash
-   # Check if ConfigMap exists
-   kubectl get configmap my-service-config -n default
-   
-   # Check if service account can access ConfigMap
-   kubectl auth can-i get configmap my-service-config --as=system:serviceaccount:default:my-service
-   ```
+- **Go 1.21+** required
+- **Kubernetes client-go** - Kubernetes API client
+- **Standard library** - Core functionality
 
-3. **Service Resolution Failed**
-   ```bash
-   # Check if service exists
-   kubectl get service my-service -n default
-   
-   # Check service endpoints
-   kubectl get endpoints my-service -n default
-   ```
+## Version Compatibility
 
-## 🤝 Contributing
+- **Go 1.21+** required
+- **API Stability**: Evolving (L3 module)
+- **Breaking Changes**: Possible in minor versions
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Create a Pull Request
+## Contributing
 
-## 📄 License
+Contributions are welcome! Please see the main project [Contributing Guide](../CONTRIBUTING.md) for details.
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](../../LICENSE) file for details.
+## License
 
----
-
-<div align="center">
-
-**Built with ❤️ by EggyByte Technology**
-
-</div>
+This package is part of the EggyByte framework and is licensed under the MIT License.

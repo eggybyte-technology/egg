@@ -1,332 +1,504 @@
-# Egg CLI
+# 🎯 CLI Package
 
-<div align="center">
+The `cli` package provides a command-line interface for the EggyByte framework.
 
-**A Connect-first, Kubernetes-native modern project management tool for EggyByte platform**
+## Overview
 
-[![Go Version](https://img.shields.io/badge/Go-1.21%2B-blue.svg)](https://golang.org/dl/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](https://github.com/eggybyte-technology/egg)
+This package offers a comprehensive CLI tool for project management, service generation, and deployment automation. It's designed to streamline the development workflow and provide a consistent experience across different projects.
 
-</div>
+## Features
 
-## ✨ Features
+- **Project initialization** - Create new EggyByte projects
+- **Service generation** - Generate backend and frontend services
+- **API management** - Protobuf API definition and generation
+- **Docker Compose** - Generate and manage Docker Compose configurations
+- **Kubernetes** - Generate Kubernetes manifests
+- **Health checks** - Project validation and health checks
 
-- 🚀 **Project Initialization** - Quickly create project skeleton and configuration
-- 🏗️ **Service Generation** - Auto-generate backend (Go) and frontend (Flutter) services
-- 📡 **API Management** - Use buf to manage protobuf definitions, generate multi-language code (Go, Dart, TypeScript, OpenAPI)
-- 🐳 **Local Development** - Docker Compose integration with one-click service and database startup
-- ☸️ **Kubernetes Deployment** - Auto-generate Helm charts and deploy to Kubernetes clusters
-- 🏭 **Image Building** - Multi-platform Docker image building and pushing
-- ✅ **Configuration Validation** - Comprehensive project structure and configuration validation
-
-## 📦 Installation
-
-### From Source
+## Quick Start
 
 ```bash
-git clone https://github.com/eggybyte-technology/egg.git
-cd egg/cli
-go build -o egg ./cmd/egg
-sudo mv egg /usr/local/bin/
+# Build the CLI
+make build-cli
+
+# Initialize a new project
+./cli/egg init --project-name my-project --module-prefix github.com/myorg/my-project
+
+# Create a backend service
+./cli/egg create backend user-service
+
+# Generate Docker Compose configuration
+./cli/egg compose generate
+
+# Check project health
+./cli/egg check
 ```
 
-### Using Go Install
+## Commands
+
+### Project Management
+
+#### `init` - Initialize a new project
 
 ```bash
-go install github.com/eggybyte-technology/egg/cli/cmd/egg@latest
+./cli/egg init [flags]
 ```
 
-## 🚀 Quick Start
-
-### 1. Initialize Project
-
-```bash
-mkdir my-platform
-cd my-platform
-egg init --project-name my-platform
-```
-
-### 2. Create Backend Service
-
-```bash
-egg create backend user-service
-```
-
-### 3. Initialize API Definitions
-
-```bash
-egg api init
-```
-
-Add your `.proto` files in the `api/` directory, then generate code:
-
-```bash
-egg api generate
-```
-
-### 4. Local Development
-
-Start all services:
-
-```bash
-egg compose up
-```
-
-Stop services:
-
-```bash
-egg compose down
-```
-
-View logs:
-
-```bash
-egg compose logs --service user-service
-```
-
-### 5. Deploy to Kubernetes
-
-Generate Helm charts:
-
-```bash
-egg kube template -n production
-```
-
-Apply to cluster:
-
-```bash
-egg kube apply -n production
-```
-
-### 6. Build and Push Images
-
-Build images:
-
-```bash
-egg build --version v1.0.0
-```
-
-Build and push:
-
-```bash
-egg build --version v1.0.0 --push
-```
-
-Build specific services only:
-
-```bash
-egg build --subset user-service,admin-portal
-```
-
-### 7. Check Project
-
-```bash
-egg check
-```
-
-## 📖 Command Reference
-
-### Global Options
-
-- `--verbose, -v` - Enable verbose output
-- `--non-interactive` - Disable interactive prompts
-- `--json` - Output in JSON format
-
-### `init` - Initialize Project
-
-```bash
-egg init [flags]
-```
-
-**Options:**
-- `--project-name` - Project name (default: current directory name)
-- `--module-prefix` - Go module prefix
-- `--docker-registry` - Docker image registry address
+**Flags:**
+- `--project-name` - Project name (required)
+- `--module-prefix` - Go module prefix (required)
+- `--docker-registry` - Docker registry URL
 - `--version` - Project version
 
-### `create` - Create Services
-
-#### Create Backend Service
-
+**Example:**
 ```bash
-egg create backend <name>
+./cli/egg init \
+  --project-name user-service \
+  --module-prefix github.com/myorg/user-service \
+  --docker-registry ghcr.io/myorg \
+  --version v1.0.0
 ```
 
-**Generates:**
-- Go module and workspace configuration
-- Connect-only service structure
-- Configuration management
-- Health check and metrics endpoints
-
-#### Create Frontend Service
+#### `check` - Check project health
 
 ```bash
-egg create frontend <name> [flags]
+./cli/egg check
 ```
 
-**Options:**
-- `--platforms` - Target platforms (web, android, ios)
+Validates the project structure and configuration.
 
-### `api` - API Management
+### Service Generation
 
-#### Initialize API Definitions
+#### `create backend` - Create a backend service
 
 ```bash
-egg api init
+./cli/egg create backend <service-name> [flags]
 ```
 
-#### Generate Code
+**Flags:**
+- `--local-modules` - Use local modules instead of remote dependencies
+
+**Example:**
+```bash
+./cli/egg create backend user-service --local-modules
+```
+
+#### `create frontend` - Create a frontend service
 
 ```bash
-egg api generate
+./cli/egg create frontend <service-name> [flags]
 ```
 
-**Generates:**
-- Go code (protobuf + Connect)
-- Dart code (Flutter)
-- TypeScript type definitions
-- OpenAPI specifications
+**Flags:**
+- `--platforms` - Target platforms (web, mobile, desktop)
 
-### `compose` - Docker Compose Management
+**Example:**
+```bash
+./cli/egg create frontend admin-portal --platforms web
+```
 
-#### Start Services
+### API Management
+
+#### `api init` - Initialize API definitions
 
 ```bash
-egg compose up [flags]
+./cli/egg api init
 ```
 
-**Options:**
-- `--detached` - Run in background
+Creates the API directory structure with Buf configuration.
 
-#### Stop Services
+#### `api generate` - Generate code from protobuf
 
 ```bash
-egg compose down
+./cli/egg api generate
 ```
 
-#### View Logs
+Generates Go code from protobuf definitions.
+
+### Docker Compose
+
+#### `compose generate` - Generate Docker Compose configuration
 
 ```bash
-egg compose logs [flags]
+./cli/egg compose generate
 ```
 
-**Options:**
-- `--service` - Filter specific service
-- `--follow, -f` - Follow log output
+Generates `docker-compose.yaml` based on project configuration.
 
-### `kube` - Kubernetes Deployment
-
-#### Generate Helm Templates
+#### `compose up` - Start services
 
 ```bash
-egg kube template [flags]
+./cli/egg compose up [flags]
 ```
 
-**Options:**
-- `--namespace, -n` - Kubernetes namespace
+**Flags:**
+- `--detached` - Run in detached mode
+- `--build` - Build images before starting
 
-#### Apply to Cluster
+**Example:**
+```bash
+./cli/egg compose up --detached --build
+```
+
+#### `compose down` - Stop services
 
 ```bash
-egg kube apply [flags]
+./cli/egg compose down
 ```
 
-**Options:**
-- `--namespace, -n` - Kubernetes namespace
+### Kubernetes
 
-#### Uninstall
+#### `kube generate` - Generate Kubernetes manifests
 
 ```bash
-egg kube uninstall [flags]
+./cli/egg kube generate
 ```
 
-**Options:**
-- `--namespace, -n` - Kubernetes namespace
+Generates Kubernetes manifests for deployment.
 
-### `build` - Build Images
+### Health and Diagnostics
+
+#### `doctor` - Check development environment
 
 ```bash
-egg build [flags]
+./cli/egg doctor
 ```
 
-**Options:**
-- `--push` - Push to image registry
-- `--version` - Image version tag
-- `--subset` - Build only specified services (comma-separated)
+Checks the development environment and dependencies.
 
-### `check` - Check Project
+## Configuration
+
+### Project Configuration (`egg.yaml`)
+
+```yaml
+project_name: "user-service"
+module_prefix: "github.com/myorg/user-service"
+docker_registry: "ghcr.io/myorg"
+version: "v1.0.0"
+
+backend:
+  user-service:
+    name: "user-service"
+    version: "v1.0.0"
+    ports:
+      http: 8080
+      health: 8081
+      metrics: 9091
+
+frontend:
+  admin-portal:
+    name: "admin-portal"
+    version: "v1.0.0"
+    platforms: ["web"]
+
+api:
+  enabled: true
+  version: "v1"
+```
+
+### Environment Variables
 
 ```bash
-egg check
+# CLI configuration
+EGG_CONFIG_FILE=egg.yaml
+EGG_LOG_LEVEL=info
+EGG_OUTPUT_FORMAT=text
+
+# Docker configuration
+DOCKER_REGISTRY=ghcr.io/myorg
+DOCKER_TAG=latest
+
+# Kubernetes configuration
+KUBECONFIG=/path/to/kubeconfig
+KUBERNETES_NAMESPACE=default
 ```
 
-**Checks:**
-- Project structure integrity
-- Configuration validity
-- Port conflicts
-- Expression references
-- Service configuration
+## Usage Examples
 
-## ⚙️ Configuration File (egg.yaml)
-
-The project configuration file `egg.yaml` is the single source of truth for the project, containing:
-
-- Project metadata
-- Build configuration
-- Environment variables
-- Service definitions
-- Kubernetes resources
-- Database configuration
-
-See [egg-cli.md](../docs/egg-cli.md) for example configuration.
-
-## 🔗 Expression System
-
-Egg supports configuration reference expressions:
-
-- `${cfg:resource}` - Inject ConfigMap name (Kubernetes)
-- `${cfgv:resource:key}` - Inject ConfigMap value (Compose)
-- `${sec:resource:key}` - Inject Secret reference (Kubernetes)
-- `${svc:name@type}` - Inject service reference (type: clusterip or headless)
-
-## 🏗️ Architecture Design
-
-Egg CLI follows these design principles:
-
-1. **Connect-first** - Default to Connect protocol, expose only HTTP port
-2. **Kubernetes-native** - Native support for K8s ConfigMap, Secret, and service discovery
-3. **CLI-driven** - All operations through CLI commands, no manual editing of generated files
-4. **Configuration as Code** - Single configuration file manages entire project
-5. **Production-grade Quality** - Complete documentation, error handling, and test coverage
-
-## 🛠️ Development
-
-### Run Tests
+### Complete Project Setup
 
 ```bash
-go test ./...
+# 1. Initialize project
+./cli/egg init \
+  --project-name ecommerce \
+  --module-prefix github.com/myorg/ecommerce \
+  --docker-registry ghcr.io/myorg \
+  --version v1.0.0
+
+# 2. Create backend services
+./cli/egg create backend user-service --local-modules
+./cli/egg create backend product-service --local-modules
+./cli/egg create backend order-service --local-modules
+
+# 3. Create frontend
+./cli/egg create frontend web-portal --platforms web
+
+# 4. Initialize API
+./cli/egg api init
+
+# 5. Generate Docker Compose
+./cli/egg compose generate
+
+# 6. Check project health
+./cli/egg check
 ```
 
-### Build
+### Service Development Workflow
 
 ```bash
-go build -o egg ./cmd/egg
+# 1. Create new service
+./cli/egg create backend payment-service --local-modules
+
+# 2. Add API definitions
+# Edit api/payment/v1/payment.proto
+
+# 3. Generate code
+./cli/egg api generate
+
+# 4. Update Docker Compose
+./cli/egg compose generate
+
+# 5. Build and test
+./scripts/build.sh service examples/payment-service payment-service
+./scripts/test.sh examples
 ```
 
-### Contributing
+### Deployment Workflow
 
-Please refer to [CONTRIBUTING.md](../../CONTRIBUTING.md).
+```bash
+# 1. Generate Kubernetes manifests
+./cli/egg kube generate
 
-## 📄 License
+# 2. Build all services
+./scripts/build.sh all
 
-See [LICENSE](../../LICENSE).
+# 3. Deploy with Docker Compose
+./cli/egg compose up --detached --build
 
----
+# 4. Check service health
+./scripts/deploy.sh health
+```
 
-<div align="center">
+## Project Structure
 
-**Built with ❤️ by EggyByte Technology**
+After running `egg init`, the following structure is created:
 
-</div>
+```
+project/
+├── egg.yaml                 # Project configuration
+├── .gitignore              # Git ignore file
+├── api/                    # API definitions
+│   ├── buf.yaml           # Buf configuration
+│   ├── buf.gen.yaml       # Code generation config
+│   └── <service>/         # Service API definitions
+├── backend/               # Backend services
+│   ├── go.work            # Go workspace
+│   └── <service>/         # Service implementations
+├── frontend/               # Frontend services
+│   └── <service>/         # Service implementations
+├── build/                 # Build configurations
+│   ├── Dockerfile.backend
+│   ├── Dockerfile.frontend
+│   └── Dockerfile.eggybyte-go-alpine
+├── deploy/                # Deployment configurations
+│   ├── docker-compose.yaml
+│   ├── otel-collector-config.yaml
+│   └── k8s/               # Kubernetes manifests
+└── scripts/               # Build and deployment scripts
+    ├── build.sh
+    ├── deploy.sh
+    └── test.sh
+```
 
+## Backend Service Structure
+
+When creating a backend service, the following structure is generated:
+
+```
+backend/<service-name>/
+├── go.mod                  # Go module file
+├── go.sum                  # Go dependencies
+├── cmd/                    # Application entrypoints
+│   └── server/
+│       └── main.go        # Main application
+├── internal/               # Internal packages
+│   ├── config/            # Configuration
+│   │   └── app_config.go
+│   ├── handler/           # HTTP handlers
+│   │   └── handler.go
+│   ├── service/           # Business logic
+│   │   └── service.go
+│   └── repository/        # Data access
+│       └── repository.go
+└── gen/                   # Generated code
+    └── go/
+        └── <service>/
+            └── v1/
+                ├── <service>.pb.go
+                └── <service>v1connect/
+                    └── <service>.connect.go
+```
+
+## Frontend Service Structure
+
+When creating a frontend service, the following structure is generated:
+
+```
+frontend/<service-name>/
+├── pubspec.yaml           # Dart dependencies
+├── lib/                   # Dart source code
+│   └── main.dart         # Main application
+├── web/                   # Web-specific files
+│   ├── index.html        # HTML entry point
+│   └── manifest.json     # Web app manifest
+└── test/                  # Tests
+    └── widget_test.dart
+```
+
+## API Definition Structure
+
+When initializing API definitions, the following structure is created:
+
+```
+api/
+├── buf.yaml              # Buf configuration
+├── buf.gen.yaml          # Code generation config
+└── <service>/            # Service API definitions
+    └── v1/
+        └── <service>.proto
+```
+
+## Testing
+
+```bash
+# Test CLI functionality
+./scripts/test.sh cli
+
+# Test production workflows
+./scripts/test.sh production
+
+# Test example services
+./scripts/test.sh examples
+```
+
+## Best Practices
+
+### 1. Use Consistent Naming
+
+```bash
+# Good: Consistent naming
+./cli/egg create backend user-service
+./cli/egg create backend product-service
+./cli/egg create backend order-service
+
+# Avoid: Inconsistent naming
+./cli/egg create backend userService
+./cli/egg create backend product_service
+./cli/egg create backend OrderService
+```
+
+### 2. Version Management
+
+```bash
+# Use semantic versioning
+./cli/egg init --version v1.0.0
+./cli/egg init --version v1.1.0
+./cli/egg init --version v2.0.0
+```
+
+### 3. Module Organization
+
+```bash
+# Use consistent module prefixes
+./cli/egg init --module-prefix github.com/myorg/user-service
+./cli/egg init --module-prefix github.com/myorg/product-service
+./cli/egg init --module-prefix github.com/myorg/order-service
+```
+
+### 4. Docker Registry
+
+```bash
+# Use consistent Docker registry
+./cli/egg init --docker-registry ghcr.io/myorg
+./cli/egg init --docker-registry docker.io/myorg
+./cli/egg init --docker-registry registry.example.com/myorg
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### 1. Go Module Issues
+
+```bash
+# Error: module not found
+# Solution: Use --local-modules flag
+./cli/egg create backend user-service --local-modules
+```
+
+#### 2. Docker Build Issues
+
+```bash
+# Error: Docker build fails
+# Solution: Check Docker daemon and build context
+docker system prune
+./scripts/build.sh clean
+./scripts/build.sh all
+```
+
+#### 3. Configuration Issues
+
+```bash
+# Error: Invalid configuration
+# Solution: Validate configuration
+./cli/egg check
+```
+
+#### 4. Port Conflicts
+
+```bash
+# Error: Port already in use
+# Solution: Check port usage and update configuration
+lsof -i :8080
+./cli/egg compose down
+./cli/egg compose up
+```
+
+### Debug Mode
+
+```bash
+# Enable debug logging
+EGG_LOG_LEVEL=debug ./cli/egg <command>
+
+# Verbose output
+./cli/egg <command> --verbose
+```
+
+## Contributing
+
+Contributions are welcome! Please see the main project [Contributing Guide](../CONTRIBUTING.md) for details.
+
+### Development Setup
+
+```bash
+# Clone repository
+git clone https://github.com/eggybyte-technology/egg.git
+cd egg
+
+# Build CLI
+make build-cli
+
+# Run tests
+./scripts/test.sh cli
+```
+
+### Adding New Commands
+
+1. Create command file in `cli/cmd/egg/`
+2. Implement command logic
+3. Add tests
+4. Update documentation
+
+## License
+
+This package is part of the EggyByte framework and is licensed under the MIT License.

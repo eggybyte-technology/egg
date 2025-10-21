@@ -1,320 +1,526 @@
-# RuntimeX Module
+# ⚡ RuntimeX Package
 
-<div align="center">
+The `runtimex` package provides service lifecycle management and runtime infrastructure for the EggyByte framework.
 
-**Runtime management and lifecycle orchestration for Egg services**
+## Overview
 
-[![Go Version](https://img.shields.io/badge/Go-1.21%2B-blue.svg)](https://golang.org/dl/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+This package offers a comprehensive runtime system that handles service startup, shutdown, health checks, metrics collection, and graceful shutdown. It's designed to be production-ready with observability built-in.
 
-</div>
+## Features
 
-## 📦 Overview
+- **Service lifecycle management** - Startup, shutdown, and health monitoring
+- **HTTP server integration** - Built-in HTTP server with H2C support
+- **Health checks** - Configurable health check endpoints
+- **Metrics collection** - Prometheus metrics integration
+- **Graceful shutdown** - Proper signal handling and cleanup
+- **Observability** - Logging and tracing integration
 
-The `runtimex` module provides runtime management and lifecycle orchestration for Egg services. It handles service startup, shutdown, health checks, and metrics endpoints with a unified port strategy.
-
-## ✨ Features
-
-- 🚀 **Lifecycle Management** - Graceful startup and shutdown
-- 🎯 **Unified Port Strategy** - HTTP/Connect/gRPC-Web on single port
-- ❤️ **Health Checks** - Built-in health endpoint
-- 📊 **Metrics Endpoint** - Prometheus metrics collection
-- ⏱️ **Graceful Shutdown** - Configurable shutdown timeout
-- 🔧 **H2C Support** - HTTP/2 Cleartext support
-- 📝 **Structured Logging** - Context-aware logging
-
-## 🏗️ Architecture
-
-```
-runtimex/
-├── runtime.go      # Main runtime interface
-├── internal/
-│   └── runtime.go  # Internal implementation
-└── runtimex_test.go # Tests
-```
-
-## 🚀 Quick Start
-
-### Installation
-
-```bash
-go get github.com/eggybyte-technology/egg/runtimex@latest
-```
-
-### Basic Usage
+## Quick Start
 
 ```go
-package main
-
-import (
-    "context"
-    "net/http"
-    "time"
-
-    "github.com/eggybyte-technology/egg/runtimex"
-    "github.com/eggybyte-technology/egg/core/log"
-)
+import "github.com/eggybyte-technology/egg/runtimex"
 
 func main() {
-    // Create logger
-    logger := &YourLogger{} // Implement log.Logger interface
-
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    
     // Create HTTP mux
     mux := http.NewServeMux()
     mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        w.WriteHeader(http.StatusOK)
         w.Write([]byte("Hello, World!"))
     })
-
-    // Configure runtime options
-    opts := runtimex.Options{
+    
+    // Run the service
+    err := runtimex.Run(ctx, nil, runtimex.Options{
         Logger: logger,
         HTTP: &runtimex.HTTPOptions{
             Addr: ":8080",
             H2C:  true,
             Mux:  mux,
         },
-        Health: &runtimex.Endpoint{
-            Addr: ":8081",
-        },
-        Metrics: &runtimex.Endpoint{
-            Addr: ":9091",
-        },
+        Health:  &runtimex.Endpoint{Addr: ":8081"},
+        Metrics: &runtimex.Endpoint{Addr: ":9091"},
         ShutdownTimeout: 15 * time.Second,
-    }
-
-    // Run the service
-    ctx := context.Background()
-    if err := runtimex.Run(ctx, nil, opts); err != nil {
-        logger.Log(ctx, log.LevelError, "service failed", log.Attr{Key: "error", Value: err})
+    })
+    
+    if err != nil {
+        log.Fatal(err)
     }
 }
 ```
 
-## 📖 API Reference
+## API Reference
 
-### Runtime Options
+### Types
+
+#### Options
 
 ```go
 type Options struct {
-    Logger          log.Logger
-    HTTP            *HTTPOptions
-    Health          *Endpoint
-    Metrics         *Endpoint
-    ShutdownTimeout time.Duration
-}
-
-type HTTPOptions struct {
-    Addr string
-    H2C  bool
-    Mux  *http.ServeMux
-}
-
-type Endpoint struct {
-    Addr string
+    Logger          log.Logger     // Logger for runtime operations
+    HTTP            *HTTPOptions   // HTTP server configuration
+    Health          *Endpoint      // Health check endpoint
+    Metrics         *Endpoint      // Metrics endpoint
+    ShutdownTimeout time.Duration  // Graceful shutdown timeout
 }
 ```
 
-### Main Functions
+#### HTTPOptions
+
+```go
+type HTTPOptions struct {
+    Addr string           // Server address (e.g., ":8080")
+    H2C  bool            // Enable HTTP/2 Cleartext
+    Mux  *http.ServeMux  // HTTP request multiplexer
+    TLS  *TLSConfig      // TLS configuration (optional)
+}
+```
+
+#### Endpoint
+
+```go
+type Endpoint struct {
+    Addr string // Endpoint address (e.g., ":8081")
+}
+```
+
+#### TLSConfig
+
+```go
+type TLSConfig struct {
+    CertFile string // Certificate file path
+    KeyFile  string // Private key file path
+}
+```
+
+### Functions
 
 ```go
 // Run starts the runtime with the given options
-func Run(ctx context.Context, ready chan<- struct{}, opts Options) error
+func Run(ctx context.Context, cancel context.CancelFunc, opts Options) error
 
-// New creates a new runtime instance
-func New(opts Options) *Runtime
-
-// Start starts the runtime
-func (r *Runtime) Start(ctx context.Context) error
-
-// Stop stops the runtime gracefully
-func (r *Runtime) Stop(ctx context.Context) error
+// Shutdown gracefully shuts down the runtime
+func Shutdown(ctx context.Context, timeout time.Duration) error
 ```
 
-## 🔧 Configuration
+## Usage Examples
 
-### Environment Variables
-
-```bash
-# HTTP server port
-export HTTP_PORT=":8080"
-
-# Health check port
-export HEALTH_PORT=":8081"
-
-# Metrics port
-export METRICS_PORT=":9091"
-
-# Shutdown timeout
-export SHUTDOWN_TIMEOUT="15s"
-```
-
-### HTTP/2 Cleartext (H2C)
-
-Enable H2C support for better performance:
+### Basic HTTP Service
 
 ```go
-opts := runtimex.Options{
-    HTTP: &runtimex.HTTPOptions{
-        Addr: ":8080",
-        H2C:  true, // Enable H2C
-        Mux:  mux,
-    },
+func main() {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    
+    // Create HTTP mux
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", handleRoot)
+    mux.HandleFunc("/api/users", handleUsers)
+    
+    // Run the service
+    err := runtimex.Run(ctx, cancel, runtimex.Options{
+        Logger: logger,
+        HTTP: &runtimex.HTTPOptions{
+            Addr: ":8080",
+            H2C:  true,
+            Mux:  mux,
+        },
+        Health:  &runtimex.Endpoint{Addr: ":8081"},
+        Metrics: &runtimex.Endpoint{Addr: ":9091"},
+        ShutdownTimeout: 15 * time.Second,
+    })
+    
+    if err != nil {
+        logger.Error(err, "Runtime failed")
+        os.Exit(1)
+    }
+}
+
+func handleRoot(w http.ResponseWriter, r *http.Request) {
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Service is running"))
+}
+
+func handleUsers(w http.ResponseWriter, r *http.Request) {
+    // Handle users API
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(`{"users": []}`))
 }
 ```
 
-## 📊 Health Checks
+### Connect Service Integration
 
-The runtime automatically provides health check endpoints:
+```go
+func main() {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    
+    // Create Connect service
+    service := &UserService{}
+    path, handler := userv1connect.NewUserServiceHandler(
+        service,
+        connect.WithInterceptors(interceptors...),
+    )
+    
+    // Create HTTP mux
+    mux := http.NewServeMux()
+    mux.Handle(path, handler)
+    
+    // Add health check
+    mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte("OK"))
+    })
+    
+    // Run the service
+    err := runtimex.Run(ctx, cancel, runtimex.Options{
+        Logger: logger,
+        HTTP: &runtimex.HTTPOptions{
+            Addr: ":8080",
+            H2C:  true,
+            Mux:  mux,
+        },
+        Health:  &runtimex.Endpoint{Addr: ":8081"},
+        Metrics: &runtimex.Endpoint{Addr: ":9091"},
+        ShutdownTimeout: 15 * time.Second,
+    })
+    
+    if err != nil {
+        logger.Error(err, "Runtime failed")
+        os.Exit(1)
+    }
+}
+```
 
-- **Health**: `GET /health` - Returns service health status
-- **Readiness**: `GET /ready` - Returns service readiness status
-- **Liveness**: `GET /live` - Returns service liveness status
+### TLS Configuration
+
+```go
+func main() {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    
+    // Create HTTP mux
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", handleRoot)
+    
+    // Run the service with TLS
+    err := runtimex.Run(ctx, cancel, runtimex.Options{
+        Logger: logger,
+        HTTP: &runtimex.HTTPOptions{
+            Addr: ":8443",
+            H2C:  false,
+            Mux:  mux,
+            TLS: &runtimex.TLSConfig{
+                CertFile: "/path/to/cert.pem",
+                KeyFile:  "/path/to/key.pem",
+            },
+        },
+        Health:  &runtimex.Endpoint{Addr: ":8081"},
+        Metrics: &runtimex.Endpoint{Addr: ":9091"},
+        ShutdownTimeout: 15 * time.Second,
+    })
+    
+    if err != nil {
+        logger.Error(err, "Runtime failed")
+        os.Exit(1)
+    }
+}
+```
 
 ### Custom Health Checks
 
 ```go
-// Add custom health check logic
-mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-    // Your health check logic
-    if isHealthy() {
+func main() {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    
+    // Create HTTP mux
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", handleRoot)
+    
+    // Add custom health check
+    mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+        // Check database connection
+        if err := checkDatabase(); err != nil {
+            w.WriteHeader(http.StatusServiceUnavailable)
+            w.Write([]byte("Database unavailable"))
+            return
+        }
+        
+        // Check external services
+        if err := checkExternalServices(); err != nil {
+            w.WriteHeader(http.StatusServiceUnavailable)
+            w.Write([]byte("External services unavailable"))
+            return
+        }
+        
         w.WriteHeader(http.StatusOK)
-        w.Write([]byte("healthy"))
-    } else {
-        w.WriteHeader(http.StatusServiceUnavailable)
-        w.Write([]byte("unhealthy"))
+        w.Write([]byte("OK"))
+    })
+    
+    // Run the service
+    err := runtimex.Run(ctx, cancel, runtimex.Options{
+        Logger: logger,
+        HTTP: &runtimex.HTTPOptions{
+            Addr: ":8080",
+            H2C:  true,
+            Mux:  mux,
+        },
+        Health:  &runtimex.Endpoint{Addr: ":8081"},
+        Metrics: &runtimex.Endpoint{Addr: ":9091"},
+        ShutdownTimeout: 15 * time.Second,
+    })
+    
+    if err != nil {
+        logger.Error(err, "Runtime failed")
+        os.Exit(1)
     }
-})
+}
+
+func checkDatabase() error {
+    // Implement database health check
+    return nil
+}
+
+func checkExternalServices() error {
+    // Implement external services health check
+    return nil
+}
 ```
 
-## 📈 Metrics
-
-The runtime provides Prometheus metrics endpoints:
-
-- **Metrics**: `GET /metrics` - Returns Prometheus metrics
-
-### Custom Metrics
-
-```go
-import "github.com/prometheus/client_golang/prometheus"
-
-// Register custom metrics
-counter := prometheus.NewCounterVec(
-    prometheus.CounterOpts{
-        Name: "requests_total",
-        Help: "Total number of requests",
-    },
-    []string{"method", "status"},
-)
-prometheus.MustRegister(counter)
-```
-
-## 🛠️ Advanced Usage
-
-### Graceful Shutdown
+### Metrics Integration
 
 ```go
 func main() {
-    // Create runtime
-    runtime := runtimex.New(opts)
-
-    // Start runtime
-    ctx := context.Background()
-    if err := runtime.Start(ctx); err != nil {
-        log.Fatal("Failed to start runtime:", err)
-    }
-
-    // Wait for shutdown signal
-    sigChan := make(chan os.Signal, 1)
-    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-    <-sigChan
-
-    // Graceful shutdown
-    shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+    ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
-
-    if err := runtime.Stop(shutdownCtx); err != nil {
-        log.Fatal("Failed to stop runtime:", err)
+    
+    // Create HTTP mux
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", handleRoot)
+    
+    // Add metrics endpoint
+    mux.Handle("/metrics", promhttp.Handler())
+    
+    // Run the service
+    err := runtimex.Run(ctx, cancel, runtimex.Options{
+        Logger: logger,
+        HTTP: &runtimex.HTTPOptions{
+            Addr: ":8080",
+            H2C:  true,
+            Mux:  mux,
+        },
+        Health:  &runtimex.Endpoint{Addr: ":8081"},
+        Metrics: &runtimex.Endpoint{Addr: ":9091"},
+        ShutdownTimeout: 15 * time.Second,
+    })
+    
+    if err != nil {
+        logger.Error(err, "Runtime failed")
+        os.Exit(1)
     }
 }
 ```
 
-### Custom Middleware
+## Configuration Integration
+
+### With ConfigX
 
 ```go
-// Add custom middleware
-mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-    // Add CORS headers
-    w.Header().Set("Access-Control-Allow-Origin", "*")
-    w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE")
-    w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-    // Your handler
-    handler(w, r)
-})
+func main() {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    
+    // Load configuration
+    var cfg AppConfig
+    if err := configManager.Bind(&cfg); err != nil {
+        logger.Error(err, "Failed to bind configuration")
+        os.Exit(1)
+    }
+    
+    // Create HTTP mux
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", handleRoot)
+    
+    // Run the service with configuration
+    err := runtimex.Run(ctx, cancel, runtimex.Options{
+        Logger: logger,
+        HTTP: &runtimex.HTTPOptions{
+            Addr: cfg.HTTPPort,
+            H2C:  true,
+            Mux:  mux,
+        },
+        Health:  &runtimex.Endpoint{Addr: cfg.HealthPort},
+        Metrics: &runtimex.Endpoint{Addr: cfg.MetricsPort},
+        ShutdownTimeout: cfg.ShutdownTimeout,
+    })
+    
+    if err != nil {
+        logger.Error(err, "Runtime failed")
+        os.Exit(1)
+    }
+}
 ```
 
-## 🧪 Testing
+## Testing
 
-Run tests:
+```go
+func TestRuntime(t *testing.T) {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    
+    // Create test mux
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        w.Write([]byte("test"))
+    })
+    
+    // Start runtime in goroutine
+    go func() {
+        err := runtimex.Run(ctx, cancel, runtimex.Options{
+            Logger: &TestLogger{},
+            HTTP: &runtimex.HTTPOptions{
+                Addr: ":0", // Use random port
+                H2C:  true,
+                Mux:  mux,
+            },
+            Health:  &runtimex.Endpoint{Addr: ":0"},
+            Metrics: &runtimex.Endpoint{Addr: ":0"},
+            ShutdownTimeout: 5 * time.Second,
+        })
+        assert.NoError(t, err)
+    }()
+    
+    // Wait for service to start
+    time.Sleep(100 * time.Millisecond)
+    
+    // Test HTTP endpoint
+    resp, err := http.Get("http://localhost:8080/")
+    assert.NoError(t, err)
+    assert.Equal(t, http.StatusOK, resp.StatusCode)
+    
+    // Cancel context to shutdown
+    cancel()
+    
+    // Wait for shutdown
+    time.Sleep(100 * time.Millisecond)
+}
 
-```bash
-go test ./...
+type TestLogger struct{}
+
+func (l *TestLogger) With(kv ...any) log.Logger { return l }
+func (l *TestLogger) Debug(msg string, kv ...any) {}
+func (l *TestLogger) Info(msg string, kv ...any) {}
+func (l *TestLogger) Warn(msg string, kv ...any) {}
+func (l *TestLogger) Error(err error, msg string, kv ...any) {}
 ```
 
-Run tests with coverage:
+## Best Practices
 
-```bash
-go test -cover ./...
+### 1. Proper Context Management
+
+```go
+func main() {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    
+    // Handle signals
+    sigChan := make(chan os.Signal, 1)
+    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+    
+    go func() {
+        <-sigChan
+        cancel()
+    }()
+    
+    // Run service
+    err := runtimex.Run(ctx, cancel, opts)
+    if err != nil {
+        logger.Error(err, "Runtime failed")
+        os.Exit(1)
+    }
+}
 ```
 
-## 📈 Test Coverage
+### 2. Health Check Implementation
 
-| Component | Coverage |
-|-----------|----------|
-| Runtime | 58.1% |
+```go
+func healthCheck(w http.ResponseWriter, r *http.Request) {
+    // Check critical dependencies
+    if err := checkDatabase(); err != nil {
+        w.WriteHeader(http.StatusServiceUnavailable)
+        w.Write([]byte("Database unavailable"))
+        return
+    }
+    
+    if err := checkCache(); err != nil {
+        w.WriteHeader(http.StatusServiceUnavailable)
+        w.Write([]byte("Cache unavailable"))
+        return
+    }
+    
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("OK"))
+}
+```
 
-## 🔍 Troubleshooting
+### 3. Graceful Shutdown
 
-### Common Issues
+```go
+func main() {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    
+    // Run service
+    err := runtimex.Run(ctx, cancel, runtimex.Options{
+        // ... options
+        ShutdownTimeout: 30 * time.Second, // Allow time for cleanup
+    })
+    
+    if err != nil {
+        logger.Error(err, "Runtime failed")
+        os.Exit(1)
+    }
+}
+```
 
-1. **Port Already in Use**
-   ```bash
-   # Check if port is in use
-   lsof -i :8080
-   
-   # Kill process using port
-   kill -9 $(lsof -t -i:8080)
-   ```
+### 4. Error Handling
 
-2. **Graceful Shutdown Timeout**
-   ```go
-   // Increase shutdown timeout
-   opts.ShutdownTimeout = 30 * time.Second
-   ```
+```go
+func main() {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    
+    // Run service
+    err := runtimex.Run(ctx, cancel, opts)
+    if err != nil {
+        logger.Error(err, "Runtime failed")
+        os.Exit(1)
+    }
+}
+```
 
-3. **H2C Not Working**
-   ```go
-   // Ensure H2C is enabled
-   opts.HTTP.H2C = true
-   ```
+## Thread Safety
 
-## 🤝 Contributing
+The runtime is designed to be thread-safe and can handle concurrent requests safely.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Create a Pull Request
+## Dependencies
 
-## 📄 License
+- **Go 1.21+** required
+- **Standard library** only
+- **No external dependencies**
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](../../LICENSE) file for details.
+## Version Compatibility
 
----
+- **Go 1.21+** required
+- **API Stability**: Stable (L2 module)
+- **Breaking Changes**: None planned
 
-<div align="center">
+## Contributing
 
-**Built with ❤️ by EggyByte Technology**
+Contributions are welcome! Please see the main project [Contributing Guide](../CONTRIBUTING.md) for details.
 
-</div>
+## License
+
+This package is part of the EggyByte framework and is licensed under the MIT License.

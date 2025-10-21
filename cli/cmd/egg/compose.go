@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/eggybyte-technology/egg/cli/internal/configschema"
+	"github.com/eggybyte-technology/egg/cli/internal/generators"
 	"github.com/eggybyte-technology/egg/cli/internal/projectfs"
 	"github.com/eggybyte-technology/egg/cli/internal/ref"
 	"github.com/eggybyte-technology/egg/cli/internal/render/compose"
@@ -98,6 +99,23 @@ Example:
 	RunE: runComposeLogs,
 }
 
+// composeGenerateCmd represents the compose generate command.
+var composeGenerateCmd = &cobra.Command{
+	Use:   "generate",
+	Short: "Generate Docker Compose configuration",
+	Long: `Generate Docker Compose configuration from egg.yaml.
+
+This command:
+- Creates docker-compose.yaml with all services
+- Configures database connections
+- Sets up service dependencies
+- Uses local eggybyte-go-alpine base image
+
+Example:
+  egg compose generate`,
+	RunE: runComposeGenerate,
+}
+
 var (
 	detached      bool
 	serviceFilter string
@@ -109,6 +127,7 @@ func init() {
 	composeCmd.AddCommand(composeUpCmd)
 	composeCmd.AddCommand(composeDownCmd)
 	composeCmd.AddCommand(composeLogsCmd)
+	composeCmd.AddCommand(composeGenerateCmd)
 
 	composeUpCmd.Flags().BoolVar(&detached, "detached", false, "Run in detached mode")
 	composeLogsCmd.Flags().StringVar(&serviceFilter, "service", "", "Filter logs by service name")
@@ -370,6 +389,64 @@ func showComposeLogs(ctx context.Context, runner *toolrunner.Runner, serviceFilt
 
 	// Print logs to stdout
 	fmt.Print(result.Stdout)
+
+	return nil
+}
+
+// runComposeGenerate executes the compose generate command.
+//
+// Parameters:
+//   - cmd: Cobra command
+//   - args: Command arguments
+//
+// Returns:
+//   - error: Execution error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Docker Compose configuration generation
+func runComposeGenerate(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	ui.Info("Generating Docker Compose configuration...")
+
+	// Load configuration
+	config, diags, err := loadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	if diags.HasErrors() {
+		ui.Error("Configuration validation failed:")
+		for _, diag := range diags.Items() {
+			if diag.Severity == configschema.SeverityError {
+				ui.Error("  %s: %s", diag.Path, diag.Message)
+			}
+		}
+		return fmt.Errorf("configuration validation failed")
+	}
+
+	// Create project file system
+	fs := projectfs.NewProjectFS(".")
+	fs.SetVerbose(true)
+
+	// Create backend generator
+	runner := toolrunner.NewRunner(".")
+	runner.SetVerbose(true)
+	backendGen := generators.NewBackendGenerator(fs, runner)
+
+	// Generate docker-compose.yaml
+	if err := backendGen.GenerateCompose(ctx, config); err != nil {
+		return fmt.Errorf("failed to generate docker-compose.yaml: %w", err)
+	}
+
+	ui.Success("Docker Compose configuration generated successfully!")
+	ui.Info("Next steps:")
+	ui.Info("  1. Build base image: docker build -t localhost:5000/eggybyte-go-alpine:latest -f build/Dockerfile.eggybyte-go-alpine .")
+	ui.Info("  2. Build backend services: go build -o server ./cmd/server (in each backend service directory)")
+	ui.Info("  3. Start services: docker-compose up")
 
 	return nil
 }

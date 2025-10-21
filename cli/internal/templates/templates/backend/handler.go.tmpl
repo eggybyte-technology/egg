@@ -1,43 +1,108 @@
+// Package handler provides HTTP handlers for the {{.ServiceName}} service.
+//
+// Overview:
+//   - Responsibility: HTTP request handling and response formatting
+//   - Key Types: {{.ServiceNameCamel}}Handler with Connect integration
+//   - Concurrency Model: Thread-safe handler operations
+//   - Error Semantics: HTTP errors are mapped to appropriate status codes
+//   - Performance Notes: Optimized for high-throughput request handling
+//
+// Usage:
+//
+//	handler := handler.New{{.ServiceNameCamel}}Handler(service, logger)
+//	handler.RegisterRoutes(mux)
 package handler
 
 import (
 	"context"
-	"net/http"
+
+	"connectrpc.com/connect"
+	"github.com/eggybyte-technology/egg/core/log"
+	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/service"
 )
 
-// Handler provides HTTP handlers for {{.ServiceName}}.
-type Handler struct {
-	// Add your dependencies here
+// {{.ServiceNameCamel}}Handler provides HTTP handlers for {{.ServiceName}}.
+type {{.ServiceNameCamel}}Handler struct {
+	service service.{{.ServiceNameCamel}}Service
+	logger  log.Logger
 }
 
-// NewHandler creates a new handler instance.
-func NewHandler() *Handler {
-	return &Handler{
-		// Initialize dependencies
+// New{{.ServiceNameCamel}}Handler creates a new {{.ServiceNameCamel}}Handler instance.
+// The returned handler is safe for concurrent use.
+func New{{.ServiceNameCamel}}Handler(svc service.{{.ServiceNameCamel}}Service, logger log.Logger) *{{.ServiceNameCamel}}Handler {
+	return &{{.ServiceNameCamel}}Handler{
+		service: svc,
+		logger:  logger,
 	}
 }
 
-// ExampleHandler demonstrates handler structure.
-//
-// Parameters:
-//   - w: HTTP response writer
-//   - r: HTTP request
-//
-// Returns:
-//   - None (writes to response writer)
-//
-// Concurrency:
-//   - Safe for concurrent use
-//
-// Performance:
-//   - Minimal overhead
-func (h *Handler) ExampleHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	
-	// TODO: Implement your HTTP handler
-	// Use ctx for any I/O operations or service calls
-	_ = ctx // Remove this line when you use the context
-	
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Hello from {{.ServiceName}}"))
+// RegisterRoutes registers all HTTP routes for the {{.ServiceName}} service.
+func (h *{{.ServiceNameCamel}}Handler) RegisterRoutes(mux interface{}) {
+	// TODO: Register HTTP routes here
+	// This is a placeholder for future HTTP route registration
+	// Currently, Connect handlers are registered through generated code
+}
+
+// {{.ServiceNameCamel}}ServiceHandler implements the Connect service interface.
+type {{.ServiceNameCamel}}ServiceHandler struct {
+	service service.{{.ServiceNameCamel}}Service
+	logger  log.Logger
+}
+
+// New{{.ServiceNameCamel}}ServiceHandler creates a new Connect service handler.
+func New{{.ServiceNameCamel}}ServiceHandler(svc service.{{.ServiceNameCamel}}Service, logger log.Logger) *{{.ServiceNameCamel}}ServiceHandler {
+	return &{{.ServiceNameCamel}}ServiceHandler{
+		service: svc,
+		logger:  logger,
+	}
+}
+
+// Create{{.ServiceNameCamel}} handles create {{.ServiceName}} requests via Connect.
+func (h *{{.ServiceNameCamel}}ServiceHandler) Create{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[service.Create{{.ServiceNameCamel}}Request]) (*connect.Response[service.Create{{.ServiceNameCamel}}Response], error) {
+	resp, err := h.service.Create{{.ServiceNameCamel}}(ctx, req.Msg)
+	if err != nil {
+		h.logger.Error(err, "Failed to create {{.ServiceName}}")
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// Get{{.ServiceNameCamel}} handles get {{.ServiceName}} requests via Connect.
+func (h *{{.ServiceNameCamel}}ServiceHandler) Get{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[service.Get{{.ServiceNameCamel}}Request]) (*connect.Response[service.Get{{.ServiceNameCamel}}Response], error) {
+	resp, err := h.service.Get{{.ServiceNameCamel}}(ctx, req.Msg)
+	if err != nil {
+		h.logger.Error(err, "Failed to get {{.ServiceName}}")
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// Update{{.ServiceNameCamel}} handles update {{.ServiceName}} requests via Connect.
+func (h *{{.ServiceNameCamel}}ServiceHandler) Update{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[service.Update{{.ServiceNameCamel}}Request]) (*connect.Response[service.Update{{.ServiceNameCamel}}Response], error) {
+	resp, err := h.service.Update{{.ServiceNameCamel}}(ctx, req.Msg)
+	if err != nil {
+		h.logger.Error(err, "Failed to update {{.ServiceName}}")
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// Delete{{.ServiceNameCamel}} handles delete {{.ServiceName}} requests via Connect.
+func (h *{{.ServiceNameCamel}}ServiceHandler) Delete{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[service.Delete{{.ServiceNameCamel}}Request]) (*connect.Response[service.Delete{{.ServiceNameCamel}}Response], error) {
+	resp, err := h.service.Delete{{.ServiceNameCamel}}(ctx, req.Msg)
+	if err != nil {
+		h.logger.Error(err, "Failed to delete {{.ServiceName}}")
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// List{{.ServiceNameCamel}}s handles list {{.ServiceName}}s requests via Connect.
+func (h *{{.ServiceNameCamel}}ServiceHandler) List{{.ServiceNameCamel}}s(ctx context.Context, req *connect.Request[service.List{{.ServiceNameCamel}}sRequest]) (*connect.Response[service.List{{.ServiceNameCamel}}sResponse], error) {
+	resp, err := h.service.List{{.ServiceNameCamel}}s(ctx, req.Msg)
+	if err != nil {
+		h.logger.Error(err, "Failed to list {{.ServiceName}}s")
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
 }

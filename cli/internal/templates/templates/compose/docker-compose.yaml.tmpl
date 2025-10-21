@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: {{.ProjectName}}-postgres
+    environment:
+      POSTGRES_DB: {{.ProjectName}}
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d {{.ProjectName}}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - {{.ProjectName}}-network
+
+  # Backend Services
+{{range $serviceName, $config := .BackendServices}}
+  {{$serviceName}}:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.backend
+    container_name: {{$.ProjectName}}-{{$serviceName}}
+    environment:
+      DATABASE_DSN: postgres://user:password@postgres:5432/{{$.ProjectName}}?sslmode=disable
+      HTTP_PORT: {{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}
+      HEALTH_PORT: {{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}
+      METRICS_PORT: {{if $config.Ports}}{{$config.Ports.Metrics}}{{else}}9091{{end}}
+    ports:
+      - "{{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}:{{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}"
+      - "{{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}:{{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}"
+      - "{{if $config.Ports}}{{$config.Ports.Metrics}}{{else}}9091{{end}}:{{if $config.Ports}}{{$config.Ports.Metrics}}{{else}}9091{{end}}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - {{$.ProjectName}}-network
+{{end}}
+
+volumes:
+  postgres_data:
+
+networks:
+  {{.ProjectName}}-network:
+    driver: bridge

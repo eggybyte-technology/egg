@@ -1,270 +1,242 @@
-# ConnectX Module
+# 🔗 ConnectX Package
 
-<div align="center">
+The `connectx` package provides Connect protocol support and unified interceptors for the EggyByte framework.
 
-**Connect protocol binding with unified interceptors for Egg services**
+## Overview
 
-[![Go Version](https://img.shields.io/badge/Go-1.21%2B-blue.svg)](https://golang.org/dl/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+This package extends the Connect protocol with a comprehensive interceptor stack that handles recovery, logging, tracing, metrics, and identity injection. It's designed to provide zero business intrusion while offering production-ready observability.
 
-</div>
+## Features
 
-## 📦 Overview
+- **Connect protocol support** - Full Connect/gRPC-Web compatibility
+- **Unified interceptor stack** - Recovery, logging, tracing, metrics, identity
+- **Zero business intrusion** - Transparent request/response handling
+- **Production-ready** - Built-in observability and error handling
+- **Configurable** - Flexible header mapping and options
+- **Performance optimized** - Minimal overhead and allocations
 
-The `connectx` module provides Connect protocol binding with unified interceptors for Egg services. It offers a complete interceptor stack including recovery, logging, tracing, metrics, identity injection, and error mapping.
-
-## ✨ Features
-
-- 🚀 **Connect Protocol** - Full Connect protocol support
-- 🛡️ **Unified Interceptors** - Complete interceptor stack
-- 📊 **Automatic Tracing** - OpenTelemetry integration
-- 📈 **Metrics Collection** - Prometheus metrics
-- 🔐 **Identity Injection** - Automatic user identity extraction
-- 🚨 **Error Mapping** - Structured error handling
-- 🔄 **Recovery** - Panic recovery and error handling
-- 📝 **Structured Logging** - Context-aware logging
-
-## 🏗️ Architecture
-
-```
-connectx/
-├── connectx.go           # Main Connect binding
-├── internal/
-│   └── interceptors.go   # Interceptor implementations
-└── connectx_test.go      # Tests
-```
-
-## 🚀 Quick Start
-
-### Installation
-
-```bash
-go get github.com/eggybyte-technology/egg/connectx@latest
-```
-
-### Basic Usage
+## Quick Start
 
 ```go
-package main
-
-import (
-    "context"
-    "net/http"
-
-    "github.com/eggybyte-technology/egg/connectx"
-    "github.com/eggybyte-technology/egg/core/log"
-    "github.com/eggybyte-technology/egg/obsx"
-    "connectrpc.com/connect"
-)
+import "github.com/eggybyte-technology/egg/connectx"
 
 func main() {
-    // Create logger
-    logger := &YourLogger{} // Implement log.Logger interface
-
-    // Create OpenTelemetry provider
-    otel, _ := obsx.NewProvider(context.Background(), obsx.Options{
-        ServiceName:    "my-service",
-        ServiceVersion: "1.0.0",
+    // Create service
+    service := &UserService{}
+    
+    // Setup interceptors
+    interceptors := connectx.DefaultInterceptors(connectx.Options{
+        Logger:            logger,
+        SlowRequestMillis: 1000,
+        PayloadAccounting: true,
     })
-    defer otel.Shutdown(context.Background())
-
-    // Create interceptor options
-    opts := connectx.Options{
-        Logger: logger,
-        Otel:   otel,
-    }
-
-    // Get default interceptors
-    interceptors := connectx.DefaultInterceptors(opts)
-
-    // Create Connect service
-    service := &MyService{}
-    handler := NewMyServiceHandler(service, connect.WithInterceptors(interceptors...))
-
-    // Set up HTTP mux
-    mux := http.NewServeMux()
-    mux.Handle(handler)
-
-    // Start server
-    http.ListenAndServe(":8080", mux)
+    
+    // Create Connect handler
+    path, handler := userv1connect.NewUserServiceHandler(
+        service,
+        connect.WithInterceptors(interceptors...),
+    )
+    
+    // Register handler
+    mux.Handle(path, handler)
 }
 ```
 
-## 📖 API Reference
+## API Reference
 
-### Interceptor Options
+### Types
+
+#### Options
 
 ```go
 type Options struct {
-    Logger log.Logger
-    Otel    obsx.Provider
-}
-
-type InterceptorOptions struct {
-    Logger log.Logger
-    Otel    obsx.Provider
-    // Additional options
+    Logger            log.Logger     // Logger for interceptor operations
+    Otel              *obsx.Provider // OpenTelemetry provider (optional)
+    Headers           HeaderMapping  // Header mapping configuration
+    WithRequestBody   bool           // Log request body (default: false)
+    WithResponseBody  bool           // Log response body (default: false)
+    SlowRequestMillis int64          // Slow request threshold in milliseconds
+    PayloadAccounting bool           // Track inbound/outbound payload sizes
 }
 ```
 
-### Main Functions
+#### HeaderMapping
 
 ```go
-// DefaultInterceptors returns the default interceptor stack
+type HeaderMapping struct {
+    RequestID     string // "X-Request-Id"
+    InternalToken string // "X-Internal-Token"
+    UserID        string // "X-User-Id"
+    UserName      string // "X-User-Name"
+    Roles         string // "X-User-Roles"
+    RealIP        string // "X-Real-IP"
+    ForwardedFor  string // "X-Forwarded-For"
+    UserAgent     string // "User-Agent"
+}
+```
+
+### Functions
+
+```go
+// DefaultInterceptors returns a set of interceptors with the given options
 func DefaultInterceptors(opts Options) []connect.Interceptor
 
-// NewRecoveryInterceptor creates a recovery interceptor
-func NewRecoveryInterceptor(opts InterceptorOptions) connect.Interceptor
-
-// NewLoggingInterceptor creates a logging interceptor
-func NewLoggingInterceptor(opts InterceptorOptions) connect.Interceptor
-
-// NewTracingInterceptor creates a tracing interceptor
-func NewTracingInterceptor(opts InterceptorOptions) connect.Interceptor
-
-// NewMetricsInterceptor creates a metrics interceptor
-func NewMetricsInterceptor(opts InterceptorOptions) connect.Interceptor
-
-// NewIdentityInterceptor creates an identity injection interceptor
-func NewIdentityInterceptor(opts InterceptorOptions) connect.Interceptor
-
-// NewErrorInterceptor creates an error mapping interceptor
-func NewErrorInterceptor(opts InterceptorOptions) connect.Interceptor
+// DefaultHeaderMapping returns the default header mapping for Higress
+func DefaultHeaderMapping() HeaderMapping
 ```
 
-## 🔧 Interceptors
+## Usage Examples
 
-### Recovery Interceptor
-
-Handles panics and converts them to Connect errors:
+### Basic Service Setup
 
 ```go
-interceptor := connectx.NewRecoveryInterceptor(connectx.InterceptorOptions{
-    Logger: logger,
-})
-```
-
-### Logging Interceptor
-
-Provides structured logging for all Connect requests:
-
-```go
-interceptor := connectx.NewLoggingInterceptor(connectx.InterceptorOptions{
-    Logger: logger,
-})
-```
-
-**Log Fields:**
-- `trace_id` - OpenTelemetry trace ID
-- `span_id` - OpenTelemetry span ID
-- `req_id` - Request ID
-- `rpc_system` - RPC system (connect)
-- `rpc_service` - RPC service name
-- `rpc_method` - RPC method name
-- `status` - Response status
-- `latency_ms` - Request latency
-- `remote_ip` - Client IP address
-- `user_agent` - Client user agent
-
-### Tracing Interceptor
-
-Provides OpenTelemetry tracing for Connect requests:
-
-```go
-interceptor := connectx.NewTracingInterceptor(connectx.InterceptorOptions{
-    Otel: otel,
-})
-```
-
-**Trace Attributes:**
-- `rpc.system` - RPC system
-- `rpc.service` - RPC service
-- `rpc.method` - RPC method
-- `rpc.status_code` - RPC status code
-- `user.id` - User ID (if available)
-
-### Metrics Interceptor
-
-Collects Prometheus metrics for Connect requests:
-
-```go
-interceptor := connectx.NewMetricsInterceptor(connectx.InterceptorOptions{
-    Otel: otel,
-})
-```
-
-**Metrics:**
-- `rpc_server_duration_seconds` - Request duration histogram
-- `rpc_server_requests_total` - Request counter
-- `rpc_server_payload_bytes` - Payload size counter
-
-### Identity Interceptor
-
-Extracts user identity from request headers and injects into context:
-
-```go
-interceptor := connectx.NewIdentityInterceptor(connectx.InterceptorOptions{
-    Logger: logger,
-})
-```
-
-**Supported Headers:**
-- `X-User-ID` - User ID
-- `X-Request-ID` - Request ID
-- `X-Trace-ID` - Trace ID
-- `Authorization` - Bearer token
-
-### Error Interceptor
-
-Maps internal errors to Connect errors:
-
-```go
-interceptor := connectx.NewErrorInterceptor(connectx.InterceptorOptions{
-    Logger: logger,
-})
-```
-
-## 🛠️ Advanced Usage
-
-### Custom Interceptor
-
-```go
-func customInterceptor() connect.Interceptor {
-    return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-        return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-            // Pre-processing
-            log.Info("Processing request", "method", req.Spec().Procedure)
-            
-            // Call next interceptor
-            resp, err := next(ctx, req)
-            
-            // Post-processing
-            if err != nil {
-                log.Error("Request failed", "error", err)
-            } else {
-                log.Info("Request completed")
-            }
-            
-            return resp, err
-        }
+func main() {
+    // Create service
+    service := &UserService{}
+    
+    // Setup interceptors
+    interceptors := connectx.DefaultInterceptors(connectx.Options{
+        Logger:            logger,
+        SlowRequestMillis: 1000,
+        PayloadAccounting: true,
     })
+    
+    // Create Connect handler
+    path, handler := userv1connect.NewUserServiceHandler(
+        service,
+        connect.WithInterceptors(interceptors...),
+    )
+    
+    // Register handler
+    mux := http.NewServeMux()
+    mux.Handle(path, handler)
+    
+    // Start server
+    err := runtimex.Run(ctx, cancel, runtimex.Options{
+        Logger: logger,
+        HTTP: &runtimex.HTTPOptions{
+            Addr: ":8080",
+            H2C:  true,
+            Mux:  mux,
+        },
+    })
+    
+    if err != nil {
+        log.Fatal(err)
+    }
 }
 ```
 
-### Service Implementation
+### Custom Header Mapping
 
 ```go
-type MyService struct{}
-
-func (s *MyService) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
-    // Extract user ID from context
-    userID, ok := identity.UserIDFromContext(ctx)
-    if !ok {
-        return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
+func main() {
+    // Create custom header mapping
+    customHeaders := connectx.HeaderMapping{
+        RequestID:     "X-Custom-Request-Id",
+        InternalToken: "X-Custom-Token",
+        UserID:        "X-Custom-User-Id",
+        UserName:      "X-Custom-User-Name",
+        Roles:         "X-Custom-Roles",
+        RealIP:        "X-Custom-Real-IP",
+        ForwardedFor:  "X-Custom-Forwarded-For",
+        UserAgent:     "X-Custom-User-Agent",
     }
     
-    // Your business logic
-    user, err := s.userStore.GetUser(ctx, userID)
+    // Setup interceptors with custom headers
+    interceptors := connectx.DefaultInterceptors(connectx.Options{
+        Logger:            logger,
+        Headers:           customHeaders,
+        SlowRequestMillis: 500,
+        PayloadAccounting: true,
+    })
+    
+    // Create Connect handler
+    path, handler := userv1connect.NewUserServiceHandler(
+        service,
+        connect.WithInterceptors(interceptors...),
+    )
+    
+    // Register handler
+    mux.Handle(path, handler)
+}
+```
+
+### With OpenTelemetry
+
+```go
+func main() {
+    // Initialize OpenTelemetry
+    otelProvider, err := obsx.NewProvider(ctx, logger, obsx.Options{
+        ServiceName:    "user-service",
+        ServiceVersion: "1.0.0",
+        Environment:    "production",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Setup interceptors with OpenTelemetry
+    interceptors := connectx.DefaultInterceptors(connectx.Options{
+        Logger:            logger,
+        Otel:              otelProvider,
+        SlowRequestMillis: 1000,
+        PayloadAccounting: true,
+    })
+    
+    // Create Connect handler
+    path, handler := userv1connect.NewUserServiceHandler(
+        service,
+        connect.WithInterceptors(interceptors...),
+    )
+    
+    // Register handler
+    mux.Handle(path, handler)
+}
+```
+
+### Debug Mode
+
+```go
+func main() {
+    // Setup interceptors for debugging
+    interceptors := connectx.DefaultInterceptors(connectx.Options{
+        Logger:            logger,
+        WithRequestBody:   true,  // Log request bodies
+        WithResponseBody:  true,  // Log response bodies
+        SlowRequestMillis: 100,   // Lower threshold for debugging
+        PayloadAccounting: true,
+    })
+    
+    // Create Connect handler
+    path, handler := userv1connect.NewUserServiceHandler(
+        service,
+        connect.WithInterceptors(interceptors...),
+    )
+    
+    // Register handler
+    mux.Handle(path, handler)
+}
+```
+
+## Service Implementation
+
+### Basic Service
+
+```go
+type UserService struct {
+    logger log.Logger
+    repo   UserRepository
+}
+
+func (s *UserService) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
+    // User information is automatically injected by interceptors
+    if user, ok := identity.UserFrom(ctx); ok {
+        s.logger.Info("GetUser called", log.Str("user_id", user.UserID))
+    }
+    
+    // Business logic
+    user, err := s.repo.GetUser(ctx, req.Msg.UserId)
     if err != nil {
         return nil, connect.NewError(connect.CodeNotFound, err)
     }
@@ -273,129 +245,329 @@ func (s *MyService) GetUser(ctx context.Context, req *connect.Request[GetUserReq
 }
 ```
 
-### Error Handling
+### With Permission Checks
 
 ```go
-func (s *MyService) CreateUser(ctx context.Context, req *connect.Request[CreateUserRequest]) (*connect.Response[CreateUserResponse], error) {
-    // Validate request
-    if req.Msg.Email == "" {
-        return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("email is required"))
+func (s *UserService) DeleteUser(ctx context.Context, req *connect.Request[DeleteUserRequest]) (*connect.Response[DeleteUserResponse], error) {
+    // Check permissions
+    if !identity.HasRole(ctx, "admin") {
+        return nil, connect.NewError(connect.CodePermissionDenied, errors.New("PERMISSION_DENIED", "admin role required"))
     }
     
     // Business logic
-    user, err := s.userStore.CreateUser(ctx, req.Msg)
+    err := s.repo.DeleteUser(ctx, req.Msg.UserId)
     if err != nil {
-        // Map internal errors to Connect errors
-        switch {
-        case errors.IsCode(err, "DUPLICATE_EMAIL"):
-            return nil, connect.NewError(connect.CodeAlreadyExists, err)
-        case errors.IsCode(err, "VALIDATION_FAILED"):
-            return nil, connect.NewError(connect.CodeInvalidArgument, err)
-        default:
-            return nil, connect.NewError(connect.CodeInternal, err)
-        }
+        return nil, connect.NewError(connect.CodeInternal, err)
+    }
+    
+    return connect.NewResponse(&DeleteUserResponse{}), nil
+}
+```
+
+### With Request Validation
+
+```go
+func (s *UserService) CreateUser(ctx context.Context, req *connect.Request[CreateUserRequest]) (*connect.Response[CreateUserResponse], error) {
+    // Validate request
+    if req.Msg.User == nil {
+        return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("VALIDATION_ERROR", "user is required"))
+    }
+    
+    if utils.IsEmpty(req.Msg.User.Email) {
+        return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("VALIDATION_ERROR", "email is required"))
+    }
+    
+    if !utils.IsValidEmail(req.Msg.User.Email) {
+        return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("VALIDATION_ERROR", "invalid email format"))
+    }
+    
+    // Business logic
+    user, err := s.repo.CreateUser(ctx, req.Msg.User)
+    if err != nil {
+        return nil, connect.NewError(connect.CodeInternal, err)
     }
     
     return connect.NewResponse(&CreateUserResponse{User: user}), nil
 }
 ```
 
-## 🔧 Configuration
+## Interceptor Details
+
+### Recovery Interceptor
+
+Automatically recovers from panics and returns proper error responses:
+
+```go
+func (s *UserService) RiskyMethod(ctx context.Context, req *connect.Request[RiskyRequest]) (*connect.Response[RiskyResponse], error) {
+    // This might panic
+    result := riskyOperation(req.Msg.Data)
+    
+    return connect.NewResponse(&RiskyResponse{Result: result}), nil
+}
+```
+
+### Logging Interceptor
+
+Provides structured logging for all requests:
+
+```go
+// Logs include:
+// - Request method and path
+// - User information (if available)
+// - Request duration
+// - Response status
+// - Error details (if any)
+```
+
+### Tracing Interceptor
+
+Integrates with OpenTelemetry for distributed tracing:
+
+```go
+// Traces include:
+// - Request span
+// - Database operations
+// - External service calls
+// - Error propagation
+```
+
+### Metrics Interceptor
+
+Collects Prometheus metrics:
+
+```go
+// Metrics include:
+// - Request count
+// - Request duration
+// - Error rate
+// - Payload sizes
+```
+
+### Identity Interceptor
+
+Injects user identity and request metadata:
+
+```go
+// Injects:
+// - User information from headers
+// - Request metadata
+// - Internal service tokens
+// - Client information
+```
+
+## Configuration
 
 ### Environment Variables
 
 ```bash
-# Service identification
-export SERVICE_NAME="my-service"
-export SERVICE_VERSION="1.0.0"
+# Service configuration
+SERVICE_NAME=user-service
+SERVICE_VERSION=1.0.0
+ENV=production
 
-# OpenTelemetry
-export OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector:4317"
+# HTTP configuration
+HTTP_PORT=:8080
+HEALTH_PORT=:8081
+METRICS_PORT=:9091
 
-# Logging
-export LOG_LEVEL="info"
+# Observability
+OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+ENABLE_DEBUG_LOGS=false
+ENABLE_METRICS=true
+ENABLE_TRACING=true
 ```
 
-### Custom Interceptor Stack
+### Configuration Integration
 
 ```go
-// Create custom interceptor stack
-interceptors := []connect.Interceptor{
-    connectx.NewRecoveryInterceptor(opts),
-    connectx.NewLoggingInterceptor(opts),
-    connectx.NewTracingInterceptor(opts),
-    connectx.NewMetricsInterceptor(opts),
-    connectx.NewIdentityInterceptor(opts),
-    connectx.NewErrorInterceptor(opts),
-    customInterceptor(), // Your custom interceptor
+type AppConfig struct {
+    configx.BaseConfig
+    
+    // Connect-specific configuration
+    Connect ConnectConfig
+}
+
+type ConnectConfig struct {
+    SlowRequestMillis int64 `env:"SLOW_REQUEST_MILLIS" default:"1000"`
+    PayloadAccounting bool  `env:"PAYLOAD_ACCOUNTING" default:"true"`
+    WithRequestBody   bool  `env:"WITH_REQUEST_BODY" default:"false"`
+    WithResponseBody  bool  `env:"WITH_RESPONSE_BODY" default:"false"`
+}
+
+func main() {
+    // Load configuration
+    var cfg AppConfig
+    if err := configManager.Bind(&cfg); err != nil {
+        log.Fatal(err)
+    }
+    
+    // Setup interceptors with configuration
+    interceptors := connectx.DefaultInterceptors(connectx.Options{
+        Logger:            logger,
+        SlowRequestMillis: cfg.Connect.SlowRequestMillis,
+        PayloadAccounting: cfg.Connect.PayloadAccounting,
+        WithRequestBody:   cfg.Connect.WithRequestBody,
+        WithResponseBody:  cfg.Connect.WithResponseBody,
+    })
+    
+    // Create Connect handler
+    path, handler := userv1connect.NewUserServiceHandler(
+        service,
+        connect.WithInterceptors(interceptors...),
+    )
+    
+    // Register handler
+    mux.Handle(path, handler)
 }
 ```
 
-## 🧪 Testing
+## Testing
 
-Run tests:
+```go
+func TestConnectService(t *testing.T) {
+    // Create test service
+    service := &TestUserService{}
+    
+    // Setup interceptors
+    interceptors := connectx.DefaultInterceptors(connectx.Options{
+        Logger:            &TestLogger{},
+        SlowRequestMillis: 1000,
+        PayloadAccounting: true,
+    })
+    
+    // Create Connect handler
+    path, handler := userv1connect.NewUserServiceHandler(
+        service,
+        connect.WithInterceptors(interceptors...),
+    )
+    
+    // Create test server
+    mux := http.NewServeMux()
+    mux.Handle(path, handler)
+    
+    server := httptest.NewServer(mux)
+    defer server.Close()
+    
+    // Test client
+    client := userv1connect.NewUserServiceClient(
+        http.DefaultClient,
+        server.URL,
+    )
+    
+    // Test request
+    resp, err := client.GetUser(context.Background(), connect.NewRequest(&GetUserRequest{
+        UserId: "user-123",
+    }))
+    
+    assert.NoError(t, err)
+    assert.NotNil(t, resp)
+}
 
-```bash
-go test ./...
+type TestUserService struct{}
+
+func (s *TestUserService) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
+    return connect.NewResponse(&GetUserResponse{
+        User: &User{Id: req.Msg.UserId, Name: "Test User"},
+    }), nil
+}
 ```
 
-Run tests with coverage:
+## Best Practices
 
-```bash
-go test -cover ./...
+### 1. Use Structured Errors
+
+```go
+func (s *UserService) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
+    user, err := s.repo.GetUser(ctx, req.Msg.UserId)
+    if err != nil {
+        // Use structured errors
+        return nil, connect.NewError(connect.CodeNotFound, errors.New("NOT_FOUND", "user not found"))
+    }
+    
+    return connect.NewResponse(&GetUserResponse{User: user}), nil
+}
 ```
 
-## 📈 Test Coverage
+### 2. Validate Input
 
-| Component | Coverage |
-|-----------|----------|
-| ConnectX | 92.9% |
+```go
+func (s *UserService) CreateUser(ctx context.Context, req *connect.Request[CreateUserRequest]) (*connect.Response[CreateUserResponse], error) {
+    // Validate input
+    if req.Msg.User == nil {
+        return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("VALIDATION_ERROR", "user is required"))
+    }
+    
+    if utils.IsEmpty(req.Msg.User.Email) {
+        return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("VALIDATION_ERROR", "email is required"))
+    }
+    
+    // Business logic
+    user, err := s.repo.CreateUser(ctx, req.Msg.User)
+    if err != nil {
+        return nil, connect.NewError(connect.CodeInternal, err)
+    }
+    
+    return connect.NewResponse(&CreateUserResponse{User: user}), nil
+}
+```
 
-## 🔍 Troubleshooting
+### 3. Check Permissions
 
-### Common Issues
+```go
+func (s *UserService) DeleteUser(ctx context.Context, req *connect.Request[DeleteUserRequest]) (*connect.Response[DeleteUserResponse], error) {
+    // Check permissions
+    if !identity.HasRole(ctx, "admin") {
+        return nil, connect.NewError(connect.CodePermissionDenied, errors.New("PERMISSION_DENIED", "admin role required"))
+    }
+    
+    // Business logic
+    err := s.repo.DeleteUser(ctx, req.Msg.UserId)
+    if err != nil {
+        return nil, connect.NewError(connect.CodeInternal, err)
+    }
+    
+    return connect.NewResponse(&DeleteUserResponse{}), nil
+}
+```
 
-1. **Missing OpenTelemetry Provider**
-   ```go
-   // Ensure OpenTelemetry provider is created
-   otel, err := obsx.NewProvider(ctx, obsx.Options{
-       ServiceName:    "my-service",
-       ServiceVersion: "1.0.0",
-   })
-   if err != nil {
-       log.Fatal("Failed to create OpenTelemetry provider:", err)
-   }
-   ```
+### 4. Use Context
 
-2. **Identity Not Extracted**
-   ```go
-   // Ensure identity headers are set
-   req.Header.Set("X-User-ID", "user123")
-   req.Header.Set("X-Request-ID", "req456")
-   ```
+```go
+func (s *UserService) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
+    // Use context for cancellation and timeouts
+    ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+    defer cancel()
+    
+    user, err := s.repo.GetUser(ctx, req.Msg.UserId)
+    if err != nil {
+        return nil, connect.NewError(connect.CodeNotFound, err)
+    }
+    
+    return connect.NewResponse(&GetUserResponse{User: user}), nil
+}
+```
 
-3. **Metrics Not Collected**
-   ```go
-   // Ensure metrics interceptor is included
-   interceptors := connectx.DefaultInterceptors(opts)
-   ```
+## Thread Safety
 
-## 🤝 Contributing
+All functions in this package are safe for concurrent use. The interceptor stack is designed to handle concurrent requests safely.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Create a Pull Request
+## Dependencies
 
-## 📄 License
+- **Go 1.21+** required
+- **Connect** - Protocol support
+- **OpenTelemetry** - Observability (optional)
+- **Standard library** - Core functionality
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](../../LICENSE) file for details.
+## Version Compatibility
 
----
+- **Go 1.21+** required
+- **API Stability**: Evolving (L3 module)
+- **Breaking Changes**: Possible in minor versions
 
-<div align="center">
+## Contributing
 
-**Built with ❤️ by EggyByte Technology**
+Contributions are welcome! Please see the main project [Contributing Guide](../CONTRIBUTING.md) for details.
 
-</div>
+## License
+
+This package is part of the EggyByte framework and is licensed under the MIT License.

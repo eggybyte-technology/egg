@@ -10,7 +10,6 @@ func TestWithUser(t *testing.T) {
 	user := &UserInfo{
 		UserID:   "123",
 		UserName: "testuser",
-		Tenant:   "test-tenant",
 		Roles:    []string{"admin", "user"},
 	}
 
@@ -28,10 +27,6 @@ func TestWithUser(t *testing.T) {
 
 	if retrievedUser.UserName != user.UserName {
 		t.Errorf("Expected UserName %q, got %q", user.UserName, retrievedUser.UserName)
-	}
-
-	if retrievedUser.Tenant != user.Tenant {
-		t.Errorf("Expected Tenant %q, got %q", user.Tenant, retrievedUser.Tenant)
 	}
 
 	if len(retrievedUser.Roles) != len(user.Roles) {

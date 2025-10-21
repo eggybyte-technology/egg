@@ -92,6 +92,9 @@ var (
 	frontendPlatforms []string
 	useLocalModules   bool
 	forceCreate       bool
+	httpPort          int
+	healthPort        int
+	metricsPort       int
 )
 
 func init() {
@@ -101,6 +104,9 @@ func init() {
 
 	createBackendCmd.Flags().BoolVar(&useLocalModules, "local-modules", false, "Use local egg modules for development")
 	createBackendCmd.Flags().BoolVar(&forceCreate, "force", false, "Force create service even if it already exists")
+	createBackendCmd.Flags().IntVar(&httpPort, "http-port", 0, "HTTP port (default: 8080)")
+	createBackendCmd.Flags().IntVar(&healthPort, "health-port", 0, "Health check port (default: 8081)")
+	createBackendCmd.Flags().IntVar(&metricsPort, "metrics-port", 0, "Metrics port (default: 9091)")
 	createFrontendCmd.Flags().StringSliceVar(&frontendPlatforms, "platforms", []string{"web"}, "Target platforms (comma-separated: web, android, ios)")
 	createFrontendCmd.Flags().BoolVar(&forceCreate, "force", false, "Force create service even if it already exists")
 }
@@ -159,6 +165,13 @@ func runCreateBackend(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("backend service '%s' already exists in configuration. Use --force to overwrite", serviceName)
 	} else {
 		ui.Info("Service '%s' already exists, overwriting due to --force flag", serviceName)
+	}
+
+	// Update service configuration with custom ports if provided
+	if httpPort > 0 || healthPort > 0 || metricsPort > 0 {
+		if err := updateBackendServicePorts(serviceName, config, httpPort, healthPort, metricsPort); err != nil {
+			return fmt.Errorf("failed to update service ports: %w", err)
+		}
 	}
 
 	// Create project file system
@@ -316,7 +329,62 @@ func autoRegisterBackendService(serviceName string, config *configschema.Config)
 	// Add the service with default configuration
 	config.Backend[serviceName] = configschema.BackendService{
 		ImageName: serviceName,
+		Ports: &configschema.PortConfig{
+			HTTP:    config.BackendDefaults.Ports.HTTP,
+			Health:  config.BackendDefaults.Ports.Health,
+			Metrics: config.BackendDefaults.Ports.Metrics,
+		},
 	}
+
+	// Save the updated configuration
+	return saveConfig(config)
+}
+
+// updateBackendServicePorts updates the port configuration for a backend service.
+//
+// Parameters:
+//   - serviceName: Name of the service to update
+//   - config: Current configuration
+//   - httpPort: HTTP port (0 to keep default)
+//   - healthPort: Health port (0 to keep default)
+//   - metricsPort: Metrics port (0 to keep default)
+//
+// Returns:
+//   - error: Update error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - File I/O operation
+func updateBackendServicePorts(serviceName string, config *configschema.Config, httpPort, healthPort, metricsPort int) error {
+	service, exists := config.Backend[serviceName]
+	if !exists {
+		return fmt.Errorf("service %s not found", serviceName)
+	}
+
+	// Initialize ports if nil
+	if service.Ports == nil {
+		service.Ports = &configschema.PortConfig{
+			HTTP:    config.BackendDefaults.Ports.HTTP,
+			Health:  config.BackendDefaults.Ports.Health,
+			Metrics: config.BackendDefaults.Ports.Metrics,
+		}
+	}
+
+	// Update ports if provided
+	if httpPort > 0 {
+		service.Ports.HTTP = httpPort
+	}
+	if healthPort > 0 {
+		service.Ports.Health = healthPort
+	}
+	if metricsPort > 0 {
+		service.Ports.Metrics = metricsPort
+	}
+
+	// Update the service in config
+	config.Backend[serviceName] = service
 
 	// Save the updated configuration
 	return saveConfig(config)
