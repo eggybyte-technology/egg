@@ -5,6 +5,7 @@ gen/
 dist/
 build/*.tar.gz
 build/*.zip
+**/bin/
 
 # Go workspace
 go.work
