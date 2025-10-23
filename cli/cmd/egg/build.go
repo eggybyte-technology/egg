@@ -406,7 +406,7 @@ func pushImagesToRegistry(ctx context.Context, runner *toolrunner.Runner, config
 	return nil
 }
 
-// buildRuntimeImage builds the eggybyte-go-alpine runtime image.
+// buildRuntimeImage checks if the eggybyte-go-alpine runtime image exists.
 //
 // Parameters:
 //   - ctx: Context for cancellation
@@ -416,43 +416,29 @@ func pushImagesToRegistry(ctx context.Context, runner *toolrunner.Runner, config
 //   - push: Whether to push images to registry
 //
 // Returns:
-//   - error: Build error if any
+//   - error: Check error if any
 //
 // Concurrency:
 //   - Single-threaded
 //
 // Performance:
-//   - Docker image building
+//   - Docker image check
 func buildRuntimeImage(ctx context.Context, runner *toolrunner.Runner, useBuildx bool, platforms string, push bool) error {
-	ui.Info("Building runtime image: eggybyte-go-alpine")
+	ui.Info("Checking runtime image: eggybyte-go-alpine")
 
-	// Check if runtime image already exists (only if not using buildx or not pushing)
-	if !useBuildx || (!push && !strings.Contains(platforms, ",")) {
-		result, err := runner.Docker(ctx, "images", "-q", "eggybyte-go-alpine")
-		if err == nil && result.ExitCode == 0 && strings.TrimSpace(result.Stdout) != "" {
-			ui.Debug("Runtime image already exists, skipping build")
-			return nil
-		}
+	// Check if runtime image already exists
+	result, err := runner.Docker(ctx, "images", "-q", "eggybyte-go-alpine")
+	if err == nil && result.ExitCode == 0 && strings.TrimSpace(result.Stdout) != "" {
+		ui.Debug("Runtime image already exists")
+		ui.Success("Runtime image available: eggybyte-go-alpine")
+		return nil
 	}
 
-	// Build runtime image
-	runtimeDockerfile := "build/Dockerfile.eggybyte-go-alpine"
+	// If image doesn't exist, inform user to pull it
+	ui.Info("Runtime image not found locally")
+	ui.Info("Please pull the runtime image manually:")
+	ui.Info("  docker pull ghcr.io/eggybyte-technology/eggybyte-go-alpine:latest")
+	ui.Info("Or use the pre-built image in your deployments")
 
-	if useBuildx {
-		// Use buildx for multi-platform builds
-		load := !push && !strings.Contains(platforms, ",")
-
-		ui.Info("Building runtime image with buildx for platforms: %s", platforms)
-		if err := runner.DockerBuildx(ctx, "eggybyte-go-alpine", runtimeDockerfile, ".", platforms, false, load); err != nil {
-			return fmt.Errorf("failed to build runtime image with buildx: %w", err)
-		}
-	} else {
-		// Use regular docker build
-		if err := runner.DockerBuild(ctx, "eggybyte-go-alpine", runtimeDockerfile, "."); err != nil {
-			return fmt.Errorf("failed to build runtime image: %w", err)
-		}
-	}
-
-	ui.Success("Runtime image built: eggybyte-go-alpine")
 	return nil
 }

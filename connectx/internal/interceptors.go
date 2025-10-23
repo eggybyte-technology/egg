@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,12 +18,44 @@ import (
 // RecoveryInterceptor creates a recovery interceptor that converts panics to errors.
 func RecoveryInterceptor(logger log.Logger) connect.UnaryInterceptorFunc {
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		return func(ctx context.Context, req connect.AnyRequest) (resp connect.AnyResponse, err error) {
 			defer func() {
 				if r := recover(); r != nil {
-					logger.Error(nil, "panic recovered", log.Str("panic", fmt.Sprintf("%v", r)))
+					logger.Error(nil, "panic recovered", "panic", fmt.Sprintf("%v", r), "procedure", req.Spec().Procedure)
+					err = connect.NewError(connect.CodeInternal, fmt.Errorf("internal server error: panic recovered"))
+					resp = nil
 				}
 			}()
+			return next(ctx, req)
+		}
+	}
+}
+
+// TimeoutInterceptor creates a timeout interceptor based on service-level configuration.
+// Supports per-request timeout override via X-RPC-Timeout-Ms header (can only reduce, not increase).
+func TimeoutInterceptor(defaultTimeoutMs int64) connect.UnaryInterceptorFunc {
+	return func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			timeoutMs := defaultTimeoutMs
+
+			// Check for request header override (can only reduce timeout)
+			if req.Header() != nil {
+				if headerTimeout := req.Header().Get("X-RPC-Timeout-Ms"); headerTimeout != "" {
+					if parsed, err := strconv.ParseInt(headerTimeout, 10, 64); err == nil {
+						if parsed > 0 && parsed < timeoutMs {
+							timeoutMs = parsed
+						}
+					}
+				}
+			}
+
+			// Apply timeout if configured
+			if timeoutMs > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+				defer cancel()
+			}
+
 			return next(ctx, req)
 		}
 	}
@@ -216,12 +249,22 @@ func mapErrorToConnectCode(err error) connect.Code {
 		return connect.CodePermissionDenied
 	case errors.CodeUnauthenticated:
 		return connect.CodeUnauthenticated
+	case errors.CodeResourceExhausted:
+		return connect.CodeResourceExhausted
 	case errors.CodeInternal:
 		return connect.CodeInternal
 	case errors.CodeUnavailable:
 		return connect.CodeUnavailable
 	case errors.CodeDeadlineExceeded:
 		return connect.CodeDeadlineExceeded
+	case errors.CodeUnimplemented:
+		return connect.CodeUnimplemented
+	case errors.CodeAborted:
+		return connect.CodeAborted
+	case errors.CodeOutOfRange:
+		return connect.CodeOutOfRange
+	case errors.CodeDataLoss:
+		return connect.CodeDataLoss
 	default:
 		return connect.CodeInternal
 	}

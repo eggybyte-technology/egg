@@ -101,6 +101,26 @@ test_examples() {
     
     local test_failed=0
     
+    # Clean up any existing containers first
+    print_info "Cleaning up any existing containers..."
+    cd "$PROJECT_ROOT/deploy"
+    docker-compose down --remove-orphans 2>/dev/null || true
+    docker-compose rm -f 2>/dev/null || true
+    
+    # Force remove any egg-related containers
+    print_info "Ensuring all egg containers are removed..."
+    docker ps -a | grep egg- | awk '{print $1}' | xargs docker rm -f 2>/dev/null || true
+    
+    # Wait for containers to be completely stopped
+    print_info "Waiting for containers to be completely stopped..."
+    sleep 3
+    
+    # Use dedicated port cleanup script
+    print_info "Running port cleanup script..."
+    if ! "$PROJECT_ROOT/scripts/cleanup-ports.sh"; then
+        print_warning "Some ports could not be freed, but continuing anyway..."
+    fi
+    
     # Build all services first
     print_info "Building all services..."
     if ! "$PROJECT_ROOT/scripts/build.sh" all; then
@@ -119,34 +139,73 @@ test_examples() {
         return 1
     fi
     
+    # Remove any stopped containers
+    docker-compose rm -f 2>/dev/null || true
+    
     if ! docker-compose up -d; then
         print_error "Failed to start services with docker-compose"
+        print_info "Showing docker-compose logs for debugging..."
+        docker-compose logs
+        docker-compose down --remove-orphans 2>/dev/null || true
         return 1
     fi
     print_success "Services started"
     
-    # Wait for services to be ready
+    # Wait for services to be ready with health checks
     print_info "Waiting for services to be ready..."
-    sleep 15
     
-    # Test minimal service health
-    print_info "Testing minimal service health..."
-    print_info "Testing endpoint: http://localhost:8081/health"
-    if curl -f http://localhost:8081/health > /dev/null 2>&1; then
-        print_success "Minimal service health check passed"
-    else
+    # Function to wait for a service to be healthy
+    wait_for_health() {
+        local url=$1
+        local service_name=$2
+        local max_attempts=30
+        local attempt=1
+        
+        print_info "Waiting for $service_name to be healthy..."
+        while [ $attempt -le $max_attempts ]; do
+            if curl -f -s "$url" > /dev/null 2>&1; then
+                print_success "$service_name is healthy (attempt $attempt/$max_attempts)"
+                return 0
+            fi
+            echo -n "."
+            sleep 1
+            attempt=$((attempt + 1))
+        done
+        echo ""
+        print_error "$service_name failed to become healthy after $max_attempts attempts"
+        return 1
+    }
+    
+    # Test minimal service health with retry
+    if ! wait_for_health "http://localhost:8081/health" "Minimal service"; then
         print_warning "Minimal service health check failed"
         test_failed=1
     fi
     
-    # Test user service health
-    print_info "Testing user service health..."
-    print_info "Testing endpoint: http://localhost:8083/health"
-    if curl -f http://localhost:8083/health > /dev/null 2>&1; then
-        print_success "User service health check passed"
-    else
+    # Test user service health with retry
+    if ! wait_for_health "http://localhost:8083/health" "User service"; then
         print_warning "User service health check failed"
         test_failed=1
+    fi
+    
+    # If health checks failed, show logs and exit early
+    if [ $test_failed -eq 1 ]; then
+        print_error "Health checks failed, showing container logs..."
+        docker-compose logs --tail=50
+        print_info "Stopping services..."
+        docker-compose down --remove-orphans 2>/dev/null || true
+        return 1
+    fi
+    
+    # Test database connectivity for user-service
+    print_info "Testing user-service database connectivity..."
+    print_info "Checking if user-service is using real database..."
+    if docker logs egg-user-service 2>&1 | grep -q "Database initialized and migrated successfully"; then
+        print_success "User service is using real database connection"
+    elif docker logs egg-user-service 2>&1 | grep -q "Using mock repository"; then
+        print_warning "User service is using mock repository (no database)"
+    else
+        print_warning "Cannot determine user service database status"
     fi
     
     # Test Connect endpoints

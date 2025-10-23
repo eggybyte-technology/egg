@@ -110,6 +110,21 @@ type BaseConfig struct {
 	DebounceMillis int    `env:"CONFIG_DEBOUNCE_MS" default:"200"`
 }
 
+// GetHTTPPort returns the HTTP server port.
+func (c *BaseConfig) GetHTTPPort() string {
+	return c.HTTPPort
+}
+
+// GetHealthPort returns the health check server port.
+func (c *BaseConfig) GetHealthPort() string {
+	return c.HealthPort
+}
+
+// GetMetricsPort returns the metrics server port.
+func (c *BaseConfig) GetMetricsPort() string {
+	return c.MetricsPort
+}
+
 // manager implements the Manager interface.
 type manager struct {
 	logger     log.Logger
@@ -182,7 +197,7 @@ func (m *manager) loadInitial(ctx context.Context) error {
 	m.snapshot = merged
 	m.mu.Unlock()
 
-	m.logger.Info("configuration loaded", log.Int("keys", len(merged)), log.Str("SERVICE_NAME", merged["SERVICE_NAME"]), log.Str("HTTP_PORT", merged["HTTP_PORT"]))
+	m.logger.Info("configuration loaded", "keys", len(merged))
 	return nil
 }
 

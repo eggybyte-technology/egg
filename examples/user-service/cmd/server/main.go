@@ -29,64 +29,60 @@ import (
 	"github.com/eggybyte-technology/egg/examples/user-service/internal/repository"
 	"github.com/eggybyte-technology/egg/examples/user-service/internal/service"
 	"github.com/eggybyte-technology/egg/servicex"
+	"github.com/eggybyte-technology/egg/storex"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-// SimpleLogger implements the log.Logger interface for basic logging.
-type SimpleLogger struct{}
-
-func (l *SimpleLogger) With(kv ...any) log.Logger   { return l }
-func (l *SimpleLogger) Debug(msg string, kv ...any) { fmt.Printf("[DEBUG] %s %v\n", msg, kv) }
-func (l *SimpleLogger) Info(msg string, kv ...any)  { fmt.Printf("[INFO] %s %v\n", msg, kv) }
-func (l *SimpleLogger) Warn(msg string, kv ...any)  { fmt.Printf("[WARN] %s %v\n", msg, kv) }
-func (l *SimpleLogger) Error(err error, msg string, kv ...any) {
-	if err != nil {
-		fmt.Printf("[ERROR] %s: %v %v\n", msg, err, kv)
-	} else {
-		fmt.Printf("[ERROR] %s %v\n", msg, kv)
-	}
-}
-
 func main() {
-	// Initialize logger
-	logger := &SimpleLogger{}
-	logger.Info("Starting user service")
+	// Create context with signal handling
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Create context
-	ctx := context.Background()
-
-	// Initialize configuration
-	var cfg config.AppConfig
+	// Initialize configuration - will be populated by servicex
+	cfg := &config.AppConfig{}
 
 	// Run the service using servicex
-	err := servicex.Run(ctx, servicex.Options{
-		ServiceName: "user-service",
-		Config:      &cfg,
-		// Database: &servicex.DatabaseConfig{
-		// 	Driver:      "mysql",
-		// 	DSN:         "", // Will be set from config
-		// 	MaxIdle:     10,
-		// 	MaxOpen:     100,
-		// 	MaxLifetime: 1 * time.Hour,
-		// },
-		// Migrate: func(db *gorm.DB) error {
-		// 	return db.AutoMigrate(&model.User{})
-		// },
-		Register: func(app *servicex.App) error {
-			// Initialize repository
+	err := servicex.Run(ctx,
+		servicex.WithService("user-service", "0.1.0"),
+		servicex.WithConfig(cfg),
+		servicex.WithTracing(true),
+		servicex.WithMetrics(true),
+		servicex.WithTimeout(30000),
+		servicex.WithSlowRequestThreshold(1000),
+		servicex.WithShutdownTimeout(15*time.Second),
+		servicex.WithRegister(func(app *servicex.App) error {
+			// At this point, cfg has been loaded by servicex
 			var userRepo repository.UserRepository
-			if db := app.DB(); db != nil {
+
+			// Check if database is configured
+			if cfg.Database.DSN != "" {
+				app.Logger().Info("Database configuration found, initializing connection",
+					log.Str("driver", cfg.Database.Driver),
+				)
+
+				// Initialize database manually
+				db, err := initializeDatabase(ctx, cfg, app.Logger())
+				if err != nil {
+					return errors.Wrap(errors.CodeInternal, "database initialization", err)
+				}
+
+				// Auto-migrate
+				if err := db.AutoMigrate(&model.User{}); err != nil {
+					return errors.Wrap(errors.CodeInternal, "database migration", err)
+				}
+
+				app.Logger().Info("Database initialized successfully")
 				userRepo = repository.NewUserRepository(db)
-				logger.Info("Repository initialized successfully")
 			} else {
-				// Use in-memory repository for demo
+				// Use in-memory repository
+				app.Logger().Info("No database configured, using mock repository")
 				userRepo = &mockUserRepository{}
-				logger.Info("Using mock repository (no database)")
 			}
 
 			// Initialize service and handler
-			userService := service.NewUserService(userRepo, logger)
-			userHandler := handler.NewUserHandler(userService, logger)
+			userService := service.NewUserService(userRepo, app.Logger())
+			userHandler := handler.NewUserHandler(userService, app.Logger())
 
 			// Create Connect handler with interceptors
 			path, connectHandler := userv1connect.NewUserServiceHandler(
@@ -96,26 +92,42 @@ func main() {
 
 			// Register handler
 			app.Mux().Handle(path, connectHandler)
-			logger.Info("Registered Connect handler", log.Str("path", path))
+			app.Logger().Info("Registered Connect handler", log.Str("path", path))
 
-			logger.Info("User service initialized successfully")
+			app.Logger().Info("User service initialized successfully")
 			return nil
-		},
-		EnableTracing:     true,
-		EnableHealthCheck: true,
-		EnableMetrics:     true,
-		EnableDebugLogs:   false,
-		SlowRequestMillis: 1000,
-		PayloadAccounting: true,
-		ShutdownTimeout:   15 * time.Second,
-		Logger:            logger,
-	})
+		}),
+	)
 	if err != nil {
-		logger.Error(err, "Service failed")
+		// servicex handles logging internally, but we can still log here if needed
 		return
 	}
+}
 
-	logger.Info("User service stopped gracefully")
+// initializeDatabase initializes the database connection using storex
+func initializeDatabase(ctx context.Context, cfg *config.AppConfig, logger log.Logger) (*gorm.DB, error) {
+	store, err := storex.NewGORMStore(storex.GORMOptions{
+		DSN:             cfg.Database.DSN,
+		Driver:          cfg.Database.Driver,
+		MaxIdleConns:    cfg.Database.MaxIdle,
+		MaxOpenConns:    cfg.Database.MaxOpen,
+		ConnMaxLifetime: cfg.Database.MaxLifetime,
+		Logger:          logger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create database store: %w", err)
+	}
+
+	// Test connection
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if err := store.Ping(pingCtx); err != nil {
+		store.Close()
+		return nil, fmt.Errorf("database ping failed: %w", err)
+	}
+
+	return store.GetDB(), nil
 }
 
 // mockUserRepository is a simple in-memory implementation for demo purposes

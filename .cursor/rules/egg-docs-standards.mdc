@@ -1,0 +1,93 @@
+---
+alwaysApply: true
+description: egg 文档与 README 规范（doc.go 模板、README 章节、示例目录）
+globs: "**/*.md,**/*.go"
+---
+
+## egg 文档标准（doc.go 与 README）
+
+为所有模块提供统一、可发现、可复用的文档结构与编写规则。
+
+⚠️ 强制：所有文档（README、docs 内文档）与代码注释（GoDoc）必须使用英文。
+
+### doc.go（包级文档）
+
+- 第一行单句总结
+- 必含章节：`# Overview`、`# Features`、`# Usage`、`# Layer`、`# Stability`
+- 示例代码可直接编译运行
+ - GoDoc 注释必须为英文
+
+示例（节选）：
+
+```go
+// Package connectx provides the unified Connect-RPC interceptor stack
+// for the egg microservice framework.
+//
+// # Overview
+// ...（略）
+package connectx
+```
+
+### README.md（模块文档）
+
+标准章节：
+
+| Section                    | Required | Description                                        |
+| -------------------------- | -------- | -------------------------------------------------- |
+| `# Module Name`            | ✅        | 模块名，如 `egg/connectx`                          |
+| `## Overview`              | ✅        | 模块职责与角色                                      |
+| `## Key Features`          | ✅        | 关键能力要点                                        |
+| `## Dependencies`          | ✅        | 所属分层与依赖模块                                   |
+| `## Installation`          | ✅        | 引入与安装                                          |
+| `## Basic Usage`           | ✅        | 最小可运行示例                                       |
+| `## Configuration Options` | ✅        | 选项列表或表格（如适用）                              |
+| `## Observability`         | Optional | 指标/日志/Tracing 行为                               |
+| `## Stability`             | ✅        | 稳定性与版本策略                                     |
+| `## License`               | ✅        | 许可证说明                                           |
+
+示例参考：
+
+- [docs/example-readme.md](mdc:docs/example-readme.md)
+
+### 示例目录规范
+
+为终端用户功能模块提供：
+
+```text
+examples/
+└── basic/
+    ├── main.go
+    ├── README.md
+    └── go.mod
+```
+
+`examples/README.md` 需说明运行方式与期望输出。
+
+### Markdown 约定
+
+- 使用 `#`、`##`、`###` 三层标题
+- 行内代码使用反引号；使用带语言标签的围栏代码块（`go`, `yaml`, `bash`, `json`）
+- 列表/表格统一风格；行宽建议 ≤ 100 字符
+
+### 根级文档
+
+- 维护 `ARCHITECTURE.md`（分层、模块边界、依赖图）
+- 维护 `LOGGING.md`（日志格式、字段规范）
+- 维护 `MODULE_GUIDE.md`（各模块 README 索引）
+
+### 许可与版权
+
+- 许可声明需与仓库根 `LICENSE` 保持一致（默认 MIT）。
+- 在 `README.md` 的 `## License` 小节引用根许可即可，例如：
+
+```text
+This package is part of the EggyByte framework and is licensed under the MIT License.
+See the root LICENSE file for details.
+```
+
+### 参考
+
+- [docs/rules.md](mdc:docs/rules.md)
+- [docs/guidance.md](mdc:docs/guidance.md)
+- [docs/example-readme.md](mdc:docs/example-readme.md)
+

@@ -1,0 +1,87 @@
+---
+alwaysApply: true
+description: egg 模块级 Go 实现规范（上下文、错误、日志、并发、测试、配置、传输边界）
+globs: "*.go"
+---
+
+## egg 模块级 Go 实现规范
+
+面向所有 `egg` 子模块（`core`, `logx`, `configx`, `runtimex`, `connectx`, `clientx`, `servicex`, `storex`, `testingx`）。
+
+### 基本原则
+
+- 清晰胜于巧妙；小而可测；强内聚
+- 禁止全局可变状态；涉及 I/O 或长时操作的函数首参为 `context.Context`
+- 错误使用包装与哨兵（`fmt.Errorf("...: %w", err)`；定义 `var ErrXxx = errors.New("...")`）
+- 统一结构化日志 `log/slog` 或 `logx`；禁止 `fmt.Print*`
+- 并发：注明 goroutine 生命周期，避免泄漏；适用时用 `errgroup`
+- 边界：以接口立边界；注入依赖；具体类型尽量保持非导出
+- 测试：表驱动+子测试+必要 fuzz；外部副作用在接口后面，便于 fake/mock
+- 安全：不记录敏感信息；校验输入；令牌使用时间常量比较
+- 性能：先度量再优化；记录权衡
+
+### 目录与文件组织
+
+- 按行为拆分文件：`service_*.go`, `repository_*.go`, `handler_*.go`, `http_*.go`, `grpc_*.go`
+- 每个导出类型尽量单文件，构造函数紧邻类型
+- `_test.go` 镜像被测文件结构；测试工具放入 `testingx`
+
+### 文档与注释（强制）
+
+- 所有注释与文档均使用英文（Godoc 开头以标识符名）
+- 每个导出符号必须有以其标识符开头的 GoDoc
+- 每个 `.go` 文件顶部包含文件头模板（见引用规则）
+- 接口需描述契约、并发/副作用；私有帮助函数也应有一句话意图注释
+
+### API 模式
+
+- 函数式选项：
+
+```go
+type Option func(*Options)
+
+func WithDefaultTimeout(ms int64) Option {
+    return func(o *Options) { o.DefaultTimeoutMs = ms }
+}
+```
+
+- 配置加载与校验：
+
+```go
+cfg := configx.Bind(&MyConfig{})
+// 字段使用 validate 标签
+```
+
+- 错误与日志：
+
+```go
+if err != nil {
+    return fmt.Errorf("op doSomething: %w", err)
+}
+log := logx.FromContext(ctx)
+log.Info("event", slog.String("service", svc), slog.Int64("latency_ms", ms))
+```
+
+### 传输边界与解耦
+
+- 传输适配层（HTTP/Connect/gRPC）须“薄”，仅做编解码、错误映射与调用服务层
+- 业务逻辑在服务层独立于传输；定义端口（接口）+ 适配器实现
+
+### Protobuf/Buf（可选）
+
+- `.proto` 放在 `api/`，使用 `buf` 统一生成；生成路径模块内聚
+
+### CLI 驱动工作区与依赖管理（禁止手改）
+
+使用 `go work`、`go mod` 与 `buf` 命令行管理工作区与依赖；禁止手动编辑 `go.work`/`go.mod`。
+
+### 测试与工具链
+
+- `go test -race -cover ./...`；`golangci-lint run`；必要时 `buf lint`
+- 优先手写小接口 fake；或采用生成工具
+
+### 参考
+
+- [docs/guidance.md](mdc:docs/guidance.md)
+- [docs/rules.md](mdc:docs/rules.md)
+

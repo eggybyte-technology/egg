@@ -98,25 +98,26 @@ func TestApp_Logger(t *testing.T) {
 	}
 }
 
-func TestApp_DB(t *testing.T) {
-	tests := []struct {
-		name string
-		app  *App
-		want *gorm.DB
-	}{
-		{
-			name: "nil database",
-			app:  &App{db: nil},
-			want: nil,
-		},
+// TestApp_Provide tests the DI container Provide method.
+func TestApp_Provide(t *testing.T) {
+	app := &App{
+		container: newContainer(),
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.app.DB() != tt.want {
-				t.Errorf("App.DB() = %v, want %v", tt.app.DB(), tt.want)
-			}
-		})
+	// Provide a simple constructor
+	err := app.Provide(func() string { return "test" })
+	if err != nil {
+		t.Fatalf("Provide failed: %v", err)
+	}
+
+	var result string
+	err = app.Resolve(&result)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if result != "test" {
+		t.Errorf("Expected 'test', got %q", result)
 	}
 }
 
@@ -136,11 +137,12 @@ func TestApp_Interceptors(t *testing.T) {
 
 func TestDatabaseConfig(t *testing.T) {
 	config := DatabaseConfig{
-		Driver:      "mysql",
-		DSN:         "test-dsn",
-		MaxIdle:     5,
-		MaxOpen:     50,
-		MaxLifetime: 30 * time.Minute,
+		Driver:          "mysql",
+		DSN:             "test-dsn",
+		MaxIdleConns:    5,
+		MaxOpenConns:    50,
+		ConnMaxLifetime: 30 * time.Minute,
+		PingTimeout:     5 * time.Second,
 	}
 
 	if config.Driver != "mysql" {
@@ -149,14 +151,17 @@ func TestDatabaseConfig(t *testing.T) {
 	if config.DSN != "test-dsn" {
 		t.Errorf("DatabaseConfig.DSN = %s, want test-dsn", config.DSN)
 	}
-	if config.MaxIdle != 5 {
-		t.Errorf("DatabaseConfig.MaxIdle = %d, want 5", config.MaxIdle)
+	if config.MaxIdleConns != 5 {
+		t.Errorf("DatabaseConfig.MaxIdleConns = %d, want 5", config.MaxIdleConns)
 	}
-	if config.MaxOpen != 50 {
-		t.Errorf("DatabaseConfig.MaxOpen = %d, want 50", config.MaxOpen)
+	if config.MaxOpenConns != 50 {
+		t.Errorf("DatabaseConfig.MaxOpenConns = %d, want 50", config.MaxOpenConns)
 	}
-	if config.MaxLifetime != 30*time.Minute {
-		t.Errorf("DatabaseConfig.MaxLifetime = %v, want %v", config.MaxLifetime, 30*time.Minute)
+	if config.ConnMaxLifetime != 30*time.Minute {
+		t.Errorf("DatabaseConfig.ConnMaxLifetime = %v, want %v", config.ConnMaxLifetime, 30*time.Minute)
+	}
+	if config.PingTimeout != 5*time.Second {
+		t.Errorf("DatabaseConfig.PingTimeout = %v, want %v", config.PingTimeout, 5*time.Second)
 	}
 }
 

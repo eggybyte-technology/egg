@@ -61,15 +61,18 @@ type Options struct {
 	WithResponseBody  bool           // Log response body (default: false for production)
 	SlowRequestMillis int64          // Slow request threshold in milliseconds
 	PayloadAccounting bool           // Track inbound/outbound payload sizes
+	DefaultTimeoutMs  int64          // Default RPC timeout in milliseconds (0 = no timeout)
+	EnableTimeout     bool           // Enable timeout interceptor (default: true)
 }
 
 // DefaultInterceptors returns a set of interceptors with the given options.
 // The interceptors are ordered for optimal performance and functionality:
 // 1. Recovery (panic handling)
-// 2. OpenTelemetry (tracing and metrics)
-// 3. Identity injection (extract headers to context)
-// 4. Error mapping (core/errors to Connect codes)
-// 5. Logging (structured request/response logging)
+// 2. Timeout (service-level + request header override)
+// 3. OpenTelemetry (tracing and metrics)
+// 4. Identity injection (extract headers to context)
+// 5. Error mapping (core/errors to Connect codes)
+// 6. Logging (structured request/response logging)
 func DefaultInterceptors(opts Options) []connect.Interceptor {
 	// Set default header mapping if not provided
 	if opts.Headers.RequestID == "" {
@@ -81,11 +84,21 @@ func DefaultInterceptors(opts Options) []connect.Interceptor {
 		opts.SlowRequestMillis = 1000 // 1 second
 	}
 
+	// Set default timeout if not specified
+	if opts.DefaultTimeoutMs == 0 {
+		opts.DefaultTimeoutMs = 30000 // 30 seconds default
+	}
+
 	var interceptors []connect.Interceptor
 
 	// Add recovery interceptor
 	if opts.Logger != nil {
 		interceptors = append(interceptors, connect.UnaryInterceptorFunc(internal.RecoveryInterceptor(opts.Logger)))
+	}
+
+	// Add timeout interceptor (before identity/logging to ensure proper deadline propagation)
+	if opts.EnableTimeout || opts.DefaultTimeoutMs > 0 {
+		interceptors = append(interceptors, connect.UnaryInterceptorFunc(internal.TimeoutInterceptor(opts.DefaultTimeoutMs)))
 	}
 
 	// Add identity injection interceptor

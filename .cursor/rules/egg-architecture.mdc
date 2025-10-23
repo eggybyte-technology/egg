@@ -1,0 +1,78 @@
+---
+alwaysApply: true
+description: egg 仓库目录结构与分层规则（L0–L4），依赖约束与模块模板
+---
+
+## egg 仓库架构与分层规范
+
+本规则统一仓库目录结构、模块分层与依赖约束，确保可维护性与可演进性。
+
+### 分层与依赖
+
+- L0 核心：`core`
+- L1 日志：`logx`
+- L2 能力：`configx`, `obsx`, `httpx`
+- L3 运行时与通信：`runtimex`, `connectx`, `clientx`
+- L4 集成器：`servicex`
+- 附属：`storex`, `testingx`
+
+依赖规则：只能依赖同层或更低层；禁止跨层、循环依赖。
+
+### 仓库目录总览（示例）
+
+```text
+github.com/eggybyte-technology/egg/
+├── go.work
+├── docs/
+├── core/            # L0：零依赖核心
+├── logx/            # L1：日志
+├── configx/         # L2：配置加载与热更
+├── obsx/            # L2：观测与指标
+├── httpx/           # L2：HTTP 辅助
+├── runtimex/        # L3：运行时
+├── connectx/        # L3：Connect 拦截器栈
+├── clientx/         # L3：Connect 客户端
+├── servicex/        # L4：集成器（一行起服）
+├── storex/          # 附属：存储与事务
+├── testingx/        # 附属：测试工具
+└── examples/
+```
+
+### 模块标准目录（以 connectx 为例）
+
+```text
+connectx/
+├── go.mod
+├── README.md
+├── doc.go
+├── options.go
+├── interceptor_timeout.go
+├── interceptor_logging.go
+├── interceptor_metrics.go
+├── interceptor_errors.go
+├── interceptor_auth.go
+├── chain.go
+├── registry.go
+├── types.go
+├── internal/
+│   └── reflectutil.go
+└── test/
+    ├── timeout_test.go
+    ├── logging_test.go
+    └── chain_test.go
+```
+
+### 约束要点
+
+- `cmd/<service>` 仅做组装与注入，业务逻辑进入 `internal/...` 或可复用的 `pkg/...`
+- 文件按“行为”拆分：`service_*.go`, `repository_*.go`, `handler_*.go`, `http_*.go` 等
+- 导出 API 与注释稳定清晰；构造函数与类型相邻；单文件建议 < 400 LOC
+- 每个子模块独立 `go.mod`；通过 `go work` 进行工作区管理（禁止手动编辑 go.work / go.mod）
+- 观测、日志、错误码、配置、健康检查等横切关注点使用统一模块（`obsx`, `logx`, `core/errors`, `configx`）
+
+### 参考
+
+- [docs/guidance.md](mdc:docs/guidance.md)
+- [docs/rules.md](mdc:docs/rules.md)
+- [docs/example-readme.md](mdc:docs/example-readme.md)
+

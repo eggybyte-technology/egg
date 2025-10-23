@@ -65,6 +65,18 @@ print_warning() {
 deploy_up() {
     print_header "Starting all services"
     
+    # Clean up any existing containers first
+    print_info "Cleaning up any existing containers..."
+    cd "$PROJECT_ROOT/deploy"
+    docker-compose down --remove-orphans 2>/dev/null || true
+    docker-compose rm -f 2>/dev/null || true
+    
+    # Run port cleanup
+    print_info "Running port cleanup..."
+    if ! "$PROJECT_ROOT/scripts/cleanup-ports.sh"; then
+        print_warning "Some ports could not be freed, but continuing anyway..."
+    fi
+    
     # Build services if needed
     print_info "Building services..."
     "$PROJECT_ROOT/scripts/build.sh" all

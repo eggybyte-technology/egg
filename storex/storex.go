@@ -21,6 +21,7 @@ import (
 
 	"github.com/eggybyte-technology/egg/core/log"
 	"github.com/eggybyte-technology/egg/storex/internal"
+	"gorm.io/gorm"
 )
 
 // Store defines the interface for storage backends.
@@ -33,6 +34,15 @@ type Store interface {
 	// Close closes the storage connection.
 	// Returns an error if the connection cannot be closed gracefully.
 	Close() error
+}
+
+// GORMStore defines the interface for GORM-backed storage.
+// This extends Store with GORM-specific functionality.
+type GORMStore interface {
+	Store
+	// GetDB returns the underlying GORM database instance.
+	// The returned *gorm.DB is safe for concurrent use.
+	GetDB() *gorm.DB
 }
 
 // HealthChecker defines the interface for health check operations.
@@ -146,7 +156,8 @@ type GORMOptions struct {
 }
 
 // NewGORMStore creates a new GORM store with the given options.
-func NewGORMStore(opts GORMOptions) (Store, error) {
+// Returns a GORMStore that provides access to the underlying *gorm.DB.
+func NewGORMStore(opts GORMOptions) (GORMStore, error) {
 	return internal.NewGORMStoreFromOptions(internal.GORMOptions{
 		DSN:             opts.DSN,
 		Driver:          opts.Driver,
@@ -158,7 +169,7 @@ func NewGORMStore(opts GORMOptions) (Store, error) {
 }
 
 // NewMySQLStore creates a new MySQL store with the given DSN.
-func NewMySQLStore(dsn string, logger log.Logger) (Store, error) {
+func NewMySQLStore(dsn string, logger log.Logger) (GORMStore, error) {
 	return NewGORMStore(GORMOptions{
 		DSN:    dsn,
 		Driver: "mysql",
@@ -167,7 +178,7 @@ func NewMySQLStore(dsn string, logger log.Logger) (Store, error) {
 }
 
 // NewPostgresStore creates a new PostgreSQL store with the given DSN.
-func NewPostgresStore(dsn string, logger log.Logger) (Store, error) {
+func NewPostgresStore(dsn string, logger log.Logger) (GORMStore, error) {
 	return NewGORMStore(GORMOptions{
 		DSN:    dsn,
 		Driver: "postgres",
@@ -176,7 +187,7 @@ func NewPostgresStore(dsn string, logger log.Logger) (Store, error) {
 }
 
 // NewSQLiteStore creates a new SQLite store with the given DSN.
-func NewSQLiteStore(dsn string, logger log.Logger) (Store, error) {
+func NewSQLiteStore(dsn string, logger log.Logger) (GORMStore, error) {
 	return NewGORMStore(GORMOptions{
 		DSN:    dsn,
 		Driver: "sqlite",

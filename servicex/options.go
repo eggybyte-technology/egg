@@ -9,12 +9,24 @@ import (
 )
 
 // DatabaseConfig holds database connection configuration.
+//
+// Parameters:
+//   - Driver: Database driver name (mysql, postgres, sqlite).
+//   - DSN: Database connection string.
+//   - MaxIdleConns: Maximum number of idle connections in pool (default: 10).
+//   - MaxOpenConns: Maximum number of open connections (default: 100).
+//   - ConnMaxLifetime: Maximum lifetime of a connection (default: 1 hour).
+//   - PingTimeout: Timeout for initial connection test (default: 5 seconds).
+//
+// Concurrency:
+//   - Safe to read concurrently after initialization.
 type DatabaseConfig struct {
-	Driver      string        `env:"DB_DRIVER" default:"mysql"`
-	DSN         string        `env:"DB_DSN" default:""`
-	MaxIdle     int           `env:"DB_MAX_IDLE" default:"10"`
-	MaxOpen     int           `env:"DB_MAX_OPEN" default:"100"`
-	MaxLifetime time.Duration `env:"DB_MAX_LIFETIME" default:"1h"`
+	Driver          string        `env:"DB_DRIVER" default:"mysql"`
+	DSN             string        `env:"DB_DSN" default:""`
+	MaxIdleConns    int           `env:"DB_MAX_IDLE" default:"10"`
+	MaxOpenConns    int           `env:"DB_MAX_OPEN" default:"100"`
+	ConnMaxLifetime time.Duration `env:"DB_MAX_LIFETIME" default:"1h"`
+	PingTimeout     time.Duration `env:"DB_PING_TIMEOUT" default:"5s"`
 }
 
 // DatabaseMigrator defines a function that performs database migrations.

@@ -4,7 +4,7 @@
 	tag-all tag-modules tag-cli delete-tags \
 	fmt vet security quality setup \
 	docker-build docker-build-alpine docker-backend docker-go-service docker-all docker-clean \
-	deploy-up deploy-down deploy-restart deploy-logs deploy-status deploy-health deploy-clean
+	deploy-up deploy-down deploy-restart deploy-logs deploy-status deploy-health deploy-clean deploy-ports
 
 # Color definitions for enhanced output
 RED := \033[0;31m
@@ -40,8 +40,8 @@ define print_warning
 	@echo "$(YELLOW)[WARNING]$(RESET) $(1)"
 endef
 
-# Go modules that need independent tags
-MODULES := core runtimex connectx configx obsx k8sx storex
+# Go modules that need independent tags (excluding cli and examples)
+MODULES := clientx configx connectx core httpx k8sx logx obsx runtimex servicex storex testingx
 
 # Default target
 help:
@@ -64,6 +64,7 @@ help:
 	@echo "  $(CYAN)release$(RESET)           - One-click release (Usage: make release VERSION=v0.0.1)"
 	@echo "  $(CYAN)release-snapshot$(RESET) - Build snapshot release locally (test)"
 	@echo "  $(CYAN)release-test$(RESET)     - Test release configuration"
+	@echo "  $(CYAN)publish-modules$(RESET)  - Publish all modules with specified version (Usage: make publish-modules VERSION=v0.1.0)"
 	@echo "  $(CYAN)tag-all$(RESET)          - Create tags for all modules (Usage: make tag-all VERSION=v0.0.1)"
 	@echo "  $(CYAN)tag-modules$(RESET)      - Create tags for Go modules only"
 	@echo "  $(CYAN)tag-cli$(RESET)          - Create tag for CLI only"
@@ -90,6 +91,7 @@ help:
 	@echo "  $(CYAN)deploy-logs$(RESET)      - Show service logs"
 	@echo "  $(CYAN)deploy-status$(RESET)    - Show service status"
 	@echo "  $(CYAN)deploy-health$(RESET)    - Check service health"
+	@echo "  $(CYAN)deploy-ports$(RESET)     - Check and free required ports"
 	@echo "  $(CYAN)deploy-clean$(RESET)     - Clean deployment artifacts"
 
 # Build all modules
@@ -260,6 +262,69 @@ release-test:
 # ==============================================================================
 # Tag Management
 # ==============================================================================
+
+# Publish all modules with specified version (create tags and push)
+# Usage: make publish-modules VERSION=v0.1.0
+publish-modules:
+	@if [ -z "$(VERSION)" ]; then \
+		$(call print_error,VERSION is required); \
+		echo "Usage: make publish-modules VERSION=v0.1.0"; \
+		exit 1; \
+	fi
+	$(call print_header,Publishing all modules with version $(VERSION))
+	@echo ""
+	$(call print_info,Step 1: Running tests for all modules...)
+	@$(MAKE) test-no-race
+	@echo ""
+	$(call print_info,Step 2: Checking for existing tags...)
+	@existing_tags=0; \
+	for module in $(MODULES); do \
+		if git rev-parse "$$module/$(VERSION)" >/dev/null 2>&1; then \
+			echo "$(YELLOW)[WARNING]$(RESET) Found existing tag $$module/$(VERSION)"; \
+			existing_tags=1; \
+		fi; \
+	done; \
+	if [ $$existing_tags -eq 1 ]; then \
+		echo ""; \
+		echo "$(YELLOW)[WARNING]$(RESET) WARNING: Some tags already exist!"; \
+		echo "This will delete and recreate tags for version $(VERSION)"; \
+		read -p "Continue? (y/N) " confirm; \
+		if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
+			echo "$(CYAN)[INFO]$(RESET) Cancelled"; \
+			exit 0; \
+		fi; \
+		echo ""; \
+		echo "$(CYAN)[INFO]$(RESET) Deleting existing tags..."; \
+		for module in $(MODULES); do \
+			git tag -d "$$module/$(VERSION)" 2>/dev/null || true; \
+			git push --delete origin "$$module/$(VERSION)" 2>/dev/null || true; \
+		done; \
+		echo "$(GREEN)[SUCCESS]$(RESET) Old tags deleted"; \
+	else \
+		echo "$(CYAN)[INFO]$(RESET) No existing tags found"; \
+	fi
+	@echo ""
+	$(call print_info,Step 3: Creating module tags...)
+	@for module in $(MODULES); do \
+		tag="$$module/$(VERSION)"; \
+		echo "$(CYAN)[INFO]$(RESET) Creating $$tag..."; \
+		git tag -a "$$tag" -m "Release $$module $(VERSION)" || exit 1; \
+	done
+	@echo ""
+	$(call print_info,Step 4: Pushing all tags to remote...)
+	@git push origin --tags
+	@echo ""
+	$(call print_header,Successfully published all modules with version $(VERSION)!)
+	@echo ""
+	$(call print_info,Tags created and pushed:)
+	@for module in $(MODULES); do \
+		echo "   ✓ $$module/$(VERSION)"; \
+	done
+	@echo ""
+	$(call print_info,Users can now install modules with:)
+	@for module in $(MODULES); do \
+		echo "   go get github.com/eggybyte-technology/egg/$$module@$(VERSION)"; \
+	done
 
 # Create tags for Go modules only
 # Usage: make tag-modules VERSION=v0.0.1
@@ -555,6 +620,12 @@ deploy-health:
 	$(call print_header,Checking service health)
 	@./scripts/deploy.sh health
 	$(call print_success,Health check completed)
+
+# Check and free required ports
+deploy-ports:
+	$(call print_header,Checking and freeing required ports)
+	@./scripts/cleanup-ports.sh
+	$(call print_success,Port check completed)
 
 # Clean deployment artifacts
 deploy-clean:

@@ -1,3 +1,27 @@
+# Egg Framework Docker Compose Configuration
+# This file defines the services and their port allocations
+#
+# Port Allocation:
+#   MySQL:           3306
+#   Jaeger UI:       16686
+#   Jaeger Collector: 14268
+#   OTLP gRPC:       4317
+#   OTLP HTTP:       4318
+#   Prometheus:      8889
+#
+#   Minimal Service:
+#     - HTTP:        8080 (container) -> 8080 (host)
+#     - Health:      8081 (container) -> 8081 (host)
+#     - Metrics:     9091 (container) -> 9091 (host)
+#
+#   User Service:
+#     - HTTP:        8080 (container) -> 8082 (host)
+#     - Health:      8081 (container) -> 8083 (host)
+#     - Metrics:     9091 (container) -> 9092 (host)
+#
+# Each service uses standard ports internally (8080, 8081, 9091) but maps
+# to different host ports to avoid conflicts.
+
 services:
   # MySQL Database
   mysql:
@@ -75,9 +99,10 @@ services:
       - egg-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
+      start_period: 5s
 
   # User Service
   user-service:
@@ -93,8 +118,8 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
       DB_DRIVER: mysql
       DB_DSN: egg_user:egg_password@tcp(mysql:3306)/egg_users?charset=utf8mb4&parseTime=True&loc=Local
-      DB_MAX_IDLE: 10
-      DB_MAX_OPEN: 100
+      DB_MAX_IDLE: "10"
+      DB_MAX_OPEN: "100"
       DB_MAX_LIFETIME: 1h
       ENABLE_DEBUG_LOGS: "true"
       ENABLE_METRICS: "true"
@@ -113,9 +138,10 @@ services:
       - egg-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
+      start_period: 10s
 
 volumes:
   mysql_data:

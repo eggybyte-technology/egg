@@ -1,19 +1,19 @@
-# ServiceX
+# egg/servicex
 
-ServiceX 提供统一的微服务初始化框架，让微服务能够以极简的 main 函数形式实现服务的拉起、端点注册等初始化流程。
+## Overview
 
-## 特性
+`servicex` provides a one-call microservice bootstrap for egg-based services. It wires configuration loading, observability, HTTP server, optional database, and Connect handlers into a minimal `main` function, with graceful shutdown and optional hot reload.
 
-- **一函数启动**: 通过 `servicex.Run()` 一个函数调用启动完整的微服务
-- **极简配置**: 最小化配置选项，其余功能自动默认化
-- **统一初始化**: 聚合配置管理、可观测性、数据库连接和 HTTP 服务器初始化
-- **优雅关闭**: 支持信号处理和优雅关闭
-- **热重载**: 支持配置热重载
-- **可观测性**: 集成 OpenTelemetry 和结构化日志
-- **数据库支持**: 可选的数据库连接和自动迁移
-- **Connect 支持**: 内置 Connect 拦截器和端点注册
+## Key Features
 
-## 快速开始
+- Single-call startup via `servicex.Run`
+- Minimal configuration surface; sensible defaults
+- Unified initialization: config, observability, HTTP server, optional DB
+- Graceful shutdown and signal handling
+- Optional hot reload via configuration updates
+- Connect handler registration with preconfigured interceptors
+
+## Basic Usage
 
 ### 1. 基本使用
 
@@ -26,10 +26,10 @@ import (
     "github.com/eggybyte-technology/egg/configx"
 )
 
-// AppConfig 扩展基础配置
+// AppConfig extends the base config
 type AppConfig struct {
     configx.BaseConfig
-    // 添加应用特定配置
+    // Add application-specific fields as needed
 }
 
 func main() {
@@ -40,7 +40,7 @@ func main() {
         ServiceName: "my-service",
         Config:      &cfg,
         Register: func(app *servicex.App) error {
-            // 注册 Connect 处理器
+            // Register Connect handlers (optional)
             // path, handler := greetv1connect.NewGreeterServiceHandler(
             //     greeter,
             //     connect.WithInterceptors(app.Interceptors()...),
@@ -55,48 +55,52 @@ func main() {
 }
 ```
 
-### 2. 带数据库的服务
+### 2. With Database (Simplified API)
 
 ```go
 package main
 
 import (
     "context"
+    "time"
     "github.com/eggybyte-technology/egg/servicex"
-    "github.com/eggybyte-technology/egg/configx"
-    "gorm.io/gorm"
 )
 
-type AppConfig struct {
-    configx.BaseConfig
+type User struct {
+    ID    uint   `gorm:"primarykey"`
+    Name  string
+    Email string `gorm:"uniqueIndex"`
 }
 
 func main() {
     ctx := context.Background()
-    var cfg AppConfig
     
-    err := servicex.Run(ctx, servicex.Options{
-        ServiceName: "user-service",
-        Config:      &cfg,
-        Database: &servicex.DatabaseConfig{
-            Driver: "mysql",
-            DSN:    "user:pass@tcp(localhost:3306)/db",
-        },
-        Migrate: func(db *gorm.DB) error {
-            return db.AutoMigrate(&User{})
-        },
-        Register: func(app *servicex.App) error {
-            // 初始化 repository
-            var userRepo UserRepository
-            if db := app.DB(); db != nil {
-                userRepo = NewUserRepository(db)
-            }
+    err := servicex.Run(ctx,
+        servicex.WithService("user-service", "1.0.0"),
+        
+        // Configure database connection
+        servicex.WithDatabase(servicex.DatabaseConfig{
+            Driver:          "mysql",
+            DSN:             "user:pass@tcp(localhost:3306)/db?parseTime=true",
+            MaxIdleConns:    10,
+            MaxOpenConns:    100,
+            ConnMaxLifetime: time.Hour,
+        }),
+        
+        // Auto-migrate models
+        servicex.WithAutoMigrate(&User{}),
+        
+        // Register services
+        servicex.WithRegister(func(app *servicex.App) error {
+            // Get database instance
+            db := app.MustDB()
             
-            // 初始化 service 和 handler
+            // Initialize repository, service, and handler
+            userRepo := NewUserRepository(db)
             userService := NewUserService(userRepo, app.Logger())
             userHandler := NewUserHandler(userService, app.Logger())
             
-            // 注册 Connect 处理器
+            // Register Connect handlers
             // path, handler := userv1connect.NewUserServiceHandler(
             //     userHandler,
             //     connect.WithInterceptors(app.Interceptors()...),
@@ -111,7 +115,7 @@ func main() {
 }
 ```
 
-### 3. 完整示例
+### 3. Complete example
 
 ```go
 package main
@@ -127,7 +131,7 @@ import (
 )
 
 type AppConfig struct {
-    // 应用配置
+    // Application config
 }
 
 type GreeterService struct{}
@@ -168,33 +172,137 @@ func main() {
 }
 ```
 
-## 配置选项
+## Database Integration
 
-### 环境变量
+ServiceX provides seamless database integration with automatic connection management, health checks, and auto-migration support.
 
-| 变量名 | 默认值 | 描述 |
-|--------|--------|------|
-| `SERVICE_NAME` | `app` | 服务名称 |
-| `SERVICE_VERSION` | `0.0.0` | 服务版本 |
-| `ENABLE_TRACING` | `true` | 启用链路追踪 |
-| `ENABLE_HEALTH_CHECK` | `true` | 启用健康检查 |
-| `ENABLE_METRICS` | `true` | 启用指标 |
-| `ENABLE_DEBUG_LOGS` | `false` | 启用调试日志 |
-| `SLOW_REQUEST_MILLIS` | `1000` | 慢请求阈值（毫秒） |
-| `PAYLOAD_ACCOUNTING` | `true` | 启用负载统计 |
-| `SHUTDOWN_TIMEOUT` | `15s` | 关闭超时时间 |
+### Features
 
-### 数据库配置
+- **Automatic Connection Management**: Database connections are initialized during startup and closed gracefully during shutdown
+- **Connection Pooling**: Configurable connection pool with sensible defaults
+- **Auto-Migration**: Optional automatic schema migration using GORM
+- **Health Checks**: Built-in database health check integration
+- **Multiple Drivers**: Support for MySQL, PostgreSQL, and SQLite
 
-| 变量名 | 默认值 | 描述 |
-|--------|--------|------|
-| `DB_DRIVER` | `mysql` | 数据库驱动 |
-| `DB_DSN` | `` | 数据库连接字符串 |
-| `DB_MAX_IDLE` | `10` | 最大空闲连接数 |
-| `DB_MAX_OPEN` | `100` | 最大打开连接数 |
-| `DB_MAX_LIFETIME` | `1h` | 连接最大生存时间 |
+### Quick Start
 
-## API 参考
+```go
+import (
+    "time"
+    "github.com/eggybyte-technology/egg/servicex"
+)
+
+type User struct {
+    ID    uint   `gorm:"primarykey"`
+    Name  string
+    Email string `gorm:"uniqueIndex"`
+}
+
+err := servicex.Run(ctx,
+    servicex.WithService("user-service", "1.0.0"),
+    
+    // Configure database
+    servicex.WithDatabase(servicex.DatabaseConfig{
+        Driver:          "mysql",
+        DSN:             "user:pass@tcp(localhost:3306)/db?parseTime=true",
+        MaxIdleConns:    10,
+        MaxOpenConns:    100,
+        ConnMaxLifetime: time.Hour,
+    }),
+    
+    // Auto-migrate models
+    servicex.WithAutoMigrate(&User{}),
+    
+    // Use database in registration
+    servicex.WithRegister(func(app *servicex.App) error {
+        db := app.MustDB() // Get database or panic if not configured
+        // or
+        db := app.DB() // Get database or nil if not configured
+        
+        // Use db for repositories...
+        return nil
+    }),
+)
+```
+
+### Database Configuration
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Driver` | string | "mysql" | Database driver: mysql, postgres, or sqlite |
+| `DSN` | string | "" | Database connection string |
+| `MaxIdleConns` | int | 10 | Maximum idle connections in pool |
+| `MaxOpenConns` | int | 100 | Maximum open connections |
+| `ConnMaxLifetime` | time.Duration | 1h | Maximum connection lifetime |
+| `PingTimeout` | time.Duration | 5s | Connection test timeout |
+
+### Database Drivers
+
+**MySQL**:
+```go
+servicex.WithDatabase(servicex.DatabaseConfig{
+    Driver: "mysql",
+    DSN:    "user:pass@tcp(host:3306)/dbname?parseTime=true&loc=Local",
+})
+```
+
+**PostgreSQL**:
+```go
+servicex.WithDatabase(servicex.DatabaseConfig{
+    Driver: "postgres",
+    DSN:    "host=localhost user=postgres password=pass dbname=mydb sslmode=disable",
+})
+```
+
+**SQLite**:
+```go
+servicex.WithDatabase(servicex.DatabaseConfig{
+    Driver: "sqlite",
+    DSN:    "file:test.db?cache=shared&mode=memory",
+})
+```
+
+### Auto-Migration
+
+ServiceX supports automatic schema migration:
+
+```go
+// Single model
+servicex.WithAutoMigrate(&User{})
+
+// Multiple models
+servicex.WithAutoMigrate(&User{}, &Post{}, &Comment{})
+```
+
+For more advanced usage and examples, see [DATABASE.md](DATABASE.md).
+
+## Configuration Options
+
+### Environment variables
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `SERVICE_NAME` | `app` | Service name |
+| `SERVICE_VERSION` | `0.0.0` | Service version |
+| `ENABLE_TRACING` | `true` | Enable tracing |
+| `ENABLE_HEALTH_CHECK` | `true` | Enable health check |
+| `ENABLE_METRICS` | `true` | Enable metrics |
+| `ENABLE_DEBUG_LOGS` | `false` | Enable debug logs |
+| `SLOW_REQUEST_MILLIS` | `1000` | Slow request threshold (ms) |
+| `PAYLOAD_ACCOUNTING` | `true` | Enable payload accounting |
+| `SHUTDOWN_TIMEOUT` | `15s` | Shutdown timeout |
+
+### Database
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `DB_DRIVER` | `mysql` | Database driver |
+| `DB_DSN` | `` | Database DSN |
+| `DB_MAX_IDLE` | `10` | Max idle connections |
+| `DB_MAX_OPEN` | `100` | Max open connections |
+| `DB_MAX_LIFETIME` | `1h` | Max connection lifetime |
+
+## API Reference
 
 ### Options
 
@@ -221,7 +329,7 @@ type Options struct {
 
 ```go
 type App struct {
-    // 内部字段
+    // internal fields
 }
 
 func (a *App) Mux() *http.ServeMux
@@ -243,33 +351,26 @@ type DatabaseConfig struct {
 }
 ```
 
-## 最佳实践
+## Best Practices
 
-1. **配置结构**: 让配置结构嵌入 `configx.BaseConfig` 以获得基础配置字段
-2. **错误处理**: 在 main 函数中处理启动错误
-3. **优雅关闭**: `Run` 方法自动处理优雅关闭
-4. **日志**: 提供自定义 logger 以获得更好的日志体验
-5. **数据库**: 仅在需要时配置数据库连接
-6. **拦截器**: 使用 `app.Interceptors()` 获取预配置的 Connect 拦截器
+1. Embed `configx.BaseConfig` for common fields
+2. Handle startup errors in `main`
+3. Rely on `Run` for graceful shutdown
+4. Provide a custom logger where appropriate
+5. Configure database only when needed
+6. Use `app.Interceptors()` for preconfigured Connect interceptors
 
-## 与现有库的集成
+## Dependencies
 
-ServiceX 库构建在以下现有库之上：
+Built on: `configx`, `connectx`, `obsx`, `core/log`
 
-- `configx`: 配置管理
-- `connectx`: Connect 拦截器
-- `obsx`: OpenTelemetry 集成
-- `core/log`: 结构化日志
+## Migration Guide
 
-这确保了与现有生态系统的完全兼容性。
+### From Bootstrap
 
-## 迁移指南
+If you used a previous bootstrap library, migrating to `servicex` is straightforward:
 
-### 从 Bootstrap 迁移
-
-如果你之前使用 `bootstrap` 库，迁移到 `servicex` 非常简单：
-
-**之前 (Bootstrap)**:
+Before (Bootstrap):
 ```go
 bootstrapService, err := bootstrap.NewService(bootstrap.Options{
     ServiceName: "my-service",
@@ -285,7 +386,7 @@ if err != nil {
 return bootstrapService.Run(ctx)
 ```
 
-**现在 (ServiceX)**:
+Now (ServiceX):
 ```go
 return servicex.Run(ctx, servicex.Options{
     ServiceName: "my-service",
@@ -297,8 +398,16 @@ return servicex.Run(ctx, servicex.Options{
 })
 ```
 
-主要变化：
-- `Initializer` 重命名为 `Register`
-- `Bootstrap` 参数改为 `App`
-- 直接调用 `servicex.Run()` 而不是 `bootstrapService.Run()`
-- 访问器方法保持一致：`GetMux()` → `Mux()`, `GetLogger()` → `Logger()` 等
+Key changes:
+- `Initializer` renamed to `Register`
+- Replace `Bootstrap` with `App`
+- Call `servicex.Run()` instead of `bootstrapService.Run()`
+- Accessor methods remain consistent: `GetMux()` → `Mux()`, `GetLogger()` → `Logger()`
+
+## Stability
+
+Stable since v0.1.0.
+
+## License
+
+This package is part of the EggyByte framework and is licensed under the MIT License. See the root LICENSE file for details.

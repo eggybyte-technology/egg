@@ -69,7 +69,7 @@ repo-root/
 
 ## 2) Documentation Standards (GoDoc + File/Pkg Headers)
 
-**Every exported symbol MUST be documented** with GoDoc-style comments that begin with the identifier name.
+**Every exported symbol MUST be documented** with GoDoc-style comments that begin with the identifier name. All documentation and comments must be written in English.
 
 **File Header Template** (top of each `.go` file):
 

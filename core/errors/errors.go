@@ -23,24 +23,30 @@ import (
 // Common codes include "INVALID_ARGUMENT", "NOT_FOUND", "INTERNAL", etc.
 type Code string
 
-// Common error codes
+// Common error codes (aligned with Connect/gRPC codes)
 const (
-	CodeInvalidArgument  Code = "INVALID_ARGUMENT"
-	CodeNotFound         Code = "NOT_FOUND"
-	CodeAlreadyExists    Code = "ALREADY_EXISTS"
-	CodePermissionDenied Code = "PERMISSION_DENIED"
-	CodeUnauthenticated  Code = "UNAUTHENTICATED"
-	CodeInternal         Code = "INTERNAL"
-	CodeUnavailable      Code = "UNAVAILABLE"
-	CodeDeadlineExceeded Code = "DEADLINE_EXCEEDED"
+	CodeInvalidArgument   Code = "INVALID_ARGUMENT"
+	CodeNotFound          Code = "NOT_FOUND"
+	CodeAlreadyExists     Code = "ALREADY_EXISTS"
+	CodePermissionDenied  Code = "PERMISSION_DENIED"
+	CodeUnauthenticated   Code = "UNAUTHENTICATED"
+	CodeResourceExhausted Code = "RESOURCE_EXHAUSTED"
+	CodeInternal          Code = "INTERNAL"
+	CodeUnavailable       Code = "UNAVAILABLE"
+	CodeDeadlineExceeded  Code = "DEADLINE_EXCEEDED"
+	CodeUnimplemented     Code = "UNIMPLEMENTED"
+	CodeAborted           Code = "ABORTED"
+	CodeOutOfRange        Code = "OUT_OF_RANGE"
+	CodeDataLoss          Code = "DATA_LOSS"
 )
 
-// E represents a structured error with code, operation, and message.
+// E represents a structured error with code, operation, message, and details.
 type E struct {
-	Code Code   // Error classification code
-	Op   string // Operation that failed
-	Err  error  // Underlying error (may be nil)
-	Msg  string // Human-readable message
+	Code    Code   // Error classification code
+	Op      string // Operation that failed
+	Err     error  // Underlying error (may be nil)
+	Msg     string // Human-readable message
+	Details []any  // Additional structured details (e.g., field errors, metadata)
 }
 
 // Error implements the error interface.
@@ -111,4 +117,59 @@ func IsCode(err error, code Code) bool {
 // This is a convenience function for error type checking.
 func Is(err error, target error) bool {
 	return errors.Is(err, target)
+}
+
+// Builder provides a fluent interface for constructing errors.
+type Builder struct {
+	code    Code
+	op      string
+	err     error
+	msg     string
+	details []any
+}
+
+// Build constructs a new error with the builder's configuration.
+func Build(code Code) *Builder {
+	return &Builder{code: code}
+}
+
+// WithOp sets the operation that failed.
+func (b *Builder) WithOp(op string) *Builder {
+	b.op = op
+	return b
+}
+
+// WithErr wraps an underlying error.
+func (b *Builder) WithErr(err error) *Builder {
+	b.err = err
+	return b
+}
+
+// WithMsg sets a human-readable message.
+func (b *Builder) WithMsg(msg string) *Builder {
+	b.msg = msg
+	return b
+}
+
+// WithMsgf sets a formatted human-readable message.
+func (b *Builder) WithMsgf(format string, args ...any) *Builder {
+	b.msg = fmt.Sprintf(format, args...)
+	return b
+}
+
+// WithDetails adds structured details to the error.
+func (b *Builder) WithDetails(details ...any) *Builder {
+	b.details = append(b.details, details...)
+	return b
+}
+
+// Err builds and returns the error.
+func (b *Builder) Err() error {
+	return &E{
+		Code:    b.code,
+		Op:      b.op,
+		Err:     b.err,
+		Msg:     b.msg,
+		Details: b.details,
+	}
 }

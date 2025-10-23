@@ -2,12 +2,12 @@
 
 ## 1) 愿景与基线原则
 
-* **极薄内核 + 可插拔卫星库**：只引入需要的模块，最小依赖、最快构建
+* **极薄内核 + 可插拔卫星库 + 开箱即用框架**：只引入需要的模块，最小依赖、最快构建；`servicex` 提供一键启动的企业级微服务框架
 * **Connect-first**：统一拦截器栈（恢复、日志、追踪、指标、身份注入），0 业务侵入
 * **统一端口策略**：默认**单端口**承载 HTTP/Connect/gRPC-Web，**健康/指标独立端口**
 * **K8s "名称法"**：ConfigMap 仅注入**名称**，运行时监听并热更新；Secret 用 `secretKeyRef`，服务发现区分 `headless/clusterip`
 * **分层认证模型**：Higress 层负责认证与身份注入，微服务层专注权限检查与业务逻辑
-* **稳定 API**：`core` 与 `runtimex` 尽量稳定；其余模块小步快跑
+* **稳定 API**：`core`、`runtimex`、`servicex` 尽量稳定；其余模块小步快跑
 
 ---
 
@@ -31,6 +31,8 @@ egg/
 │  └─ utils/                     # 通用工具函数
 ├─ runtimex/    # L2：运行时（生命周期/服务器/健康/指标/基础配置；不含 Connect/K8s）
 │  └─ go.mod -> module github.com/eggybyte-technology/egg/runtimex
+├─ servicex/    # L2：微服务框架（整合 bootstrap/connectx/configx/obsx；一键启动）
+│  └─ go.mod -> module github.com/eggybyte-technology/egg/servicex
 ├─ connectx/    # L3：Connect 绑定 + 统一拦截器 + 身份注入 + 权限检查
 │  ├─ go.mod -> module github.com/eggybyte-technology/egg/connectx
 │  └─ internal/                 # 内部拦截器实现
@@ -54,8 +56,8 @@ egg/
 ```
 
 **依赖方向（只许向下）**
-`core → runtimex → {connectx, obsx}`；`{configx, k8sx, storex}` 仅依赖 `core`（`configx` 可选使用 `k8sx` 提供的 ConfigMap 监听）。
-禁止反向依赖（例如 `core` 绝不 import `connectx`）。
+`core → {runtimex, servicex} → {connectx, configx, obsx, k8sx, storex}`；各模块间禁止循环依赖。
+`servicex` 可依赖所有下层模块以提供整合功能；卫星模块仅依赖必要的上游模块。
 
 **go.work（根）**
 
@@ -64,6 +66,7 @@ go 1.23
 use (
   ./core
   ./runtimex
+  ./servicex
   ./connectx
   ./configx
   ./obsx
@@ -163,6 +166,123 @@ use (
   ```
 
 > 约定：**健康/指标端口永远独立**；默认单端口承载 HTTP/Connect/gRPC-Web（h2/h2c）。
+
+## 3.2.1 `servicex`（微服务框架：开箱即用的一键启动）
+
+`servicex` 是更高层的整合框架，建立在 `runtimex`、`connectx`、`configx`、`obsx` 等基础模块之上，提供**一键启动**的微服务解决方案。
+
+```go
+package servicex
+
+// App provides access to service components during registration.
+// This is the only interface exposed to service registration functions.
+type App struct {
+	mux          *http.ServeMux
+	logger       log.Logger
+	interceptors []connect.Interceptor
+	db           *gorm.DB
+	otel         *obsx.Provider
+}
+
+// Options holds configuration for service initialization.
+type Options struct {
+	// Service identification
+	ServiceName    string `env:"SERVICE_NAME" default:"app"`
+	ServiceVersion string `env:"SERVICE_VERSION" default:"0.0.0"`
+
+	// Configuration
+	Config any // Configuration struct that embeds configx.BaseConfig
+
+	// Database (optional)
+	Database *DatabaseConfig  // Database configuration
+	Migrate  DatabaseMigrator // Database migration function
+
+	// Service registration
+	Register ServiceRegistrar // Service registration function
+
+	// Observability
+	EnableTracing bool `env:"ENABLE_TRACING" default:"true"`
+
+	// Feature flags
+	EnableHealthCheck bool `env:"ENABLE_HEALTH_CHECK" default:"true"`
+	EnableMetrics     bool `env:"ENABLE_METRICS" default:"true"`
+	EnableDebugLogs   bool `env:"ENABLE_DEBUG_LOGS" default:"false"`
+
+	// Connect interceptor options
+	SlowRequestMillis int64 `env:"SLOW_REQUEST_MILLIS" default:"1000"`
+	PayloadAccounting bool  `env:"PAYLOAD_ACCOUNTING" default:"true"`
+
+	// Shutdown timeout
+	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" default:"15s"`
+
+	// Logger (optional, will create default if nil)
+	Logger log.Logger
+}
+
+// Run starts a microservice with the given options.
+// This is the main entry point for servicex - it handles all initialization
+// and provides a single function call to start a complete microservice.
+func Run(ctx context.Context, opts Options) error
+```
+
+**核心特性**：
+
+* **一键启动**：`servicex.Run()` 处理所有初始化，提供单函数调用启动完整微服务
+* **自动配置管理**：整合 `configx`，支持环境变量、文件、K8s ConfigMap 多来源配置
+* **内置观测性**：自动集成 `obsx`，提供追踪、指标收集和结构化日志
+* **智能拦截器栈**：使用 `connectx` 提供恢复、日志、身份注入等统一拦截器
+* **数据库集成**（可选）：支持 GORM 连接、连接池配置和自动迁移
+* **健康检查**：内置健康和指标端点，支持数据库状态检查
+* **优雅关闭**：自动处理信号捕获和资源清理
+* **默认 Logger**：提供结构化日志实现，无需手动配置
+
+**典型使用方式**：
+
+```go
+func main() {
+	ctx := context.Background()
+
+	// servicex.Run() 处理一切：配置、观测、数据库、拦截器、服务器启动
+	err := servicex.Run(ctx, servicex.Options{
+		ServiceName: "my-service",
+		ServiceVersion: "1.0.0",
+		Config: &AppConfig{}, // 继承 configx.BaseConfig
+		Register: func(app *servicex.App) error {
+			// 注册 Connect handlers - servicex 已配置好拦截器栈
+			path, handler := myv1connect.NewMyServiceHandler(
+				myHandler,
+				connect.WithInterceptors(app.Interceptors()...),
+			)
+			app.Mux().Handle(path, handler)
+			return nil
+		},
+		EnableTracing:     true,
+		EnableHealthCheck: true,
+		EnableMetrics:     true,
+		// Database: &servicex.DatabaseConfig{...}, // 可选
+		// Logger: customLogger, // 可选，默认会自动创建
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+```
+
+**适用场景**：
+
+* **快速原型**：几分钟内启动带完整特性的微服务
+* **标准化部署**：团队所有服务使用统一启动框架
+* **生产环境**：内置最佳实践，减少配置错误
+* **渐进式迁移**：可选择性启用高级特性
+
+**与底层模块关系**：
+
+`servicex` 依赖并整合多个底层模块，但**不取代**它们：
+- `runtimex`：提供底层 HTTP 服务器和生命周期管理
+- `connectx`：提供拦截器栈和 Connect 绑定
+- `configx`：提供配置管理和热更新
+- `obsx`：提供观测性和指标收集
+- 业务代码仍可直接使用这些底层模块的细粒度控制
 
 ## 3.3 `connectx`（Connect 绑定 + 统一拦截器 + 身份注入）
 
@@ -443,76 +563,54 @@ func Resolve(ctx context.Context, service string, kind ServiceKind) ([]string /*
 
 ```go
 func main() {
-  // 初始化日志器
-  logger := &SimpleLogger{}
-  
-  // 创建上下文用于优雅关闭
-  ctx, cancel := context.WithCancel(context.Background())
-  defer cancel()
+  ctx := context.Background()
 
-  // 初始化配置管理
-  configManager, err := configx.DefaultManager(ctx, logger)
-  if err != nil {
-    logger.Error(err, "Failed to initialize configuration manager")
-    os.Exit(1)
-  }
+  // servicex.Run() 一键启动：自动处理配置、观测、拦截器、服务器等
+  err := servicex.Run(ctx, servicex.Options{
+    ServiceName: "minimal-connect-service",
+    ServiceVersion: "1.0.0",
+    Config: &AppConfig{}, // 继承 configx.BaseConfig
+    Register: func(app *servicex.App) error {
+      // 注册 Connect handlers - servicex 已配置好拦截器栈
+      greeterService := &GreeterService{}
+      path, handler := greetv1connect.NewGreeterServiceHandler(
+        greeterService,
+        connect.WithInterceptors(app.Interceptors()...),
+      )
+      app.Mux().Handle(path, handler)
 
-  // 加载应用配置
-  var cfg AppConfig
-  if err := configManager.Bind(&cfg); err != nil {
-    logger.Error(err, "Failed to bind configuration")
-    os.Exit(1)
-  }
-
-  // 设置配置热更新
-  configManager.OnUpdate(func(snapshot map[string]string) {
-    logger.Info("Configuration updated", log.Int("keys", len(snapshot)))
-    // 重新加载配置并更新应用设置
-  })
-
-  // 创建 HTTP mux
-  mux := http.NewServeMux()
-
-  // 设置 Connect 拦截器
-  interceptors := connectx.DefaultInterceptors(connectx.Options{
-    Logger: logger,
-  })
-
-  // 创建 Connect 处理器
-  greeterService := &GreeterService{}
-  path, handler := greetv1connect.NewGreeterServiceHandler(
-    greeterService, 
-    connect.WithInterceptors(interceptors...),
-  )
-
-  // 绑定处理器到 mux
-  mux.Handle(path, handler)
-
-  // 添加健康检查和指标端点
-  mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("OK"))
-  })
-
-  // 启动运行时
-  err = runtimex.Run(ctx, nil, runtimex.Options{
-    Logger: logger,
-    HTTP: &runtimex.HTTPOptions{
-      Addr: cfg.HTTPPort,
-      H2C:  true, // 启用 HTTP/2 Cleartext
-      Mux:  mux,
+      // 使用 servicex 提供的 logger（自动配置）
+      app.Logger().Info("Service handlers registered successfully")
+      return nil
     },
-    Health: &runtimex.Endpoint{Addr: cfg.HealthPort},
-    Metrics: &runtimex.Endpoint{Addr: cfg.MetricsPort},
-    ShutdownTimeout: 15 * time.Second,
+    EnableTracing:     true,
+    EnableHealthCheck: true,
+    EnableMetrics:     true,
+    EnableDebugLogs:   false,
+    SlowRequestMillis: 1000,
+    PayloadAccounting: true,
+    ShutdownTimeout:   15 * time.Second,
+    // Logger: customLogger, // 可选，默认会自动创建结构化 logger
   })
 
   if err != nil {
-    logger.Error(err, "Runtime failed")
-    os.Exit(1)
+    panic(err) // servicex 已处理内部日志记录
   }
 }
 ```
+
+**核心优势对比**：
+
+| 方面 | 传统方式 | servicex 方式 |
+|------|---------|-------------|
+| **代码行数** | ~60 行 | ~25 行 |
+| **配置管理** | 手动初始化 | 自动处理 |
+| **拦截器栈** | 手动配置 | 内置最佳实践 |
+| **观测性** | 手动集成各组件 | 开箱即用 |
+| **健康检查** | 手动添加 | 内置支持 |
+| **错误处理** | 分散处理 | 统一处理 |
+
+**渐进式增强**：servicex 支持选择性启用高级特性，如数据库集成、自定义迁移等。
 
 ### 5.2 完整业务服务示例（examples/user-service）
 
@@ -591,111 +689,74 @@ type UserHandler struct {
 }
 ```
 
-**服务启动流程**
+**服务启动流程（使用 servicex）**
 
 ```go
 func main() {
-  // 1. 初始化基础组件
-  logger := &SimpleLogger{}
-  ctx, cancel := context.WithCancel(context.Background())
-  defer cancel()
+  ctx := context.Background()
 
-  // 2. 配置管理
-  configManager, err := configx.DefaultManager(ctx, logger)
-  if err != nil {
-    logger.Error(err, "Failed to initialize configuration manager")
-    os.Exit(1)
-  }
-
-  var cfg config.AppConfig
-  if err := configManager.Bind(&cfg); err != nil {
-    logger.Error(err, "Failed to bind configuration")
-    os.Exit(1)
-  }
-
-  // 3. 观测组件（可选）
-  otel, err := obsx.NewProvider(ctx, obsx.Options{
-    ServiceName:    "user-service",
+  // servicex.Run() 一键启动完整微服务
+  err := servicex.Run(ctx, servicex.Options{
+    ServiceName: "user-service",
     ServiceVersion: "1.0.0",
-    OTLPEndpoint:   cfg.OTLPEndpoint,
-  })
-  if err != nil {
-    logger.Error(err, "Failed to initialize OpenTelemetry provider")
-    os.Exit(1)
-  }
-  defer otel.Shutdown(ctx)
-
-  // 4. 数据库连接（可选）
-  var db *gorm.DB
-  if cfg.Database.DSN != "" {
-    db, err = gorm.Open(mysql.Open(cfg.Database.DSN), &gorm.Config{})
-    if err != nil {
-      logger.Error(err, "Failed to initialize database connection")
-      os.Exit(1)
-    }
-    // 自动迁移
-    db.AutoMigrate(&model.User{})
-  }
-
-  // 5. 依赖注入
-  var userRepo repository.UserRepository
-  if db != nil {
-    userRepo = repository.NewUserRepository(db)
-  }
-  
-  userService := service.NewUserService(userRepo, logger)
-  userHandler := handler.NewUserHandler(userService, logger)
-
-  // 6. Connect 服务
-  mux := http.NewServeMux()
-  interceptors := connectx.DefaultInterceptors(connectx.Options{
-    Logger:            logger,
-    Otel:              otel,
-    WithRequestBody:   cfg.Features.EnableDebugLogs,
-    WithResponseBody:  cfg.Features.EnableDebugLogs,
-    SlowRequestMillis: cfg.Business.SlowQueryMillis,
-    PayloadAccounting: true,
-  })
-
-  path, connectHandler := userv1connect.NewUserServiceHandler(
-    userHandler, 
-    connect.WithInterceptors(interceptors...),
-  )
-  mux.Handle(path, connectHandler)
-
-  // 7. 健康检查（包含数据库状态）
-  mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-    if db != nil {
-      sqlDB, _ := db.DB()
-      if err := sqlDB.PingContext(r.Context()); err != nil {
-        w.WriteHeader(http.StatusServiceUnavailable)
-        w.Write([]byte("Database unhealthy"))
-        return
+    Config: &config.AppConfig{}, // 继承 configx.BaseConfig
+    // Database: &servicex.DatabaseConfig{...}, // 可选：启用数据库
+    // Migrate: func(db *gorm.DB) error {        // 可选：数据库迁移
+    //   return db.AutoMigrate(&model.User{})
+    // },
+    Register: func(app *servicex.App) error {
+      // 依赖注入：servicex 已处理配置、观测、数据库等
+      var userRepo repository.UserRepository
+      if db := app.DB(); db != nil {
+        userRepo = repository.NewUserRepository(db)
+        app.Logger().Info("Database repository initialized")
+      } else {
+        // 无数据库时使用内存仓储
+        userRepo = &mockUserRepository{}
+        app.Logger().Info("Using in-memory repository")
       }
-    }
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("Healthy"))
-  })
 
-  // 8. 启动运行时
-  err = runtimex.Run(ctx, nil, runtimex.Options{
-    Logger: logger,
-    HTTP: &runtimex.HTTPOptions{
-      Addr: cfg.HTTPPort,
-      H2C:  true,
-      Mux:  mux,
+      // 业务服务和处理器
+      userService := service.NewUserService(userRepo, app.Logger())
+      userHandler := handler.NewUserHandler(userService, app.Logger())
+
+      // 注册 Connect handlers
+      path, connectHandler := userv1connect.NewUserServiceHandler(
+        userHandler,
+        connect.WithInterceptors(app.Interceptors()...),
+      )
+      app.Mux().Handle(path, connectHandler)
+
+      app.Logger().Info("User service registered successfully", log.Str("path", path))
+      return nil
     },
-    Health:  &runtimex.Endpoint{Addr: cfg.HealthPort},
-    Metrics: &runtimex.Endpoint{Addr: cfg.MetricsPort},
-    ShutdownTimeout: 15 * time.Second,
+    EnableTracing:     true,
+    EnableHealthCheck: true, // 自动包含数据库健康检查
+    EnableMetrics:     true,
+    EnableDebugLogs:   false,
+    SlowRequestMillis: 1000,
+    PayloadAccounting: true,
+    ShutdownTimeout:   15 * time.Second,
   })
 
   if err != nil {
-    logger.Error(err, "Runtime failed")
-    os.Exit(1)
+    panic(err) // servicex 已处理内部日志记录
   }
 }
 ```
+
+**核心优势对比**：
+
+| 方面 | 传统方式 | servicex 方式 |
+|------|---------|-------------|
+| **代码行数** | ~100 行 | ~35 行 |
+| **组件初始化** | 手动逐个初始化 | servicex 统一处理 |
+| **依赖管理** | 手动依赖注入 | servicex 自动注入 |
+| **错误处理** | 分散错误处理 | 统一错误处理 |
+| **资源清理** | 手动清理各项资源 | servicex 优雅关闭 |
+| **可测试性** | 较难测试启动流程 | 高度可测试 |
+
+**企业级特性支持**：servicex 内置支持数据库连接池、健康检查、指标收集、分布式追踪等生产环境必需特性。
 
 ### 5.3 架构模式与最佳实践
 
@@ -795,26 +856,34 @@ func (s *userService) CreateUser(ctx context.Context, req *userv1.CreateUserRequ
 
 ## 8) 迁移与落地顺序（不含任何异步承诺，仅操作顺序）
 
-1. 创建仓库 **egg** 并按上面结构初始化 `core/runtimex/connectx/obsx/k8sx/storex` 与 `go.work`。
-2. 先发布 `core/v1.0.0` 与 `runtimex/v1.0.0`（子目录 Tag）。
-3. 在 `connectx/obsx/k8sx` 补齐默认实现与测试后，各自打 `v1.0.0`。
-4. 业务服务逐步把原依赖替换为：**按需引入** `core + runtimex + connectx (+ obsx + k8sx + storex)`。
+1. 创建仓库 **egg** 并按上面结构初始化 `core/runtimex/servicex/connectx/configx/obsx/k8sx/storex` 与 `go.work`。
+2. 先发布 `core/v1.0.0`、`runtimex/v1.0.0` 与 `servicex/v1.0.0`（子目录 Tag）。
+3. 在 `connectx/configx/obsx/k8sx` 补齐默认实现与测试后，各自打 `v1.0.0`。
+4. **两条路径供选择**：
+   * **快速路径**：直接使用 `servicex` 获得开箱即用的完整微服务框架
+   * **精细控制路径**：按需引入 `core + runtimex + connectx (+ configx + obsx + k8sx + storex)`
 5. 按模块独立发版，最大化减少耦合与回归面。
 
 ---
 
 ## 9) 小结
 
-* **egg = Monorepo 的多模块通用库族**：
+* **egg = Monorepo 的多模块通用库族 + 开箱即用框架**：
   * `core`（零依赖的基础接口与身份容器）
   * `runtimex`（与传输无关的运行时内核）
+  * `servicex`（一键启动的企业级微服务框架，建立在各模块之上）
   * `connectx`（Higress 身份注入 + 统一拦截器 + 错误映射 + 权限检查工具）
   * `configx`（统一配置：Env/File + K8s ConfigMap 热更新）
   * `obsx`（OpenTelemetry/Prometheus 初始化）
   * `k8sx`（名称法监听/服务发现/Secret 契约）
   * `storex`（可选的数据库适配）
 
+* **分层架构**：
+  * **极薄内核**：`core` 提供零依赖的接口和通用工具
+  * **运行时层**：`runtimex` 和 `servicex` 提供不同粒度的启动抽象
+  * **功能层**：各卫星库提供特定领域功能，按需引入
 * **分层认证模型**：Higress 层负责认证与身份注入，微服务层专注权限检查与业务逻辑
 * **按需引入**：不需要 K8s/DB 的服务不会被动带入依赖
 * **统一端口策略**：默认单端口承载 HTTP/Connect/gRPC-Web，健康/指标独立端口
 * **统一观测口径**：日志/指标/追踪/错误处理平台一致
+* **开发者体验优先**：`servicex` 提供开箱即用的企业级特性，极大降低微服务开发门槛

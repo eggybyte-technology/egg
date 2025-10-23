@@ -1,3 +1,12 @@
+# OpenTelemetry Collector Configuration for Egg Framework
+#
+# This configuration receives telemetry data via OTLP protocol and exports to:
+#   - Console (debug logging)
+#   - Prometheus (metrics on port 8889)
+#   - Jaeger (traces via OTLP on port 4317)
+#
+# Note: We use otlp/jaeger exporter instead of the deprecated jaeger exporter
+
 receivers:
   otlp:
     protocols:
@@ -12,12 +21,12 @@ processors:
     send_batch_size: 1024
 
 exporters:
-  logging:
-    loglevel: debug
+  debug:
+    verbosity: detailed
   prometheus:
     endpoint: "0.0.0.0:8889"
-  jaeger:
-    endpoint: jaeger:14250
+  otlp/jaeger:
+    endpoint: jaeger:4317
     tls:
       insecure: true
 
@@ -26,12 +35,12 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logging, jaeger]
+      exporters: [debug, otlp/jaeger]
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logging, prometheus]
+      exporters: [debug, prometheus]
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logging]
+      exporters: [debug]
