@@ -3,7 +3,7 @@
 # Release script for Egg Framework
 #
 # This script automates the release process for all Go modules in the framework.
-# It updates module dependencies, creates Git tags, and pushes them to the remote repository.
+# It follows a layer-by-layer release strategy to ensure dependency consistency.
 #
 # Usage:
 #   ./scripts/release.sh v0.x.y
@@ -11,16 +11,27 @@
 # Example:
 #   ./scripts/release.sh v0.1.0
 #
-# The script will:
-#   1. Validate the version format
-#   2. Update internal module dependencies to the new version
-#   3. Create tags for all modules
-#   4. Push all tags to the remote repository
+# Environment Variables:
+#   AUTO_COMMIT_CHANGES - Set to "true" to auto-commit without prompting (for CI/CD)
+#
+# Release Strategy:
+#   The script releases modules in dependency order (bottom-up):
+#   Layer 0 (L0): core
+#   Layer 1 (L1): logx
+#   Layer 2 (L2): configx, obsx, httpx
+#   Layer 3 (L3): runtimex, connectx, clientx, storex, k8sx, testingx
+#   Layer 4 (L4): servicex
+#
+# For each module:
+#   1. Update dependencies to already-released modules
+#   2. Run go mod tidy (with GOPROXY=direct to bypass proxy cache)
+#   3. Commit changes
+#   4. Create and push tag
 #
 # Requirements:
 #   - Git repository with proper permissions
 #   - Go workspace configured
-#   - Clean working directory (no uncommitted changes)
+#   - Clean working directory (or use auto-commit)
 
 set -euo pipefail
 
@@ -219,8 +230,10 @@ release_single_module() {
         fi
         
         # Tidy up the go.mod file (will resolve from already-pushed tags)
-        print_info "    ↳ Running go mod tidy..."
-        if ! go mod tidy; then
+        # Use GOPROXY=direct to bypass proxy cache and fetch directly from Git
+        # This avoids waiting for proxy synchronization during multi-module releases
+        print_info "    ↳ Running go mod tidy (with GOPROXY=direct)..."
+        if ! GOPROXY=direct GOSUMDB=off go mod tidy; then
             exit 1
         fi
     ) || return 1
