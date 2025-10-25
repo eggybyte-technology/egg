@@ -206,15 +206,67 @@ create_module_tags() {
 }
 
 # ============================================================================
+# Function: commit_dependency_updates
+# Description: Commits the go.mod changes after updating dependencies
+# Parameters:
+#   $1 - Version string
+# ============================================================================
+commit_dependency_updates() {
+    local version="$1"
+    
+    print_section "Committing Dependency Updates"
+    
+    # Check if there are any changes to go.mod files
+    if git diff --quiet -- '*/go.mod' '*/go.sum'; then
+        print_info "No changes to commit (go.mod files unchanged)"
+        return 0
+    fi
+    
+    print_info "Detected changes in go.mod/go.sum files"
+    
+    # Stage all go.mod and go.sum changes
+    print_info "Staging go.mod and go.sum changes..."
+    git add '*/go.mod' '*/go.sum' 2>/dev/null || true
+    
+    # Commit the changes
+    local commit_msg="chore: update module dependencies to ${version}"
+    print_info "Creating commit: ${commit_msg}"
+    
+    if git commit -m "$commit_msg"; then
+        print_success "Dependency updates committed"
+    else
+        exit_with_error "Failed to commit dependency updates"
+    fi
+    
+    # Update tags to point to the new commit
+    print_info "Updating tags to point to new commit..."
+    for mod in "${MODULES[@]}"; do
+        local tag="${mod}/${version}"
+        # Delete the old tag
+        git tag -d "$tag" >/dev/null 2>&1 || true
+        # Create new tag at current HEAD
+        git tag -a "$tag" -m "Release $mod ${version}"
+    done
+    
+    print_success "Tags updated to new commit"
+}
+
+# ============================================================================
 # Function: push_tags
-# Description: Pushes all tags to the remote repository
+# Description: Pushes all tags and commits to the remote repository
 # ============================================================================
 push_tags() {
-    print_section "Pushing Tags to Remote"
+    print_section "Pushing Changes to Remote"
+    
+    print_info "Pushing commits to origin..."
+    if git push origin HEAD; then
+        print_success "Commits pushed successfully"
+    else
+        exit_with_error "Failed to push commits to remote"
+    fi
     
     print_info "Pushing all tags to origin..."
-    
-    if git push origin --tags; then
+    if git push origin --tags --force; then
         print_success "All tags pushed successfully"
     else
         exit_with_error "Failed to push tags to remote"
@@ -304,18 +356,23 @@ main() {
     print_info "Preparing release for ${version}"
     echo ""
     
-    # Step 1: Update module dependencies
-    print_step "Step 1/3" "Updating module dependencies"
-    update_module_dependencies "$version"
-    echo ""
-    
-    # Step 2: Create tags
-    print_step "Step 2/3" "Creating Git tags"
+    # Step 1: Create tags (MUST be done before updating dependencies)
+    print_step "Step 1/4" "Creating Git tags"
     create_module_tags "$version"
     echo ""
     
-    # Step 3: Push tags
-    print_step "Step 3/3" "Pushing tags to remote"
+    # Step 2: Update module dependencies (now tags exist locally for go mod tidy)
+    print_step "Step 2/4" "Updating module dependencies"
+    update_module_dependencies "$version"
+    echo ""
+    
+    # Step 3: Commit dependency updates
+    print_step "Step 3/4" "Committing dependency updates"
+    commit_dependency_updates "$version"
+    echo ""
+    
+    # Step 4: Push tags and commits
+    print_step "Step 4/4" "Pushing changes to remote"
     push_tags
     echo ""
     
