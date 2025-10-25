@@ -4,10 +4,10 @@ github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1x
 github.com/cenkalti/backoff/v5 v5.0.3/go.mod h1:rkhZdG3JZukswDf7f0cwqPNk4K0sa+F97BxZthm/crw=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/eggybyte-technology/egg/core v0.2.0-alpha.1 h1:wXJYRRr0iqKjDx93OpqeFEZvS5JVjnipBRiGKkI+Hg0=
-github.com/eggybyte-technology/egg/core v0.2.0-alpha.1/go.mod h1:euhQJG5z+1k3siHB/0gsWrIx/kg3txG6R1ov2XvFMLc=
-github.com/eggybyte-technology/egg/obsx v0.2.0-alpha.1 h1:kGOFAVlPiePwiVjaaKgOBzrhTE3mRqmZYI/IafKcRwQ=
-github.com/eggybyte-technology/egg/obsx v0.2.0-alpha.1/go.mod h1:oiHG99VejTVYq+BAnO6yQe9OsM7tqzZ/iNB45CI0U2c=
+github.com/eggybyte-technology/egg/core v0.2.0-beta.1 h1:RQBF5CshklYPelckbSKw9YSbQqax4j0BWaXA/2XrjYY=
+github.com/eggybyte-technology/egg/core v0.2.0-beta.1/go.mod h1:euhQJG5z+1k3siHB/0gsWrIx/kg3txG6R1ov2XvFMLc=
+github.com/eggybyte-technology/egg/obsx v0.2.0-beta.1 h1:1qpTpQXqbyypFo0paWQtUQ2KFpgLVi5cr+lKsehqYLs=
+github.com/eggybyte-technology/egg/obsx v0.2.0-beta.1/go.mod h1:oiHG99VejTVYq+BAnO6yQe9OsM7tqzZ/iNB45CI0U2c=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=
 github.com/go-logr/logr v1.4.3/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
