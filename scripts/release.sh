@@ -203,15 +203,20 @@ release_single_module() {
         cd "$mod_path"
         
         # Update dependencies only to modules that have been released
-        for dep in "${RELEASED_MODULES[@]}"; do
-            if [[ "$dep" != "$mod" ]]; then
-                # Check if this module actually depends on the released module
-                if grep -q "$REPO_BASE/$dep" go.mod 2>/dev/null; then
-                    print_info "    ↳ Setting $dep@$version"
-                    go mod edit -require="$REPO_BASE/$dep@$version" || true
+        # Use array expansion that's safe for empty arrays (set -u compatible)
+        if [ ${#RELEASED_MODULES[@]} -gt 0 ]; then
+            for dep in "${RELEASED_MODULES[@]}"; do
+                if [[ "$dep" != "$mod" ]]; then
+                    # Check if this module actually depends on the released module
+                    if grep -q "$REPO_BASE/$dep" go.mod 2>/dev/null; then
+                        print_info "    ↳ Setting $dep@$version"
+                        go mod edit -require="$REPO_BASE/$dep@$version" || true
+                    fi
                 fi
-            fi
-        done
+            done
+        else
+            print_info "    ↳ No dependencies to update (first module)"
+        fi
         
         # Tidy up the go.mod file (will resolve from already-pushed tags)
         print_info "    ↳ Running go mod tidy..."
