@@ -4,13 +4,13 @@ go 1.25.1
 
 require (
 	connectrpc.com/connect v1.19.1
-	github.com/eggybyte-technology/egg/configx v0.2.0-alpha.1
-	github.com/eggybyte-technology/egg/connectx v0.2.0-alpha.1
-	github.com/eggybyte-technology/egg/core v0.2.0-alpha.1
-	github.com/eggybyte-technology/egg/logx v0.2.0-alpha.1
-	github.com/eggybyte-technology/egg/obsx v0.2.0-alpha.1
-	github.com/eggybyte-technology/egg/runtimex v0.2.0-alpha.1
-	github.com/eggybyte-technology/egg/storex v0.2.0-alpha.1
+	github.com/eggybyte-technology/egg/configx v0.2.0-beta.1
+	github.com/eggybyte-technology/egg/connectx v0.2.0-beta.1
+	github.com/eggybyte-technology/egg/core v0.2.0-beta.1
+	github.com/eggybyte-technology/egg/logx v0.2.0-beta.1
+	github.com/eggybyte-technology/egg/obsx v0.2.0-beta.1
+	github.com/eggybyte-technology/egg/runtimex v0.2.0-beta.1
+	github.com/eggybyte-technology/egg/storex v0.2.0-beta.1
 	gorm.io/gorm v1.31.0
 )
 
