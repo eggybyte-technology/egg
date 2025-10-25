@@ -3,7 +3,7 @@ module github.com/eggybyte-technology/egg/k8sx
 go 1.25.1
 
 require (
-	github.com/eggybyte-technology/egg/core v0.0.2
+	github.com/eggybyte-technology/egg/core v0.1.0
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v0.34.1

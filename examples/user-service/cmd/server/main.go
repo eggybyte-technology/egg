@@ -15,78 +15,77 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/eggybyte-technology/egg/core/errors"
-	"github.com/eggybyte-technology/egg/core/log"
 	userv1connect "github.com/eggybyte-technology/egg/examples/user-service/gen/go/user/v1/userv1connect"
 	"github.com/eggybyte-technology/egg/examples/user-service/internal/config"
 	"github.com/eggybyte-technology/egg/examples/user-service/internal/handler"
 	"github.com/eggybyte-technology/egg/examples/user-service/internal/model"
 	"github.com/eggybyte-technology/egg/examples/user-service/internal/repository"
 	"github.com/eggybyte-technology/egg/examples/user-service/internal/service"
+	"github.com/eggybyte-technology/egg/logx"
 	"github.com/eggybyte-technology/egg/servicex"
 	"github.com/google/uuid"
 )
 
 func main() {
-	// Create context with signal handling
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Create context for the service
+	ctx := context.Background()
+
+	// Create console logger for development (human-readable)
+	logger := logx.New(
+		logx.WithFormat(logx.FormatConsole),
+		logx.WithLevel(slog.LevelInfo),
+		logx.WithColor(true),
+	)
 
 	// Initialize configuration - will be populated by servicex
 	cfg := &config.AppConfig{}
 
-	// Run the service using servicex with simplified database integration
+	// Run the service using servicex with database integration
 	err := servicex.Run(ctx,
 		servicex.WithService("user-service", "0.1.0"),
+		servicex.WithLogger(logger),
 		servicex.WithConfig(cfg),
-		servicex.WithTracing(true),
-		servicex.WithMetrics(true),
-		servicex.WithTimeout(30000),
-		servicex.WithSlowRequestThreshold(1000),
-		servicex.WithShutdownTimeout(15*time.Second),
-		// Enable database if configured in BaseConfig
 		servicex.WithDatabase(servicex.FromBaseConfig(&cfg.Database)),
 		servicex.WithAutoMigrate(&model.User{}),
-		servicex.WithRegister(func(app *servicex.App) error {
-			// At this point, cfg has been loaded by servicex
-			var userRepo repository.UserRepository
-
-			// Check if database is available
-			if db := app.DB(); db != nil {
-				app.Logger().Info("Using database-backed repository")
-				userRepo = repository.NewUserRepository(db)
-			} else {
-				// Use in-memory repository
-				app.Logger().Info("No database configured, using mock repository")
-				userRepo = &mockUserRepository{}
-			}
-
-			// Initialize service and handler
-			userService := service.NewUserService(userRepo, app.Logger())
-			userHandler := handler.NewUserHandler(userService, app.Logger())
-
-			// Create Connect handler with interceptors
-			path, connectHandler := userv1connect.NewUserServiceHandler(
-				userHandler,
-				connect.WithInterceptors(app.Interceptors()...),
-			)
-
-			// Register handler
-			app.Mux().Handle(path, connectHandler)
-			app.Logger().Info("Registered Connect handler", log.Str("path", path))
-
-			app.Logger().Info("User service initialized successfully")
-			return nil
-		}),
+		servicex.WithRegister(registerServices),
 	)
 	if err != nil {
-		// servicex handles logging internally, but we can still log here if needed
-		return
+		logger.Error(err, "service failed to start")
 	}
+}
+
+// registerServices registers all service handlers
+func registerServices(app *servicex.App) error {
+	// Get repository (database-backed or mock)
+	var userRepo repository.UserRepository
+	if db := app.DB(); db != nil {
+		app.Logger().Info("using database-backed repository")
+		userRepo = repository.NewUserRepository(db)
+	} else {
+		app.Logger().Info("no database configured, using mock repository")
+		userRepo = &mockUserRepository{}
+	}
+
+	// Initialize service and handler
+	userService := service.NewUserService(userRepo, app.Logger())
+	userHandler := handler.NewUserHandler(userService, app.Logger())
+
+	// Register Connect handler
+	path, connectHandler := userv1connect.NewUserServiceHandler(
+		userHandler,
+		connect.WithInterceptors(app.Interceptors()...),
+	)
+
+	app.Mux().Handle(path, connectHandler)
+	app.Logger().Info("registered Connect handler", "path", path)
+	app.Logger().Info("user service initialized successfully")
+	return nil
 }
 
 // mockUserRepository is a simple in-memory implementation for demo purposes

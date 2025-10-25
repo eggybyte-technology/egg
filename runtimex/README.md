@@ -47,10 +47,10 @@ func main() {
     err := runtimex.Run(ctx, nil, runtimex.Options{
         Logger: logger,
         HTTP: &runtimex.HTTPOptions{
-            Addr: ":8080",
+            Port: 8080,
             Mux:  mux,
         },
-        Health: &runtimex.Endpoint{Addr: ":8081"},
+        Health: &runtimex.Endpoint{Port: 8081},
         ShutdownTimeout: 15 * time.Second,
     })
     if err != nil {
@@ -74,7 +74,7 @@ func main() {
 
 | Field | Type            | Description                             |
 | ----- | --------------- | --------------------------------------- |
-| `Addr`| `string`        | Server address (e.g., ":8080")          |
+| `Port`| `int`           | Port number (e.g., 8080)                |
 | `H2C` | `bool`          | Enable HTTP/2 Cleartext support         |
 | `Mux` | `*http.ServeMux`| HTTP request multiplexer                |
 
@@ -82,7 +82,7 @@ func main() {
 
 | Field | Type     | Description                       |
 | ----- | -------- | --------------------------------- |
-| `Addr`| `string` | Network address (e.g., ":8081")   |
+| `Port`| `int`    | Port number (e.g., 8081)          |
 
 ## API Reference
 
@@ -197,11 +197,11 @@ func main() {
     err := runtimex.Run(ctx, nil, runtimex.Options{
         Logger: logger,
         HTTP: &runtimex.HTTPOptions{
-            Addr: ":8080",
+            Port: 8080,
             Mux:  mux,
         },
-        Health: &runtimex.Endpoint{Addr: ":8081"},
-        Metrics: &runtimex.Endpoint{Addr: ":9091"},
+        Health: &runtimex.Endpoint{Port: 8081},
+        Metrics: &runtimex.Endpoint{Port: 9091},
         ShutdownTimeout: 15 * time.Second,
     })
     if err != nil {
@@ -256,7 +256,7 @@ func main() {
     
     err := runtimex.Run(ctx, []runtimex.Service{dbService}, runtimex.Options{
         Logger: logger,
-        HTTP: &runtimex.HTTPOptions{Addr: ":8080", Mux: http.NewServeMux()},
+        HTTP: &runtimex.HTTPOptions{Port: 8080, Mux: http.NewServeMux()},
         ShutdownTimeout: 10 * time.Second,
     })
     if err != nil {
@@ -288,8 +288,8 @@ func main() {
     // Health check endpoint will automatically include this checker
     err := runtimex.Run(ctx, nil, runtimex.Options{
         Logger: logger,
-        HTTP:   &runtimex.HTTPOptions{Addr: ":8080", Mux: mux},
-        Health: &runtimex.Endpoint{Addr: ":8081"},
+        HTTP:   &runtimex.HTTPOptions{Port: 8080, Mux: mux},
+        Health: &runtimex.Endpoint{Port: 8081},
     })
     if err != nil {
         log.Fatal(err)
@@ -342,9 +342,9 @@ curl http://localhost:8081/healthz
 **Split Port (Recommended):**
 ```go
 runtimex.Options{
-    HTTP:   &runtimex.HTTPOptions{Addr: ":8080", Mux: mux},
-    Health: &runtimex.Endpoint{Addr: ":8081"},
-    Metrics: &runtimex.Endpoint{Addr: ":9091"},
+    HTTP:   &runtimex.HTTPOptions{Port: 8080, Mux: mux},
+    Health: &runtimex.Endpoint{Port: 8081},
+    Metrics: &runtimex.Endpoint{Port: 9091},
 }
 ```
 
@@ -361,7 +361,7 @@ mux.Handle("/metrics", metricsHandler)
 mux.Handle("/api/", apiHandler)
 
 runtimex.Options{
-    HTTP: &runtimex.HTTPOptions{Addr: ":8080", Mux: mux},
+    HTTP: &runtimex.HTTPOptions{Port: 8080, Mux: mux},
 }
 ```
 
@@ -383,7 +383,7 @@ func TestServiceLifecycle(t *testing.T) {
     go func() {
         errChan <- runtimex.Run(ctx, []runtimex.Service{service}, runtimex.Options{
             Logger: logger,
-            HTTP: &runtimex.HTTPOptions{Addr: ":0", Mux: http.NewServeMux()},
+            HTTP: &runtimex.HTTPOptions{Port: 0, Mux: http.NewServeMux()},
             ShutdownTimeout: 1 * time.Second,
         })
     }()

@@ -51,6 +51,16 @@ func (h *Handler) handle(level slog.Level, msg string, attrs []slog.Attr) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	// Use different formatting based on format type
+	if h.opts.Format == "console" {
+		h.formatConsole(level, msg, attrs)
+	} else {
+		h.formatLogfmt(level, msg, attrs)
+	}
+}
+
+// formatLogfmt writes the log record in logfmt format.
+func (h *Handler) formatLogfmt(level slog.Level, msg string, attrs []slog.Attr) {
 	var buf strings.Builder
 
 	// Add timestamp if not disabled (usually disabled in containers)
@@ -90,6 +100,62 @@ func (h *Handler) handle(level slog.Level, msg string, attrs []slog.Attr) {
 	}
 
 	buf.WriteString("\n")
+
+	// Write to output
+	h.writer.Write([]byte(buf.String()))
+}
+
+// formatConsole writes the log record in a human-readable console format.
+func (h *Handler) formatConsole(level slog.Level, msg string, attrs []slog.Attr) {
+	var buf strings.Builder
+
+	// Level with color
+	levelStr := LevelString(level)
+	if h.opts.Color {
+		buf.WriteString(ColorizeLevel(levelStr))
+	} else {
+		buf.WriteString(levelStr)
+	}
+
+	// Add padding for alignment (DEBUG=5, WARN=4, INFO/ERROR=4)
+	buf.WriteString(strings.Repeat(" ", 7-len(levelStr)))
+
+	// Add timestamp if not disabled
+	if !h.opts.DisableTimestamp {
+		timestamp := time.Now().Format("2006-01-02 15:04:05")
+		buf.WriteString(timestamp)
+		buf.WriteString("  ")
+	}
+
+	// Add message
+	buf.WriteString(msg)
+
+	// Combine handler attrs with record attrs
+	allAttrs := append([]slog.Attr{}, h.attrs...)
+	allAttrs = append(allAttrs, attrs...)
+
+	// Sort attributes by key for stable output
+	sortedAttrs := SortAttrs(allAttrs)
+
+	// Add attributes on new lines with indentation for readability
+	if len(sortedAttrs) > 0 {
+		buf.WriteString("\n")
+		for _, attr := range sortedAttrs {
+			buf.WriteString("        ")
+			if h.opts.Color {
+				buf.WriteString("\033[90m") // Dim/gray color for keys
+			}
+			buf.WriteString(attr.Key)
+			buf.WriteString(": ")
+			if h.opts.Color {
+				buf.WriteString("\033[0m") // Reset color
+			}
+			buf.WriteString(FormatConsoleValue(attr.Key, attr.Value, h.opts))
+			buf.WriteString("\n")
+		}
+	} else {
+		buf.WriteString("\n")
+	}
 
 	// Write to output
 	h.writer.Write([]byte(buf.String()))
@@ -234,6 +300,51 @@ func LevelString(level slog.Level) string {
 		return "ERROR"
 	default:
 		return fmt.Sprintf("LEVEL(%d)", level)
+	}
+}
+
+// FormatConsoleValue formats a slog.Value for console output (more human-readable).
+func FormatConsoleValue(key string, v slog.Value, opts Options) string {
+	// Check if this is a sensitive field (by key name)
+	for _, field := range opts.SensitiveFields {
+		if strings.EqualFold(key, field) {
+			return "***REDACTED***"
+		}
+	}
+
+	switch v.Kind() {
+	case slog.KindString:
+		s := v.String()
+		// Apply payload limit
+		if opts.PayloadMaxBytes > 0 && len(s) > opts.PayloadMaxBytes {
+			return fmt.Sprintf("%s...(truncated, %d bytes)", s[:opts.PayloadMaxBytes], len(s))
+		}
+		// No quotes for better readability
+		return s
+	case slog.KindInt64:
+		return fmt.Sprintf("%d", v.Int64())
+	case slog.KindUint64:
+		return fmt.Sprintf("%d", v.Uint64())
+	case slog.KindFloat64:
+		f := v.Float64()
+		// Format floats cleanly (remove trailing zeros)
+		if f == float64(int64(f)) {
+			return fmt.Sprintf("%.0f", f)
+		}
+		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.6f", f), "0"), ".")
+	case slog.KindBool:
+		return fmt.Sprintf("%t", v.Bool())
+	case slog.KindDuration:
+		// Format duration in a human-readable way
+		d := v.Duration()
+		if d < time.Second {
+			return fmt.Sprintf("%dms", d.Milliseconds())
+		}
+		return d.String()
+	case slog.KindTime:
+		return v.Time().Format("2006-01-02 15:04:05")
+	default:
+		return v.String()
 	}
 }
 

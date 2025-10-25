@@ -4,16 +4,16 @@ go 1.25.1
 
 require (
 	connectrpc.com/connect v1.19.1
-	github.com/eggybyte-technology/egg/servicex v0.0.0-20251021204910-05277b6fe4be
+	github.com/eggybyte-technology/egg/configx v0.1.0
+	github.com/eggybyte-technology/egg/core v0.1.0
+	github.com/eggybyte-technology/egg/servicex v0.1.0
 	google.golang.org/protobuf v1.36.10
 )
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
-	github.com/eggybyte-technology/egg/configx v0.0.2 // indirect
 	github.com/eggybyte-technology/egg/connectx v0.0.2 // indirect
-	github.com/eggybyte-technology/egg/core v0.0.2 // indirect
 	github.com/eggybyte-technology/egg/obsx v0.0.2 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

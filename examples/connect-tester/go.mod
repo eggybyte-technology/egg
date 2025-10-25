@@ -1,0 +1,7 @@
+module github.com/eggybyte-technology/egg/examples/connect-tester
+
+go 1.25.1
+
+require connectrpc.com/connect v1.19.1
+
+require google.golang.org/protobuf v1.36.10 // indirect

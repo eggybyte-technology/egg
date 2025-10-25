@@ -8,7 +8,7 @@ use with container-friendly output and minimal performance overhead.
 
 ## Key Features
 
-- Logfmt and JSON output formats
+- Multiple output formats: Logfmt, JSON, and Console (human-readable)
 - Automatic field sorting for consistency
 - Optional colorization for development
 - Sensitive field masking (passwords, tokens)
@@ -57,13 +57,45 @@ level=WARN msg="slow request" duration_ms=1500 path=/api/users
 level=ERROR msg="database connection failed" error="connection timeout" retry_count=3
 ```
 
+### Console Format (Human-Readable)
+
+For development environments, use the console format for easier reading:
+
+```go
+logger := logx.New(
+    logx.WithFormat(logx.FormatConsole),
+    logx.WithLevel(slog.LevelInfo),
+    logx.WithColor(true),
+)
+
+logger.Info("user created", "user_id", "u-123", "email", "user@example.com")
+logger.Warn("slow request", "duration_ms", 1500, "path", "/api/users")
+```
+
+Output (console with colors):
+```
+INFO    2024-01-15 10:30:00  user created
+        email: user@example.com
+        user_id: u-123
+WARN    2024-01-15 10:30:01  slow request
+        duration_ms: 1500
+        path: /api/users
+```
+
+The console format provides:
+- Aligned log levels with colors
+- Human-readable timestamps
+- Indented key-value pairs
+- No quotes around strings
+- Natural duration formatting (e.g., "100ms" instead of "100")
+
 ## Configuration Options
 
 | Option                | Type          | Description                                |
 | --------------------- | ------------- | ------------------------------------------ |
-| `WithFormat(format)`  | `Format`      | Output format: logfmt or json              |
+| `WithFormat(format)`  | `Format`      | Output format: logfmt, json, or console    |
 | `WithLevel(level)`    | `slog.Level`  | Minimum log level (Debug, Info, Warn, Error) |
-| `WithColor(enabled)`  | `bool`        | Enable colorization for level field        |
+| `WithColor(enabled)`  | `bool`        | Enable colorization (for levels and console format) |
 | `WithWriter(w)`       | `io.Writer`   | Output writer (default: os.Stderr)         |
 | `WithPayloadLimit(n)` | `int`         | Maximum bytes for large payloads           |
 | `WithSensitiveFields()`| `[]string`   | Field names to mask (e.g., "password")     |

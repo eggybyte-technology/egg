@@ -11,9 +11,9 @@
 //
 //	err := runtimex.Run(ctx, []Service{myService}, runtimex.Options{
 //	  Logger: logger,
-//	  HTTP: &runtimex.HTTPOptions{Addr: ":8080", H2C: true, Mux: mux},
-//	  Health: &runtimex.Endpoint{Addr: ":8081"},
-//	  Metrics: &runtimex.Endpoint{Addr: ":9091"},
+//	  HTTP: &runtimex.HTTPOptions{Port: 8080, H2C: true, Mux: mux},
+//	  Health: &runtimex.Endpoint{Port: 8081},
+//	  Metrics: &runtimex.Endpoint{Port: 9091},
 //	})
 package runtimex
 
@@ -41,21 +41,21 @@ type Service interface {
 	Stop(ctx context.Context) error
 }
 
-// Endpoint represents a network endpoint with an address.
+// Endpoint represents a network endpoint with a port number.
 type Endpoint struct {
-	Addr string // Network address (e.g., ":8081", "localhost:9091")
+	Port int // Port number (e.g., 8081, 9091)
 }
 
 // HTTPOptions configures the HTTP server.
 type HTTPOptions struct {
-	Addr string         // Server address (e.g., ":8080")
+	Port int            // Port number (e.g., 8080)
 	H2C  bool           // Enable HTTP/2 Cleartext support
 	Mux  *http.ServeMux // HTTP request multiplexer
 }
 
 // RPCOptions configures the RPC server (for split port strategy).
 type RPCOptions struct {
-	Addr string // Server address (e.g., ":9090")
+	Port int // Port number (e.g., 9090)
 }
 
 // Options holds configuration for the runtime.
@@ -105,23 +105,26 @@ func Run(ctx context.Context, services []Service, opts Options) error {
 
 	// Configure servers
 	if opts.HTTP != nil {
+		addr := fmt.Sprintf(":%d", opts.HTTP.Port)
 		httpServer := &http.Server{
-			Addr:    opts.HTTP.Addr,
+			Addr:    addr,
 			Handler: opts.HTTP.Mux,
 		}
 		runtime.SetHTTPServer(httpServer)
 	}
 
 	if opts.RPC != nil {
+		addr := fmt.Sprintf(":%d", opts.RPC.Port)
 		rpcServer := &http.Server{
-			Addr: opts.RPC.Addr,
+			Addr: addr,
 		}
 		runtime.SetRPCServer(rpcServer)
 	}
 
 	if opts.Health != nil {
+		addr := fmt.Sprintf(":%d", opts.Health.Port)
 		healthServer := &http.Server{
-			Addr: opts.Health.Addr,
+			Addr: addr,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("OK"))
@@ -131,8 +134,9 @@ func Run(ctx context.Context, services []Service, opts Options) error {
 	}
 
 	if opts.Metrics != nil {
+		addr := fmt.Sprintf(":%d", opts.Metrics.Port)
 		metricsServer := &http.Server{
-			Addr: opts.Metrics.Addr,
+			Addr: addr,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("# Metrics endpoint\n"))

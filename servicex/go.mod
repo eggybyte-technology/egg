@@ -4,13 +4,12 @@ go 1.25.1
 
 require (
 	connectrpc.com/connect v1.19.1
-	github.com/eggybyte-technology/egg/configx v0.0.2
-	github.com/eggybyte-technology/egg/connectx v0.0.2
-	github.com/eggybyte-technology/egg/core v0.0.2
-	github.com/eggybyte-technology/egg/logx v0.0.2
-	github.com/eggybyte-technology/egg/obsx v0.0.2
-	github.com/eggybyte-technology/egg/runtimex v0.0.2
-	github.com/eggybyte-technology/egg/storex v0.0.2
+	github.com/eggybyte-technology/egg/configx v0.1.0
+	github.com/eggybyte-technology/egg/connectx v0.1.0
+	github.com/eggybyte-technology/egg/core v0.1.0
+	github.com/eggybyte-technology/egg/obsx v0.1.0
+	github.com/eggybyte-technology/egg/runtimex v0.1.0
+	github.com/eggybyte-technology/egg/storex v0.1.0
 	gorm.io/gorm v1.31.0
 )
 
@@ -51,9 +50,4 @@ require (
 	gorm.io/driver/mysql v1.6.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
 	gorm.io/driver/sqlite v1.6.0 // indirect
-)
-
-replace (
-	github.com/eggybyte-technology/egg/logx => ../logx
-	github.com/eggybyte-technology/egg/runtimex => ../runtimex
 )

@@ -4,8 +4,8 @@ go 1.25.1
 
 require (
 	connectrpc.com/connect v1.19.1
-	github.com/eggybyte-technology/egg/core v0.0.2
-	github.com/eggybyte-technology/egg/obsx v0.0.2
+	github.com/eggybyte-technology/egg/core v0.1.0
+	github.com/eggybyte-technology/egg/obsx v0.1.0
 	gorm.io/gorm v1.31.0
 )
 

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/eggybyte-technology/egg/configx"
@@ -134,25 +136,13 @@ func (r *ServiceRuntime) initializeConfig(ctx context.Context) error {
 		GetMetricsPort() string
 	}); ok {
 		if port := baseGetter.GetHTTPPort(); port != "" {
-			if port[0] != ':' {
-				r.config.HTTPPort = ":" + port
-			} else {
-				r.config.HTTPPort = port
-			}
+			r.config.HTTPPort = parsePort(port, 8080)
 		}
 		if port := baseGetter.GetHealthPort(); port != "" {
-			if port[0] != ':' {
-				r.config.HealthPort = ":" + port
-			} else {
-				r.config.HealthPort = port
-			}
+			r.config.HealthPort = parsePort(port, 8081)
 		}
 		if port := baseGetter.GetMetricsPort(); port != "" {
-			if port[0] != ':' {
-				r.config.MetricsPort = ":" + port
-			} else {
-				r.config.MetricsPort = port
-			}
+			r.config.MetricsPort = parsePort(port, 9091)
 		}
 	}
 
@@ -258,24 +248,43 @@ func (r *ServiceRuntime) startServers(ctx context.Context, app *App) error {
 	SetupHealthEndpoints(healthMux, r.logger)
 
 	// Start servers
-	r.httpServer = &http.Server{Addr: r.config.HTTPPort, Handler: app.Mux}
-	r.healthServer = &http.Server{Addr: r.config.HealthPort, Handler: healthMux}
+	httpAddr := fmt.Sprintf(":%d", r.config.HTTPPort)
+	healthAddr := fmt.Sprintf(":%d", r.config.HealthPort)
+	r.httpServer = &http.Server{Addr: httpAddr, Handler: app.Mux}
+	r.healthServer = &http.Server{Addr: healthAddr, Handler: healthMux}
 
 	go func() {
-		r.logger.Info("HTTP server listening", "addr", r.config.HTTPPort)
+		r.logger.Info("HTTP server listening", "port", r.config.HTTPPort)
 		if err := r.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			r.logger.Error(err, "HTTP server error")
 		}
 	}()
 
 	go func() {
-		r.logger.Info("health check server listening", "addr", r.config.HealthPort)
+		r.logger.Info("health check server listening", "port", r.config.HealthPort)
 		if err := r.healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			r.logger.Error(err, "health server error")
 		}
 	}()
 
 	return nil
+}
+
+// parsePort extracts port number from string like ":8080" or "8080" and returns as int.
+// Returns defaultPort if parsing fails.
+func parsePort(portStr string, defaultPort int) int {
+	// Remove leading colon if present
+	trimmed := strings.TrimPrefix(portStr, ":")
+	if trimmed == "" {
+		return defaultPort
+	}
+
+	// Try to parse as integer
+	if port, err := strconv.Atoi(trimmed); err == nil {
+		return port
+	}
+
+	return defaultPort
 }
 
 // gracefulShutdown performs graceful shutdown of all components.
@@ -332,4 +341,3 @@ type App struct {
 	ShutdownHooks []func(context.Context) error
 	DB            *gorm.DB
 }
-

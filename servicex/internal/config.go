@@ -24,9 +24,9 @@ type ServiceConfig struct {
 	RegisterFn     func(interface{}) error // Takes *App interface
 
 	// Server ports
-	HTTPPort    string
-	HealthPort  string
-	MetricsPort string
+	HTTPPort    int
+	HealthPort  int
+	MetricsPort int
 
 	// Connect options
 	DefaultTimeoutMs  int64
@@ -58,9 +58,9 @@ func NewServiceConfig() *ServiceConfig {
 		ServiceVersion:    "0.0.0",
 		EnableTracing:     true,
 		EnableMetrics:     true,
-		HTTPPort:          "8080",
-		HealthPort:        "8081",
-		MetricsPort:       "9091",
+		HTTPPort:          8080,
+		HealthPort:        8081,
+		MetricsPort:       9091,
 		DefaultTimeoutMs:  30000,
 		SlowRequestMillis: 1000,
 		ShutdownTimeout:   15 * time.Second,
@@ -124,6 +124,3 @@ func AutoMigrate(db *gorm.DB, logger log.Logger, models []any) error {
 	logger.Info("database auto-migration completed successfully")
 	return nil
 }
-
-
-

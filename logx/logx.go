@@ -32,6 +32,8 @@ const (
 	FormatLogfmt Format = "logfmt"
 	// FormatJSON outputs logs in JSON format.
 	FormatJSON Format = "json"
+	// FormatConsole outputs logs in a human-readable console format with colors and indentation.
+	FormatConsole Format = "console"
 )
 
 // Options configures the logger behavior.

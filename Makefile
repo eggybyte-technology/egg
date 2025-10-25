@@ -1,7 +1,6 @@
 # Makefile for egg framework
 .PHONY: help build build-cli test test-cli test-cli-production test-examples test-all lint clean tools generate \
-	release-snapshot release-test release \
-	tag-all tag-modules tag-cli delete-tags \
+	release publish-modules \
 	fmt vet security quality setup \
 	docker-build docker-build-alpine docker-backend docker-go-service docker-all docker-clean \
 	deploy-up deploy-down deploy-restart deploy-logs deploy-status deploy-health deploy-clean deploy-ports \
@@ -62,14 +61,8 @@ help:
 	@echo "  $(CYAN)setup$(RESET)           - Setup development environment"
 	@echo ""
 	@echo "$(BOLD)Release Management:$(RESET)"
-	@echo "  $(CYAN)release$(RESET)           - One-click release (Usage: make release VERSION=v0.0.1)"
-	@echo "  $(CYAN)release-snapshot$(RESET) - Build snapshot release locally (test)"
-	@echo "  $(CYAN)release-test$(RESET)     - Test release configuration"
+	@echo "  $(CYAN)release$(RESET)          - Release all modules with specified version (Usage: make release VERSION=v0.1.0)"
 	@echo "  $(CYAN)publish-modules$(RESET)  - Publish all modules with specified version (Usage: make publish-modules VERSION=v0.1.0)"
-	@echo "  $(CYAN)tag-all$(RESET)          - Create tags for all modules (Usage: make tag-all VERSION=v0.0.1)"
-	@echo "  $(CYAN)tag-modules$(RESET)      - Create tags for Go modules only"
-	@echo "  $(CYAN)tag-cli$(RESET)          - Create tag for CLI only"
-	@echo "  $(CYAN)delete-tags$(RESET)      - Delete all tags for a version (Usage: make delete-tags VERSION=v0.0.1)"
 	@echo ""
 	@echo "$(BOLD)Quality:$(RESET)"
 	@echo "  $(CYAN)fmt$(RESET)              - Format code"
@@ -249,32 +242,16 @@ setup: tools
 # Release Management
 # ==============================================================================
 
-# Build snapshot release (local test without pushing)
-release-snapshot:
-	$(call print_header,Building snapshot release)
-	@if command -v goreleaser >/dev/null 2>&1; then \
-		goreleaser release --snapshot --clean; \
-		$(call print_success,Snapshot built in dist/); \
-	else \
-		$(call print_error,goreleaser not found. Install with: make tools); \
+# Release all modules with specified version using the unified release script
+# Usage: make release VERSION=v0.1.0
+release:
+	@if [ -z "$(VERSION)" ]; then \
+		$(call print_error,VERSION is required); \
+		echo "Usage: make release VERSION=v0.1.0"; \
 		exit 1; \
 	fi
-
-# Test release configuration
-release-test:
-	$(call print_header,Testing release configuration)
-	@if command -v goreleaser >/dev/null 2>&1; then \
-		goreleaser check && \
-		goreleaser build --snapshot --clean && \
-		$(call print_success,Release configuration is valid); \
-	else \
-		$(call print_error,goreleaser not found. Install with: make tools); \
-		exit 1; \
-	fi
-
-# ==============================================================================
-# Tag Management
-# ==============================================================================
+	$(call print_header,Releasing Egg Framework $(VERSION))
+	@./scripts/release.sh $(VERSION)
 
 # Publish all modules with specified version (create tags and push)
 # Usage: make publish-modules VERSION=v0.1.0
@@ -333,192 +310,6 @@ publish-modules:
 	@for module in $(MODULES); do \
 		echo "   ✓ $$module/$(VERSION)"; \
 	done
-	@echo ""
-	$(call print_info,Users can now install modules with:)
-	@for module in $(MODULES); do \
-		echo "   go get github.com/eggybyte-technology/egg/$$module@$(VERSION)"; \
-	done
-
-# Create tags for Go modules only
-# Usage: make tag-modules VERSION=v0.0.1
-tag-modules:
-	@if [ -z "$(VERSION)" ]; then \
-		$(call print_error,VERSION is required); \
-		echo "Usage: make tag-modules VERSION=v0.0.1"; \
-		exit 1; \
-	fi
-	$(call print_header,Creating module tags for version $(VERSION))
-	@for module in $(MODULES); do \
-		tag="$$module/$(VERSION)"; \
-		$(call print_info,Creating tag $$tag...); \
-		git tag -a "$$tag" -m "Release $$module $(VERSION)" || exit 1; \
-	done
-	$(call print_success,Module tags created successfully)
-	@echo ""
-	$(call print_info,Push tags with:)
-	@echo "   git push origin --tags"
-
-# Create tag for CLI only
-# Usage: make tag-cli VERSION=v0.0.1
-tag-cli:
-	@if [ -z "$(VERSION)" ]; then \
-		$(call print_error,VERSION is required); \
-		echo "Usage: make tag-cli VERSION=v0.0.1"; \
-		exit 1; \
-	fi
-	$(call print_header,Creating CLI tag $(VERSION))
-	@git tag -a "$(VERSION)" -m "Release CLI $(VERSION)" || exit 1
-	$(call print_success,CLI tag created successfully)
-	@echo ""
-	$(call print_info,Push tag with:)
-	@echo "   git push origin $(VERSION)"
-
-# Create tags for all modules and CLI
-# Usage: make tag-all VERSION=v0.0.1
-tag-all:
-	@if [ -z "$(VERSION)" ]; then \
-		$(call print_error,VERSION is required); \
-		echo "Usage: make tag-all VERSION=v0.0.1"; \
-		exit 1; \
-	fi
-	$(call print_header,Creating all tags for version $(VERSION))
-	@echo ""
-	$(call print_info,Step 1: Creating module tags...)
-	@for module in $(MODULES); do \
-		tag="$$module/$(VERSION)"; \
-		$(call print_info,Creating tag $$tag...); \
-		git tag -a "$$tag" -m "Release $$module $(VERSION)" || exit 1; \
-	done
-	@echo ""
-	$(call print_info,Step 2: Creating CLI tag...)
-	@git tag -a "$(VERSION)" -m "Release $(VERSION)" || exit 1
-	@echo ""
-	$(call print_success,All tags created successfully!)
-	@echo ""
-	$(call print_info,Tags created:)
-	@for module in $(MODULES); do \
-		echo "   - $$module/$(VERSION)"; \
-	done
-	@echo "   - $(VERSION) (CLI)"
-	@echo ""
-	$(call print_info,Push all tags with:)
-	@echo "   git push origin --tags"
-
-# Delete all tags for a version (locally and remotely)
-# Usage: make delete-tags VERSION=v0.0.1
-delete-tags:
-	@if [ -z "$(VERSION)" ]; then \
-		$(call print_error,VERSION is required); \
-		echo "Usage: make delete-tags VERSION=v0.0.1"; \
-		exit 1; \
-	fi
-	$(call print_header,Deleting all tags for version $(VERSION))
-	@echo ""
-	$(call print_warning,WARNING: This will delete tags both locally and remotely!)
-	@read -p "Continue? (y/N) " confirm; \
-	if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
-		$(call print_info,Cancelled); \
-		exit 0; \
-	fi
-	@echo ""
-	$(call print_info,Deleting module tags...)
-	@for module in $(MODULES); do \
-		tag="$$module/$(VERSION)"; \
-		$(call print_info,Deleting $$tag...); \
-		git tag -d "$$tag" 2>/dev/null || echo "  Local tag not found"; \
-		git push --delete origin "$$tag" 2>/dev/null || echo "  Remote tag not found"; \
-	done
-	@echo ""
-	$(call print_info,Deleting CLI tag...)
-	@git tag -d "$(VERSION)" 2>/dev/null || echo "  Local tag not found"
-	@git push --delete origin "$(VERSION)" 2>/dev/null || echo "  Remote tag not found"
-	@echo ""
-	$(call print_success,Tag deletion completed)
-
-# ==============================================================================
-# One-Click Release
-# ==============================================================================
-
-# One-click release with version (requires GITHUB_TOKEN)
-# Usage: make release VERSION=v0.0.1
-release:
-	@if [ -z "$(VERSION)" ]; then \
-		$(call print_error,VERSION is required); \
-		echo "Usage: make release VERSION=v0.0.1"; \
-		exit 1; \
-	fi
-	@if [ -z "$$GITHUB_TOKEN" ]; then \
-		$(call print_error,GITHUB_TOKEN environment variable is not set); \
-		echo "Create a token at: https://github.com/settings/tokens"; \
-		exit 1; \
-	fi
-	@if ! command -v goreleaser >/dev/null 2>&1; then \
-		$(call print_error,goreleaser not found. Install with: make tools); \
-		exit 1; \
-	fi
-	$(call print_header,Releasing Egg Framework $(VERSION))
-	@echo ""
-	$(call print_info,Step 1: Checking for existing tags...)
-	@existing_tags=0; \
-	if git rev-parse $(VERSION) >/dev/null 2>&1; then \
-		$(call print_info,Found existing CLI tag $(VERSION)); \
-		existing_tags=1; \
-	fi; \
-	for module in $(MODULES); do \
-		if git rev-parse "$$module/$(VERSION)" >/dev/null 2>&1; then \
-			$(call print_info,Found existing module tag $$module/$(VERSION)); \
-			existing_tags=1; \
-		fi; \
-	done; \
-	if [ $$existing_tags -eq 1 ]; then \
-		echo ""; \
-		$(call print_warning,WARNING: Some tags already exist!); \
-		echo "This will delete and recreate all tags for version $(VERSION)"; \
-		read -p "Continue? (y/N) " confirm; \
-		if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
-			$(call print_info,Cancelled); \
-			exit 0; \
-		fi; \
-		echo ""; \
-		$(call print_info,Deleting existing tags...); \
-		git tag -d $(VERSION) 2>/dev/null || true; \
-		git push --delete origin $(VERSION) 2>/dev/null || true; \
-		for module in $(MODULES); do \
-			git tag -d "$$module/$(VERSION)" 2>/dev/null || true; \
-			git push --delete origin "$$module/$(VERSION)" 2>/dev/null || true; \
-		done; \
-		$(call print_success,Old tags deleted); \
-	else \
-		$(call print_info,No existing tags found); \
-	fi
-	@echo ""
-	$(call print_info,Step 2: Running quality checks...)
-	@$(MAKE) test-no-race
-	@echo ""
-	$(call print_info,Step 3: Creating module tags...)
-	@for module in $(MODULES); do \
-		tag="$$module/$(VERSION)"; \
-		$(call print_info,Creating $$tag...); \
-		git tag -a "$$tag" -m "Release $$module $(VERSION)" || exit 1; \
-	done
-	@echo ""
-	$(call print_info,Step 4: Creating CLI tag...)
-	@git tag -a $(VERSION) -m "Release $(VERSION)" || exit 1
-	@echo ""
-	$(call print_info,Step 5: Pushing all tags...)
-	@git push origin --tags
-	@echo ""
-	$(call print_info,Step 6: Running goreleaser...)
-	@goreleaser release --clean
-	@echo ""
-	$(call print_header,Release $(VERSION) completed successfully!)
-	@echo ""
-	$(call print_info,Artifacts created:)
-	@echo "   - CLI binaries (goreleaser)"
-	@echo "   - Module tags for Go modules"
-	@echo ""
-	$(call print_info,Check the release at:)
-	@echo "   https://github.com/eggybyte-technology/egg/releases/tag/$(VERSION)"
 	@echo ""
 	$(call print_info,Users can now install modules with:)
 	@for module in $(MODULES); do \
