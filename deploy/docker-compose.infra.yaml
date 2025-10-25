@@ -1,0 +1,77 @@
+# Egg Framework Infrastructure Docker Compose Configuration
+# This file defines the infrastructure services (database, observability)
+#
+# Port Allocation:
+#   MySQL:           3306
+#   Jaeger UI:       16686
+#   Jaeger Collector: 14268
+#   OTLP gRPC:       4317
+#   OTLP HTTP:       4318
+#   Prometheus:      8889
+#
+# Usage:
+#   Start infrastructure: docker-compose -f docker-compose.infra.yaml up -d
+#   Stop infrastructure:  docker-compose -f docker-compose.infra.yaml down
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:9.4
+    container_name: egg-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: egg_users
+      MYSQL_USER: egg_user
+      MYSQL_PASSWORD: egg_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    networks:
+      - egg-network
+
+  # Jaeger Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: egg-jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger collector
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - egg-network
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: egg-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8889:8889"   # Prometheus metrics
+    depends_on:
+      - jaeger
+    networks:
+      - egg-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8889/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mysql_data:
+
+networks:
+  egg-network:
+    name: egg-network
+    driver: bridge
+

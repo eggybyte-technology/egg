@@ -74,11 +74,11 @@ func TestNewProvider(t *testing.T) {
 					return
 				}
 
-				if provider.TracerProvider == nil {
+				if provider.TracerProvider() == nil {
 					t.Error("TracerProvider is nil")
 				}
 
-				if provider.MeterProvider == nil {
+				if provider.MeterProvider() == nil {
 					t.Error("MeterProvider is nil")
 				}
 

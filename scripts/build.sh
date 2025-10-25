@@ -21,40 +21,14 @@
 
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+# Source the unified logger
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/logger.sh"
 
 # Get the project root directory
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_ROOT="$(get_project_root)"
 
-# Print colored output
-print_header() {
-    echo ""
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}▶ $1${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-}
 
-print_success() {
-    echo -e "${GREEN}[✓] SUCCESS:${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[✗] ERROR:${NC} $1"
-}
-
-print_info() {
-    echo -e "${CYAN}[i] INFO:${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[!] WARNING:${NC} $1"
-}
 
 # Pull the base image (no longer building locally)
 pull_base() {

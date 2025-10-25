@@ -16,7 +16,6 @@ package storex
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/eggybyte-technology/egg/core/log"
@@ -52,97 +51,44 @@ type HealthChecker interface {
 }
 
 // Registry manages multiple storage connections and their health.
+// This is a thin wrapper around internal.Registry.
 type Registry struct {
-	stores map[string]Store
+	impl *internal.Registry
 }
 
 // NewRegistry creates a new storage registry.
 func NewRegistry() *Registry {
-	return &Registry{
-		stores: make(map[string]Store),
-	}
+	return &Registry{impl: internal.NewRegistry()}
 }
 
 // Register registers a storage backend with the given name.
 func (r *Registry) Register(name string, store Store) error {
-	if name == "" {
-		return fmt.Errorf("store name is required")
-	}
-	if store == nil {
-		return fmt.Errorf("store cannot be nil")
-	}
-	if _, exists := r.stores[name]; exists {
-		return fmt.Errorf("store %s already registered", name)
-	}
-
-	r.stores[name] = store
-	return nil
+	return r.impl.Register(name, store)
 }
 
 // Unregister removes a storage backend from the registry.
 func (r *Registry) Unregister(name string) error {
-	if _, exists := r.stores[name]; !exists {
-		return fmt.Errorf("store %s not found", name)
-	}
-
-	delete(r.stores, name)
-	return nil
+	return r.impl.Unregister(name)
 }
 
 // Ping performs health checks on all registered storage backends.
-// Returns an error if any backend is unhealthy.
 func (r *Registry) Ping(ctx context.Context) error {
-	if len(r.stores) == 0 {
-		return nil // No stores to check
-	}
-
-	// Create a timeout context for health checks
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	var errors []error
-	for name, store := range r.stores {
-		if err := store.Ping(pingCtx); err != nil {
-			errors = append(errors, fmt.Errorf("store %s ping failed: %w", name, err))
-		}
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("health check failed: %v", errors)
-	}
-
-	return nil
+	return r.impl.Ping(ctx)
 }
 
 // Close closes all registered storage connections.
 func (r *Registry) Close() error {
-	var errors []error
-	for name, store := range r.stores {
-		if err := store.Close(); err != nil {
-			errors = append(errors, fmt.Errorf("store %s close failed: %w", name, err))
-		}
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("close failed: %v", errors)
-	}
-
-	return nil
+	return r.impl.Close()
 }
 
 // List returns the names of all registered stores.
 func (r *Registry) List() []string {
-	names := make([]string, 0, len(r.stores))
-	for name := range r.stores {
-		names = append(names, name)
-	}
-	return names
+	return r.impl.List()
 }
 
 // Get returns a registered store by name.
 func (r *Registry) Get(name string) (Store, bool) {
-	store, exists := r.stores[name]
-	return store, exists
+	return r.impl.Get(name)
 }
 
 // GORMOptions holds configuration for GORM database connections.

@@ -4,7 +4,8 @@
 	tag-all tag-modules tag-cli delete-tags \
 	fmt vet security quality setup \
 	docker-build docker-build-alpine docker-backend docker-go-service docker-all docker-clean \
-	deploy-up deploy-down deploy-restart deploy-logs deploy-status deploy-health deploy-clean deploy-ports
+	deploy-up deploy-down deploy-restart deploy-logs deploy-status deploy-health deploy-clean deploy-ports \
+	infra-up infra-down infra-restart infra-status infra-clean services-up services-down services-restart services-rebuild
 
 # Color definitions for enhanced output
 RED := \033[0;31m
@@ -53,7 +54,7 @@ help:
 	@echo "  $(CYAN)test$(RESET)             - Run tests for all modules"
 	@echo "  $(CYAN)test-cli$(RESET)         - Run CLI integration tests (local modules)"
 	@echo "  $(CYAN)test-cli-production$(RESET) - Run CLI integration tests (remote modules)"
-	@echo "  $(CYAN)test-examples$(RESET)    - Test example services"
+	@echo "  $(CYAN)test-examples$(RESET)    - Test example services (full test)"
 	@echo "  $(CYAN)test-all$(RESET)         - Run all tests (CLI + examples)"
 	@echo "  $(CYAN)lint$(RESET)             - Run linter on all modules"
 	@echo "  $(CYAN)clean$(RESET)            - Clean build artifacts"
@@ -85,7 +86,7 @@ help:
 	@echo "  $(CYAN)docker-clean$(RESET)    - Clean Docker images and containers"
 	@echo ""
 	@echo "$(BOLD)Deployment Scripts:$(RESET)"
-	@echo "  $(CYAN)deploy-up$(RESET)        - Start all services"
+	@echo "  $(CYAN)deploy-up$(RESET)        - Start all services (infra + services)"
 	@echo "  $(CYAN)deploy-down$(RESET)      - Stop all services"
 	@echo "  $(CYAN)deploy-restart$(RESET)   - Restart all services"
 	@echo "  $(CYAN)deploy-logs$(RESET)      - Show service logs"
@@ -93,6 +94,17 @@ help:
 	@echo "  $(CYAN)deploy-health$(RESET)    - Check service health"
 	@echo "  $(CYAN)deploy-ports$(RESET)     - Check and free required ports"
 	@echo "  $(CYAN)deploy-clean$(RESET)     - Clean deployment artifacts"
+	@echo ""
+	@echo "$(BOLD)Infrastructure & Services Management:$(RESET)"
+	@echo "  $(CYAN)infra-up$(RESET)         - Start infrastructure (MySQL, Jaeger, OTEL)"
+	@echo "  $(CYAN)infra-down$(RESET)       - Stop infrastructure"
+	@echo "  $(CYAN)infra-restart$(RESET)    - Restart infrastructure"
+	@echo "  $(CYAN)infra-status$(RESET)     - Show infrastructure status"
+	@echo "  $(CYAN)infra-clean$(RESET)      - Clean infrastructure (including volumes)"
+	@echo "  $(CYAN)services-up$(RESET)      - Start application services only"
+	@echo "  $(CYAN)services-down$(RESET)    - Stop application services only"
+	@echo "  $(CYAN)services-restart$(RESET) - Restart application services only"
+	@echo "  $(CYAN)services-rebuild$(RESET) - Rebuild and restart application services"
 
 # Build all modules
 build:
@@ -142,16 +154,17 @@ test-cli-production: build-cli
 	@./scripts/test-cli-production.sh
 	$(call print_success,CLI production integration tests passed)
 
-# Test example services
+# Test example services (default: rebuild and restart)
+# Test example services (full test with rebuild)
 test-examples:
 	$(call print_header,Testing example services)
-	@./scripts/test.sh examples
+	@./scripts/test-examples.sh examples
 	$(call print_success,Example services tests completed)
 
 # Run all tests (CLI + examples)
 test-all: build-cli
 	$(call print_header,Running all tests)
-	@./scripts/test.sh all
+	@bash scripts/test.sh all
 	$(call print_success,All tests passed)
 
 # Run linter (requires golangci-lint)
@@ -632,3 +645,51 @@ deploy-clean:
 	$(call print_header,Cleaning deployment artifacts)
 	@./scripts/deploy.sh clean
 	$(call print_success,Deployment artifacts cleaned)
+
+# Infrastructure management (separate from services)
+infra-up:
+	$(call print_header,Starting infrastructure services)
+	@cd deploy && docker-compose -f docker-compose.infra.yaml up -d
+	$(call print_success,Infrastructure services started)
+
+infra-down:
+	$(call print_header,Stopping infrastructure services)
+	@cd deploy && docker-compose -f docker-compose.infra.yaml down
+	$(call print_success,Infrastructure services stopped)
+
+infra-restart:
+	$(call print_header,Restarting infrastructure services)
+	@cd deploy && docker-compose -f docker-compose.infra.yaml restart
+	$(call print_success,Infrastructure services restarted)
+
+infra-status:
+	$(call print_header,Infrastructure services status)
+	@cd deploy && docker-compose -f docker-compose.infra.yaml ps
+
+infra-clean:
+	$(call print_header,Cleaning infrastructure)
+	@cd deploy && docker-compose -f docker-compose.infra.yaml down -v
+	$(call print_success,Infrastructure cleaned (including volumes))
+
+# Application services management (requires infrastructure)
+services-up:
+	$(call print_header,Starting application services)
+	@cd deploy && docker-compose -f docker-compose.services.yaml up -d
+	$(call print_success,Application services started)
+
+services-down:
+	$(call print_header,Stopping application services)
+	@cd deploy && docker-compose -f docker-compose.services.yaml down
+	$(call print_success,Application services stopped)
+
+services-restart:
+	$(call print_header,Restarting application services)
+	@cd deploy && docker-compose -f docker-compose.services.yaml restart
+	$(call print_success,Application services restarted)
+
+services-rebuild:
+	$(call print_header,Rebuilding and restarting application services)
+	@./scripts/build.sh all
+	@cd deploy && docker-compose -f docker-compose.services.yaml down
+	@cd deploy && docker-compose -f docker-compose.services.yaml up -d
+	$(call print_success,Application services rebuilt and restarted)

@@ -49,11 +49,11 @@ clean:
 # Build Docker image
 docker-build:
 	@echo "Building Docker image..."
-	@docker build -t greet-service:latest -f ../../build/Dockerfile.backend .
+	@docker build -t minimal-connect-service:latest --build-arg BINARY_NAME=greet-service -f ../../build/Dockerfile.backend .
 	@echo "Docker build complete"
 
 # Run Docker container
 docker-run:
 	@echo "Running Docker container..."
-	@docker run -p 8080:8080 -p 8081:8081 -p 9091:9091 --rm greet-service:latest
+	@docker run -p 8080:8080 -p 8081:8081 -p 9091:9091 --rm minimal-connect-service:latest
 

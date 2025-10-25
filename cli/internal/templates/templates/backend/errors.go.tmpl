@@ -1,0 +1,31 @@
+// Package model provides error definitions for the {{.ServiceName}} service.
+//
+// Overview:
+//   - Responsibility: Define domain-specific error types
+//   - Key Types: Error constants and custom error types
+//   - Concurrency Model: Safe for concurrent use
+//   - Error Semantics: Structured error handling with codes
+//   - Performance Notes: Lightweight error definitions
+//
+// Usage:
+//
+//	return Err{{.ServiceNameCamel}}NotFound
+//	return ErrInvalidName
+package model
+
+import "github.com/eggybyte-technology/egg/core/errors"
+
+// Domain error codes for the {{.ServiceName}} service.
+const (
+	ErrCode{{.ServiceNameCamel}}NotFound  = "{{.ServiceName | ToUpper}}_NOT_FOUND"
+	ErrCodeInvalidName   = "INVALID_NAME"
+	ErrCodeDatabaseError = "DATABASE_ERROR"
+)
+
+// Predefined errors for common scenarios.
+var (
+	Err{{.ServiceNameCamel}}NotFound  = errors.New(ErrCode{{.ServiceNameCamel}}NotFound, "{{.ServiceName}} not found")
+	ErrInvalidName   = errors.New(ErrCodeInvalidName, "invalid name")
+	ErrDatabaseError = errors.New(ErrCodeDatabaseError, "database operation failed")
+)
+

@@ -1,617 +1,476 @@
-# 🗄️ StoreX Package
-
-The `storex` package provides database integration for the EggyByte framework.
+# egg/storex
 
 ## Overview
 
-This package offers a comprehensive database abstraction layer with GORM integration, connection pooling, and transaction management. It's designed to be production-ready with proper error handling and observability.
+`storex` provides storage interfaces and GORM integration with health check support.
+It offers a clean abstraction for database operations with automatic connection pooling,
+health monitoring, and registry management.
 
-## Features
+## Key Features
 
-- **GORM integration** - Full GORM support with auto-migration
-- **Connection pooling** - Configurable connection pool management
-- **Transaction support** - ACID transaction management
-- **Health checks** - Database health monitoring
-- **Observability** - Metrics and tracing integration
-- **Production ready** - Optimized for production environments
+- Clean storage interface abstraction
+- GORM integration for SQL databases
+- Connection health checks
+- Registry for multiple storage backends
+- Configurable connection pooling
+- Support for MySQL, PostgreSQL, SQLite
+- Clean separation of interface and implementation
 
-## Quick Start
+## Dependencies
+
+Layer: **Auxiliary (Storage Layer)**  
+Depends on: `core/log`, `gorm.io/gorm`, database drivers
+
+## Installation
+
+```bash
+go get github.com/eggybyte-technology/egg/storex@latest
+```
+
+## Basic Usage
 
 ```go
-import "github.com/eggybyte-technology/egg/storex"
+import (
+    "context"
+    "github.com/eggybyte-technology/egg/storex"
+)
 
 func main() {
-    // Create database store
-    store, err := storex.NewStore(ctx, logger, storex.Options{
+    // Create GORM store
+    store, err := storex.NewGORMStore(storex.GORMOptions{
+        DSN:    "user:pass@tcp(localhost:3306)/mydb?parseTime=true",
         Driver: "mysql",
-        DSN:    "user:password@tcp(localhost:3306)/db?charset=utf8mb4&parseTime=True&loc=Local",
-        MaxIdle: 10,
-        MaxOpen: 100,
-        MaxLifetime: time.Hour,
+        Logger: logger,
     })
     if err != nil {
         log.Fatal(err)
     }
     defer store.Close()
     
-    // Auto-migrate models
-    if err := store.AutoMigrate(&User{}, &Order{}); err != nil {
-        log.Fatal(err)
-    }
+    // Get GORM DB instance
+    db := store.GetDB()
     
-    // Use store
-    userRepo := NewUserRepository(store)
-    user, err := userRepo.GetUser(ctx, "user-123")
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    fmt.Printf("User: %s\n", user.Name)
+    // Use GORM normally
+    var users []User
+    db.Find(&users)
 }
 ```
 
 ## API Reference
 
-### Types
-
-#### Store
+### Store Interface
 
 ```go
-type Store struct {
-    db     *gorm.DB
-    logger log.Logger
-    config Options
-}
-
-// Close closes the database connection
-func (s *Store) Close() error
-
-// AutoMigrate runs auto migration for given models
-func (s *Store) AutoMigrate(dst ...interface{}) error
-
-// Health checks database health
-func (s *Store) Health(ctx context.Context) error
-
-// Transaction runs a function within a database transaction
-func (s *Store) Transaction(ctx context.Context, fn func(*gorm.DB) error) error
-
-// GetDB returns the underlying GORM DB instance
-func (s *Store) GetDB() *gorm.DB
-```
-
-#### Options
-
-```go
-type Options struct {
-    Driver     string        // Database driver (mysql, postgres, sqlite)
-    DSN        string        // Database connection string
-    MaxIdle    int           // Maximum number of idle connections
-    MaxOpen    int           // Maximum number of open connections
-    MaxLifetime time.Duration // Maximum connection lifetime
-    LogLevel   string        // GORM log level (silent, error, warn, info)
-    SlowThreshold time.Duration // Slow query threshold
+// Store defines the interface for storage backends
+type Store interface {
+    // Ping checks if the storage backend is healthy
+    Ping(ctx context.Context) error
+    
+    // Close closes the storage connection
+    Close() error
 }
 ```
 
-### Functions
+### GORMStore Interface
 
 ```go
-// NewStore creates a new database store
-func NewStore(ctx context.Context, logger log.Logger, opts Options) (*Store, error)
-
-// NewStoreFromConfig creates a new database store from configuration
-func NewStoreFromConfig(ctx context.Context, logger log.Logger, cfg DatabaseConfig) (*Store, error)
-```
-
-## Usage Examples
-
-### Basic Store Setup
-
-```go
-func main() {
-    // Create database store
-    store, err := storex.NewStore(ctx, logger, storex.Options{
-        Driver: "mysql",
-        DSN:    "user:password@tcp(localhost:3306)/db?charset=utf8mb4&parseTime=True&loc=Local",
-        MaxIdle: 10,
-        MaxOpen: 100,
-        MaxLifetime: time.Hour,
-        LogLevel: "warn",
-        SlowThreshold: 200 * time.Millisecond,
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer store.Close()
+// GORMStore extends Store with GORM-specific functionality
+type GORMStore interface {
+    Store
     
-    // Auto-migrate models
-    if err := store.AutoMigrate(&User{}, &Order{}); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Use store
-    useStore(store)
+    // GetDB returns the underlying GORM database instance
+    GetDB() *gorm.DB
 }
 ```
 
-### Repository Pattern
+### Registry
 
 ```go
-type UserRepository struct {
-    store *storex.Store
+// Registry manages multiple storage connections and their health
+type Registry struct {
+    // ... internal fields
 }
 
-func NewUserRepository(store *storex.Store) *UserRepository {
-    return &UserRepository{store: store}
-}
+// NewRegistry creates a new storage registry
+func NewRegistry() *Registry
 
-func (r *UserRepository) GetUser(ctx context.Context, userID string) (*User, error) {
-    var user User
-    err := r.store.GetDB().WithContext(ctx).Where("id = ?", userID).First(&user).Error
-    if err != nil {
-        if errors.Is(err, gorm.ErrRecordNotFound) {
-            return nil, errors.New("NOT_FOUND", "user not found")
-        }
-        return nil, errors.Wrap(err, "DATABASE_ERROR", "failed to get user")
-    }
-    
-    return &user, nil
-}
+// Register registers a storage backend with the given name
+func (r *Registry) Register(name string, store Store) error
 
-func (r *UserRepository) CreateUser(ctx context.Context, user *User) error {
-    err := r.store.GetDB().WithContext(ctx).Create(user).Error
-    if err != nil {
-        return errors.Wrap(err, "DATABASE_ERROR", "failed to create user")
-    }
-    
-    return nil
-}
+// Unregister removes a storage backend from the registry
+func (r *Registry) Unregister(name string) error
 
-func (r *UserRepository) UpdateUser(ctx context.Context, user *User) error {
-    err := r.store.GetDB().WithContext(ctx).Save(user).Error
-    if err != nil {
-        return errors.Wrap(err, "DATABASE_ERROR", "failed to update user")
-    }
-    
-    return nil
-}
+// Ping performs health checks on all registered storage backends
+func (r *Registry) Ping(ctx context.Context) error
 
-func (r *UserRepository) DeleteUser(ctx context.Context, userID string) error {
-    err := r.store.GetDB().WithContext(ctx).Where("id = ?", userID).Delete(&User{}).Error
-    if err != nil {
-        return errors.Wrap(err, "DATABASE_ERROR", "failed to delete user")
-    }
-    
-    return nil
-}
+// Close closes all registered storage connections
+func (r *Registry) Close() error
 
-func (r *UserRepository) ListUsers(ctx context.Context, limit, offset int) ([]*User, error) {
-    var users []*User
-    err := r.store.GetDB().WithContext(ctx).
-        Limit(limit).
-        Offset(offset).
-        Find(&users).Error
-    if err != nil {
-        return nil, errors.Wrap(err, "DATABASE_ERROR", "failed to list users")
-    }
-    
-    return users, nil
+// List returns the names of all registered stores
+func (r *Registry) List() []string
+
+// Get returns a registered store by name
+func (r *Registry) Get(name string) (Store, bool)
+```
+
+### GORM Options
+
+```go
+type GORMOptions struct {
+    DSN             string        // Database connection string
+    Driver          string        // Database driver (mysql, postgres, sqlite)
+    MaxIdleConns    int           // Maximum number of idle connections
+    MaxOpenConns    int           // Maximum number of open connections
+    ConnMaxLifetime time.Duration // Maximum connection lifetime
+    Logger          log.Logger    // Logger for database operations
 }
 ```
 
-### Transaction Management
+### Constructor Functions
 
 ```go
-func (r *UserRepository) CreateUserWithProfile(ctx context.Context, user *User, profile *Profile) error {
-    return r.store.Transaction(ctx, func(tx *gorm.DB) error {
-        // Create user
-        if err := tx.WithContext(ctx).Create(user).Error; err != nil {
-            return errors.Wrap(err, "DATABASE_ERROR", "failed to create user")
-        }
-        
-        // Create profile
-        profile.UserID = user.ID
-        if err := tx.WithContext(ctx).Create(profile).Error; err != nil {
-            return errors.Wrap(err, "DATABASE_ERROR", "failed to create profile")
-        }
-        
-        return nil
-    })
-}
+// NewGORMStore creates a new GORM store with the given options
+func NewGORMStore(opts GORMOptions) (GORMStore, error)
 
-func (r *UserRepository) TransferPoints(ctx context.Context, fromUserID, toUserID string, points int) error {
-    return r.store.Transaction(ctx, func(tx *gorm.DB) error {
-        // Deduct points from source user
-        if err := tx.WithContext(ctx).
-            Model(&User{}).
-            Where("id = ?", fromUserID).
-            Update("points", gorm.Expr("points - ?", points)).Error; err != nil {
-            return errors.Wrap(err, "DATABASE_ERROR", "failed to deduct points")
-        }
-        
-        // Add points to destination user
-        if err := tx.WithContext(ctx).
-            Model(&User{}).
-            Where("id = ?", toUserID).
-            Update("points", gorm.Expr("points + ?", points)).Error; err != nil {
-            return errors.Wrap(err, "DATABASE_ERROR", "failed to add points")
-        }
-        
-        return nil
-    })
-}
+// NewMySQLStore creates a new MySQL store with the given DSN
+func NewMySQLStore(dsn string, logger log.Logger) (GORMStore, error)
+
+// NewPostgresStore creates a new PostgreSQL store with the given DSN
+func NewPostgresStore(dsn string, logger log.Logger) (GORMStore, error)
+
+// NewSQLiteStore creates a new SQLite store with the given DSN
+func NewSQLiteStore(dsn string, logger log.Logger) (GORMStore, error)
 ```
 
-### Health Checks
+## Architecture
 
-```go
-func main() {
-    // Create database store
-    store, err := storex.NewStore(ctx, logger, storex.Options{
-        Driver: "mysql",
-        DSN:    "user:password@tcp(localhost:3306)/db?charset=utf8mb4&parseTime=True&loc=Local",
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer store.Close()
-    
-    // Create health check handler
-    mux := http.NewServeMux()
-    mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-        if err := store.Health(r.Context()); err != nil {
-            w.WriteHeader(http.StatusServiceUnavailable)
-            w.Write([]byte("Database unhealthy"))
-            return
-        }
-        
-        w.WriteHeader(http.StatusOK)
-        w.Write([]byte("OK"))
-    })
-    
-    // Start server
-    server := &http.Server{
-        Addr:    ":8081",
-        Handler: mux,
-    }
-    
-    go func() {
-        if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-            log.Fatal(err)
-        }
-    }()
-    
-    // Graceful shutdown
-    sigChan := make(chan os.Signal, 1)
-    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-    <-sigChan
-    
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-    
-    if err := server.Shutdown(ctx); err != nil {
-        log.Fatal(err)
-    }
-}
+The storex module provides storage abstraction:
+
+```
+storex/
+├── storex.go            # Public API (~143 lines)
+│   ├── Store            # Storage interface
+│   ├── GORMStore        # GORM-specific interface
+│   ├── Registry         # Registry wrapper
+│   └── Constructors     # NewGORMStore, NewMySQLStore, etc.
+└── internal/
+    ├── gorm.go          # GORM implementation
+    │   └── gormStore    # GORM store implementation
+    └── registry.go      # Registry implementation
+        └── registryImpl # Registry with health checks
 ```
 
-### Configuration Integration
+**Design Highlights:**
+- Public interfaces define contracts
+- GORM implementation isolated in internal package
+- Registry supports multiple backends
+- Health checks for monitoring
+
+## Example: MySQL Database
 
 ```go
-type AppConfig struct {
-    configx.BaseConfig
-    
-    // Database configuration
-    Database DatabaseConfig
-}
+package main
 
-type DatabaseConfig struct {
-    Driver       string        `env:"DB_DRIVER" default:"mysql"`
-    DSN          string        `env:"DB_DSN" default:"user:password@tcp(localhost:3306)/db"`
-    MaxIdle      int           `env:"DB_MAX_IDLE" default:"10"`
-    MaxOpen      int           `env:"DB_MAX_OPEN" default:"100"`
-    MaxLifetime  time.Duration `env:"DB_MAX_LIFETIME" default:"1h"`
-    LogLevel     string        `env:"DB_LOG_LEVEL" default:"warn"`
-    SlowThreshold time.Duration `env:"DB_SLOW_THRESHOLD" default:"200ms"`
-}
+import (
+    "context"
+    "github.com/eggybyte-technology/egg/storex"
+    "gorm.io/gorm"
+)
 
-func main() {
-    // Load configuration
-    var cfg AppConfig
-    if err := configManager.Bind(&cfg); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Create database store from configuration
-    store, err := storex.NewStoreFromConfig(ctx, logger, cfg.Database)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer store.Close()
-    
-    // Auto-migrate models
-    if err := store.AutoMigrate(&User{}, &Order{}); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Use store
-    useStore(store)
-}
-```
-
-### Service Integration
-
-```go
-type UserService struct {
-    logger log.Logger
-    repo   *UserRepository
-}
-
-func NewUserService(logger log.Logger, store *storex.Store) *UserService {
-    return &UserService{
-        logger: logger,
-        repo:   NewUserRepository(store),
-    }
-}
-
-func (s *UserService) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
-    // Get user from repository
-    user, err := s.repo.GetUser(ctx, req.Msg.UserId)
-    if err != nil {
-        if errors.Is(err, "NOT_FOUND") {
-            return nil, connect.NewError(connect.CodeNotFound, err)
-        }
-        return nil, connect.NewError(connect.CodeInternal, err)
-    }
-    
-    return connect.NewResponse(&GetUserResponse{User: user}), nil
-}
-
-func (s *UserService) CreateUser(ctx context.Context, req *connect.Request[CreateUserRequest]) (*connect.Response[CreateUserResponse], error) {
-    // Validate request
-    if req.Msg.User == nil {
-        return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("VALIDATION_ERROR", "user is required"))
-    }
-    
-    // Create user
-    user := &User{
-        Name:  req.Msg.User.Name,
-        Email: req.Msg.User.Email,
-    }
-    
-    if err := s.repo.CreateUser(ctx, user); err != nil {
-        return nil, connect.NewError(connect.CodeInternal, err)
-    }
-    
-    return connect.NewResponse(&CreateUserResponse{User: user}), nil
-}
-```
-
-## Model Definitions
-
-### User Model
-
-```go
 type User struct {
-    ID        uint      `json:"id" gorm:"primaryKey"`
-    Name      string    `json:"name" gorm:"size:255;not null"`
-    Email     string    `json:"email" gorm:"size:255;uniqueIndex;not null"`
-    Points    int       `json:"points" gorm:"default:0"`
-    CreatedAt time.Time `json:"created_at"`
-    UpdatedAt time.Time `json:"updated_at"`
-    DeletedAt gorm.DeletedAt `json:"deleted_at" gorm:"index"`
+    ID    uint   `gorm:"primarykey"`
+    Name  string `gorm:"not null"`
+    Email string `gorm:"uniqueIndex;not null"`
 }
 
-func (u *User) TableName() string {
-    return "users"
-}
-```
-
-### Order Model
-
-```go
-type Order struct {
-    ID        uint      `json:"id" gorm:"primaryKey"`
-    UserID    uint      `json:"user_id" gorm:"not null"`
-    User      User      `json:"user" gorm:"foreignKey:UserID"`
-    Amount    int       `json:"amount" gorm:"not null"`
-    Status    string    `json:"status" gorm:"size:50;default:'pending'"`
-    CreatedAt time.Time `json:"created_at"`
-    UpdatedAt time.Time `json:"updated_at"`
-    DeletedAt gorm.DeletedAt `json:"deleted_at" gorm:"index"`
-}
-
-func (o *Order) TableName() string {
-    return "orders"
-}
-```
-
-## Testing
-
-```go
-func TestStore(t *testing.T) {
-    // Create test store
-    store, err := storex.NewStore(context.Background(), &TestLogger{}, storex.Options{
-        Driver: "sqlite",
-        DSN:    ":memory:",
-    })
-    assert.NoError(t, err)
+func main() {
+    // Create MySQL store
+    store, err := storex.NewMySQLStore(
+        "user:pass@tcp(localhost:3306)/mydb?parseTime=true",
+        logger,
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
     defer store.Close()
     
-    // Auto-migrate models
-    err = store.AutoMigrate(&User{})
-    assert.NoError(t, err)
-    
-    // Test health check
-    err = store.Health(context.Background())
-    assert.NoError(t, err)
-    
-    // Test repository
-    repo := NewUserRepository(store)
-    
-    // Create user
-    user := &User{
-        Name:  "Test User",
-        Email: "test@example.com",
+    // Check health
+    ctx := context.Background()
+    if err := store.Ping(ctx); err != nil {
+        log.Fatal("Database not healthy:", err)
     }
     
-    err = repo.CreateUser(context.Background(), user)
-    assert.NoError(t, err)
-    assert.NotZero(t, user.ID)
+    // Get GORM DB
+    db := store.GetDB()
     
-    // Get user
-    retrievedUser, err := repo.GetUser(context.Background(), fmt.Sprintf("%d", user.ID))
-    assert.NoError(t, err)
-    assert.Equal(t, user.Name, retrievedUser.Name)
-    assert.Equal(t, user.Email, retrievedUser.Email)
+    // Auto-migrate
+    db.AutoMigrate(&User{})
+    
+    // Create user
+    user := &User{Name: "John", Email: "john@example.com"}
+    result := db.Create(user)
+    if result.Error != nil {
+        log.Fatal(result.Error)
+    }
+    
+    // Query users
+    var users []User
+    db.Find(&users)
+    for _, u := range users {
+        fmt.Printf("User: %s (%s)\n", u.Name, u.Email)
+    }
+}
+```
+
+## Example: Connection Pooling
+
+```go
+// Configure connection pool for production
+store, err := storex.NewGORMStore(storex.GORMOptions{
+    DSN:             "user:pass@tcp(localhost:3306)/mydb?parseTime=true",
+    Driver:          "mysql",
+    MaxIdleConns:    10,   // Idle connections in pool
+    MaxOpenConns:    100,  // Maximum open connections
+    ConnMaxLifetime: 1 * time.Hour,  // Recycle connections after 1 hour
+    Logger:          logger,
+})
+```
+
+## Example: Multiple Databases
+
+```go
+func main() {
+    // Create registry
+    registry := storex.NewRegistry()
+    
+    // Register MySQL store
+    mysqlStore, _ := storex.NewMySQLStore(
+        "user:pass@tcp(localhost:3306)/mydb",
+        logger,
+    )
+    registry.Register("mysql", mysqlStore)
+    
+    // Register PostgreSQL store
+    pgStore, _ := storex.NewPostgresStore(
+        "postgres://user:pass@localhost:5432/mydb",
+        logger,
+    )
+    registry.Register("postgres", pgStore)
+    
+    // Check all stores
+    ctx := context.Background()
+    if err := registry.Ping(ctx); err != nil {
+        log.Fatal("Some stores are unhealthy:", err)
+    }
+    
+    // Get specific store
+    mysql, _ := registry.Get("mysql")
+    if gormStore, ok := mysql.(storex.GORMStore); ok {
+        db := gormStore.GetDB()
+        // Use MySQL database
+    }
+    
+    // Cleanup
+    registry.Close()
+}
+```
+
+## Example: Health Checks
+
+```go
+import "github.com/eggybyte-technology/egg/runtimex"
+
+type DatabaseHealthChecker struct {
+    store storex.Store
 }
 
-func TestTransaction(t *testing.T) {
-    // Create test store
-    store, err := storex.NewStore(context.Background(), &TestLogger{}, storex.Options{
-        Driver: "sqlite",
-        DSN:    ":memory:",
-    })
-    assert.NoError(t, err)
-    defer store.Close()
+func (c *DatabaseHealthChecker) Name() string {
+    return "database"
+}
+
+func (c *DatabaseHealthChecker) Check(ctx context.Context) error {
+    return c.store.Ping(ctx)
+}
+
+func main() {
+    store, _ := storex.NewMySQLStore(dsn, logger)
     
-    // Auto-migrate models
-    err = store.AutoMigrate(&User{})
-    assert.NoError(t, err)
+    // Register health checker
+    checker := &DatabaseHealthChecker{store: store}
+    runtimex.RegisterHealthChecker(checker)
     
-    // Test transaction
-    err = store.Transaction(context.Background(), func(tx *gorm.DB) error {
-        user := &User{
-            Name:  "Test User",
-            Email: "test@example.com",
+    // Health endpoint will now check database connectivity
+}
+```
+
+## Example: Transaction Support
+
+```go
+func transferFunds(db *gorm.DB, from, to string, amount int) error {
+    return db.Transaction(func(tx *gorm.DB) error {
+        // Debit from account
+        result := tx.Model(&Account{}).
+            Where("id = ? AND balance >= ?", from, amount).
+            Update("balance", gorm.Expr("balance - ?", amount))
+        if result.Error != nil {
+            return result.Error
+        }
+        if result.RowsAffected == 0 {
+            return errors.New("insufficient funds")
         }
         
-        if err := tx.Create(user).Error; err != nil {
+        // Credit to account
+        if err := tx.Model(&Account{}).
+            Where("id = ?", to).
+            Update("balance", gorm.Expr("balance + ?", amount)).Error; err != nil {
             return err
         }
         
-        // Simulate error to test rollback
-        return errors.New("test error")
+        return nil
     })
-    
-    assert.Error(t, err)
-    
-    // Verify user was not created (transaction rolled back)
-    var count int64
-    store.GetDB().Model(&User{}).Count(&count)
-    assert.Equal(t, int64(0), count)
 }
 
-type TestLogger struct{}
+func main() {
+    store, _ := storex.NewMySQLStore(dsn, logger)
+    db := store.GetDB()
+    
+    if err := transferFunds(db, "acc-1", "acc-2", 100); err != nil {
+        log.Fatal(err)
+    }
+}
+```
 
-func (l *TestLogger) With(kv ...any) log.Logger { return l }
-func (l *TestLogger) Debug(msg string, kv ...any) {}
-func (l *TestLogger) Info(msg string, kv ...any) {}
-func (l *TestLogger) Warn(msg string, kv ...any) {}
-func (l *TestLogger) Error(err error, msg string, kv ...any) {}
+## Integration with servicex
+
+storex is automatically integrated in servicex:
+
+```go
+import "github.com/eggybyte-technology/egg/servicex"
+
+type User struct {
+    ID    uint   `gorm:"primarykey"`
+    Name  string `gorm:"not null"`
+    Email string `gorm:"uniqueIndex;not null"`
+}
+
+func main() {
+    cfg := &AppConfig{}
+    
+    err := servicex.Run(ctx,
+        servicex.WithConfig(cfg),
+        servicex.WithDatabase(servicex.FromBaseConfig(&cfg.Database)),
+        servicex.WithAutoMigrate(&User{}),  // Auto-migrate models
+        servicex.WithRegister(register),
+    )
+}
+
+func register(app *servicex.App) error {
+    // Get GORM DB instance
+    db := app.MustDB()
+    
+    // Use database
+    var users []User
+    db.Find(&users)
+    
+    return nil
+}
+```
+
+## Database Drivers
+
+### MySQL
+
+```bash
+go get gorm.io/driver/mysql
+```
+
+```go
+import "gorm.io/driver/mysql"
+
+dsn := "user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+store, _ := storex.NewMySQLStore(dsn, logger)
+```
+
+### PostgreSQL
+
+```bash
+go get gorm.io/driver/postgres
+```
+
+```go
+import "gorm.io/driver/postgres"
+
+dsn := "host=localhost user=user password=pass dbname=mydb port=5432 sslmode=disable"
+store, _ := storex.NewPostgresStore(dsn, logger)
+```
+
+### SQLite
+
+```bash
+go get gorm.io/driver/sqlite
+```
+
+```go
+import "gorm.io/driver/sqlite"
+
+dsn := "./test.db"
+store, _ := storex.NewSQLiteStore(dsn, logger)
 ```
 
 ## Best Practices
 
-### 1. Use Repository Pattern
+1. **Always ping after creation** - Verify connection before use
+2. **Configure connection pooling** - Set appropriate limits for your workload
+3. **Use transactions** - For operations that must be atomic
+4. **Close connections** - Always defer `Close()` after creation
+5. **Health check registration** - Register with runtimex for monitoring
+6. **Connection lifecycle** - Recycle connections periodically
+7. **Error handling** - Check GORM errors and handle appropriately
+
+## Performance Considerations
+
+- **Connection Pool Size**: Tune `MaxIdleConns` and `MaxOpenConns` based on workload
+- **Connection Lifetime**: Recycle connections to prevent stale connections
+- **Query Optimization**: Use indexes, avoid N+1 queries
+- **Transaction Scope**: Keep transactions as short as possible
+- **Prepared Statements**: GORM uses prepared statements by default
+
+## Testing
 
 ```go
-type UserRepository struct {
-    store *storex.Store
-}
-
-func (r *UserRepository) GetUser(ctx context.Context, userID string) (*User, error) {
-    var user User
-    err := r.store.GetDB().WithContext(ctx).Where("id = ?", userID).First(&user).Error
-    if err != nil {
-        if errors.Is(err, gorm.ErrRecordNotFound) {
-            return nil, errors.New("NOT_FOUND", "user not found")
-        }
-        return nil, errors.Wrap(err, "DATABASE_ERROR", "failed to get user")
-    }
+func TestUserRepository(t *testing.T) {
+    // Create SQLite in-memory database for testing
+    store, err := storex.NewSQLiteStore(":memory:", logger)
+    require.NoError(t, err)
+    defer store.Close()
     
-    return &user, nil
-}
-```
-
-### 2. Use Transactions for Complex Operations
-
-```go
-func (r *UserRepository) TransferPoints(ctx context.Context, fromUserID, toUserID string, points int) error {
-    return r.store.Transaction(ctx, func(tx *gorm.DB) error {
-        // Deduct points from source user
-        if err := tx.WithContext(ctx).
-            Model(&User{}).
-            Where("id = ?", fromUserID).
-            Update("points", gorm.Expr("points - ?", points)).Error; err != nil {
-            return errors.Wrap(err, "DATABASE_ERROR", "failed to deduct points")
-        }
-        
-        // Add points to destination user
-        if err := tx.WithContext(ctx).
-            Model(&User{}).
-            Where("id = ?", toUserID).
-            Update("points", gorm.Expr("points + ?", points)).Error; err != nil {
-            return errors.Wrap(err, "DATABASE_ERROR", "failed to add points")
-        }
-        
-        return nil
-    })
-}
-```
-
-### 3. Handle Errors Properly
-
-```go
-func (r *UserRepository) GetUser(ctx context.Context, userID string) (*User, error) {
-    var user User
-    err := r.store.GetDB().WithContext(ctx).Where("id = ?", userID).First(&user).Error
-    if err != nil {
-        if errors.Is(err, gorm.ErrRecordNotFound) {
-            return nil, errors.New("NOT_FOUND", "user not found")
-        }
-        return nil, errors.Wrap(err, "DATABASE_ERROR", "failed to get user")
-    }
+    db := store.GetDB()
     
-    return &user, nil
-}
-```
-
-### 4. Use Context for Cancellation
-
-```go
-func (r *UserRepository) GetUser(ctx context.Context, userID string) (*User, error) {
-    var user User
-    err := r.store.GetDB().WithContext(ctx).Where("id = ?", userID).First(&user).Error
-    if err != nil {
-        return nil, err
-    }
+    // Migrate schema
+    db.AutoMigrate(&User{})
     
-    return &user, nil
+    // Test operations
+    user := &User{Name: "Test", Email: "test@example.com"}
+    result := db.Create(user)
+    require.NoError(t, result.Error)
+    assert.NotZero(t, user.ID)
+    
+    // Query
+    var found User
+    db.First(&found, user.ID)
+    assert.Equal(t, "Test", found.Name)
 }
 ```
 
-## Thread Safety
+## Stability
 
-All functions in this package are safe for concurrent use. The GORM database connection is designed to handle concurrent access safely.
+**Status**: Stable  
+**Layer**: Auxiliary (Storage)  
+**API Guarantees**: Backward-compatible changes only
 
-## Dependencies
-
-- **Go 1.21+** required
-- **GORM** - ORM library
-- **Database drivers** - MySQL, PostgreSQL, SQLite
-- **Standard library** - Core functionality
-
-## Version Compatibility
-
-- **Go 1.21+** required
-- **API Stability**: Evolving (L3 module)
-- **Breaking Changes**: Possible in minor versions
-
-## Contributing
-
-Contributions are welcome! Please see the main project [Contributing Guide](../CONTRIBUTING.md) for details.
+The storex module is production-ready and follows semantic versioning.
 
 ## License
 
-This package is part of the EggyByte framework and is licensed under the MIT License.
+This package is part of the egg framework and is licensed under the MIT License.
+See the root LICENSE file for details.

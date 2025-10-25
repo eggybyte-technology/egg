@@ -1,352 +1,326 @@
-# ⚙️ ConfigX Package
-
-The `configx` package provides unified configuration management with hot updates for the EggyByte framework.
+# egg/configx
 
 ## Overview
 
-This package offers a comprehensive configuration system that supports environment variables, configuration files, Kubernetes ConfigMaps, and hot updates. It's designed to be production-ready with validation and type safety.
+`configx` provides unified configuration management with hot reloading support for
+egg microservices. It manages configuration from multiple sources (environment
+variables, Kubernetes ConfigMaps, files) with automatic merging, validation, and
+change notification.
 
-## Features
+## Key Features
 
-- **Unified configuration** - Single interface for all configuration sources
-- **Hot updates** - Configuration changes without service restart
-- **Type safety** - Strongly typed configuration structures
-- **Validation** - Built-in configuration validation
-- **Multiple sources** - Environment variables, files, ConfigMaps
-- **Kubernetes native** - ConfigMap monitoring and updates
+- Multiple configuration sources with priority-based merging
+- Hot reload with debouncing for Kubernetes ConfigMap changes
+- Struct binding with `env` and `default` tags
+- Change notification via callbacks
+- Support for nested structs and embedded config
+- Thread-safe concurrent access
+- Clean separation of manager logic from public API
 
-## Quick Start
+## Dependencies
+
+Layer: **L2 (Capability Layer)**  
+Depends on: `core/log`, optionally `k8s.io/client-go` for ConfigMap watching
+
+## Installation
+
+```bash
+go get github.com/eggybyte-technology/egg/configx@latest
+```
+
+## Basic Usage
 
 ```go
-import "github.com/eggybyte-technology/egg/configx"
+import (
+    "context"
+    "github.com/eggybyte-technology/egg/configx"
+)
+
+type AppConfig struct {
+    configx.BaseConfig
+    
+    DatabaseURL string `env:"DATABASE_URL" default:"postgres://localhost/mydb"`
+    MaxConns    int    `env:"MAX_CONNS" default:"10"`
+    Debug       bool   `env:"DEBUG" default:"false"`
+}
 
 func main() {
-    // Create configuration manager
+    ctx := context.Background()
+    
+    // Create config manager with default sources (Env + optional K8s)
     manager, err := configx.DefaultManager(ctx, logger)
     if err != nil {
         log.Fatal(err)
     }
     
-    // Define configuration structure
+    // Bind configuration
     var cfg AppConfig
-    if err := manager.Bind(&cfg); err != nil {
+    err = manager.Bind(&cfg)
+    if err != nil {
         log.Fatal(err)
     }
     
     // Use configuration
-    fmt.Printf("Service: %s:%s\n", cfg.ServiceName, cfg.ServiceVersion)
+    fmt.Printf("Database URL: %s\n", cfg.DatabaseURL)
+    fmt.Printf("Max Connections: %d\n", cfg.MaxConns)
 }
 ```
+
+## Configuration Options
+
+### Manager Options
+
+| Option     | Type             | Description                                      |
+| ---------- | ---------------- | ------------------------------------------------ |
+| `Logger`   | `log.Logger`     | Logger for configuration operations (required)   |
+| `Sources`  | `[]Source`       | Configuration sources (later overrides earlier)  |
+| `Debounce` | `time.Duration`  | Debounce duration for updates (default: 200ms)   |
+
+### Source Types
+
+| Source             | Description                                      |
+| ------------------ | ------------------------------------------------ |
+| `EnvSource`        | Environment variables                            |
+| `FileSource`       | Configuration files (JSON, YAML, etc.)           |
+| `K8sConfigMapSource`| Kubernetes ConfigMap with hot reload           |
 
 ## API Reference
 
-### Types
-
-#### Manager
+### Manager Interface
 
 ```go
 type Manager interface {
-    // Bind binds configuration to the given struct
-    Bind(target interface{}) error
+    // Snapshot returns a copy of the current merged configuration
+    Snapshot() map[string]string
     
-    // Watch watches for configuration changes
-    Watch(ctx context.Context, target interface{}, callback func()) error
+    // Value returns the value for a key
+    Value(key string) (string, bool)
     
-    // Get gets a configuration value by key
-    Get(key string) (interface{}, error)
+    // Bind decodes configuration into a struct
+    Bind(target any, opts ...BindOption) error
     
-    // Set sets a configuration value by key
-    Set(key string, value interface{}) error
+    // OnUpdate subscribes to configuration update events
+    OnUpdate(fn func(snapshot map[string]string)) (unsubscribe func())
 }
 ```
 
-#### BaseConfig
+### Source Interface
+
+```go
+type Source interface {
+    // Load reads the current configuration snapshot
+    Load(ctx context.Context) (map[string]string, error)
+    
+    // Watch monitors for updates and publishes snapshots
+    Watch(ctx context.Context) (<-chan map[string]string, error)
+}
+```
+
+### BaseConfig
 
 ```go
 type BaseConfig struct {
     ServiceName    string `env:"SERVICE_NAME" default:"app"`
     ServiceVersion string `env:"SERVICE_VERSION" default:"0.0.0"`
     Env            string `env:"ENV" default:"dev"`
-    HTTPPort       string `env:"HTTP_PORT" default:":8080"`
-    HealthPort     string `env:"HEALTH_PORT" default:":8081"`
-    MetricsPort    string `env:"METRICS_PORT" default:":9091"`
-}
-```
-
-#### Options
-
-```go
-type Options struct {
-    ConfigFile     string            // Configuration file path
-    ConfigMapName  string            // Kubernetes ConfigMap name
-    Namespace      string            // Kubernetes namespace
-    WatchInterval  time.Duration     // Watch interval for hot updates
-    ValidationFunc func(interface{}) error // Custom validation function
-}
-```
-
-### Functions
-
-```go
-// DefaultManager creates a default configuration manager
-func DefaultManager(ctx context.Context, logger log.Logger) (Manager, error)
-
-// NewManager creates a new configuration manager with options
-func NewManager(ctx context.Context, logger log.Logger, opts Options) (Manager, error)
-
-// NewBaseConfig creates a new base configuration
-func NewBaseConfig() *BaseConfig
-```
-
-## Usage Examples
-
-### Basic Configuration
-
-```go
-type AppConfig struct {
-    configx.BaseConfig
     
-    // Database configuration
+    HTTPPort    string `env:"HTTP_PORT" default:":8080"`
+    HealthPort  string `env:"HEALTH_PORT" default:":8081"`
+    MetricsPort string `env:"METRICS_PORT" default:":9091"`
+    
+    OTLPEndpoint   string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" default:""`
+    ConfigMapName  string `env:"APP_CONFIGMAP_NAME" default:""`
+    DebounceMillis int    `env:"CONFIG_DEBOUNCE_MS" default:"200"`
+    
     Database DatabaseConfig
 }
 
 type DatabaseConfig struct {
-    Driver string `env:"DB_DRIVER" default:"mysql"`
-    DSN    string `env:"DB_DSN" default:"user:password@tcp(localhost:3306)/db"`
-    MaxIdle int   `env:"DB_MAX_IDLE" default:"10"`
-    MaxOpen int   `env:"DB_MAX_OPEN" default:"100"`
+    Driver      string        `env:"DB_DRIVER" default:"mysql"`
+    DSN         string        `env:"DB_DSN" default:""`
+    MaxIdle     int           `env:"DB_MAX_IDLE" default:"10"`
+    MaxOpen     int           `env:"DB_MAX_OPEN" default:"100"`
+    MaxLifetime time.Duration `env:"DB_MAX_LIFETIME" default:"1h"`
 }
+```
 
+## Architecture
+
+The configx module follows a clean architecture pattern:
+
+```
+configx/
+├── configx.go           # Public API (~220 lines)
+│   ├── Source           # Source interface
+│   ├── Manager          # Manager interface
+│   ├── BaseConfig       # Common config struct
+│   └── Constructors     # NewManager, DefaultManager, etc.
+└── internal/
+    ├── manager.go       # Manager implementation (~240 lines)
+    │   ├── loadInitial()    # Initial config load
+    │   ├── startWatching()  # Watch all sources
+    │   ├── watchSource()    # Watch single source
+    │   └── applyUpdate()    # Merge updates
+    ├── binding.go       # Struct binding (~115 lines)
+    │   ├── BindToStruct()   # Main binding logic
+    │   ├── bindStructFields()  # Recursive field binding
+    │   └── setFieldValue()  # Type conversion
+    ├── sources.go       # Source implementations
+    └── builders.go      # Source builders
+```
+
+**Design Highlights:**
+- Public interface defines contracts
+- Complex merging logic isolated in internal package
+- Binding logic supports nested structs and type conversion
+- Hot reload debouncing prevents flapping
+
+## Example: Multiple Sources
+
+```go
 func main() {
-    // Create configuration manager
+    ctx := context.Background()
+    
+    // Create sources with priority order
+    sources := []configx.Source{
+        configx.NewEnvSource(configx.EnvOptions{}),
+        configx.NewFileSource("config.yaml", configx.FileOptions{
+            Watch: true,
+            Format: "yaml",
+        }),
+        configx.NewK8sConfigMapSource("app-config", configx.K8sOptions{
+            Namespace: "default",
+            Logger: logger,
+        }),
+    }
+    
+    // Create manager (later sources override earlier ones)
+    manager, err := configx.NewManager(ctx, configx.Options{
+        Logger: logger,
+        Sources: sources,
+        Debounce: 300 * time.Millisecond,
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Bind configuration
+    var cfg AppConfig
+    err = manager.Bind(&cfg)
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+## Example: Hot Reload with Callback
+
+```go
+func main() {
+    ctx := context.Background()
+    
     manager, err := configx.DefaultManager(ctx, logger)
     if err != nil {
         log.Fatal(err)
     }
     
-    // Load configuration
     var cfg AppConfig
-    if err := manager.Bind(&cfg); err != nil {
-        log.Fatal(err)
-    }
+    var mu sync.RWMutex
     
-    // Use configuration
-    fmt.Printf("Service: %s:%s\n", cfg.ServiceName, cfg.ServiceVersion)
-    fmt.Printf("Database: %s\n", cfg.Database.Driver)
-}
-```
-
-### With Configuration File
-
-```go
-func main() {
-    // Create configuration manager with file
-    manager, err := configx.NewManager(ctx, logger, configx.Options{
-        ConfigFile:    "config.yaml",
-        WatchInterval: 5 * time.Second,
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Load configuration
-    var cfg AppConfig
-    if err := manager.Bind(&cfg); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Watch for changes
-    if err := manager.Watch(ctx, &cfg, func() {
-        logger.Info("Configuration updated")
-    }); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Use configuration
-    startService(cfg)
-}
-```
-
-### With Kubernetes ConfigMap
-
-```go
-func main() {
-    // Create configuration manager with ConfigMap
-    manager, err := configx.NewManager(ctx, logger, configx.Options{
-        ConfigMapName: "app-config",
-        Namespace:     "default",
-        WatchInterval: 10 * time.Second,
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Load configuration
-    var cfg AppConfig
-    if err := manager.Bind(&cfg); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Watch for changes
-    if err := manager.Watch(ctx, &cfg, func() {
-        logger.Info("Configuration updated from ConfigMap")
-        // Reload configuration-dependent components
-        reloadComponents(cfg)
-    }); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Use configuration
-    startService(cfg)
-}
-```
-
-### Custom Validation
-
-```go
-func validateConfig(cfg interface{}) error {
-    appCfg, ok := cfg.(*AppConfig)
-    if !ok {
-        return errors.New("CONFIG_ERROR", "invalid configuration type")
-    }
-    
-    // Validate service name
-    if utils.IsEmpty(appCfg.ServiceName) {
-        return errors.New("CONFIG_ERROR", "service name is required")
-    }
-    
-    // Validate database configuration
-    if utils.IsEmpty(appCfg.Database.DSN) {
-        return errors.New("CONFIG_ERROR", "database DSN is required")
-    }
-    
-    // Validate ports
-    if !utils.IsValidPort(extractPort(appCfg.HTTPPort)) {
-        return errors.New("CONFIG_ERROR", "invalid HTTP port")
-    }
-    
-    return nil
-}
-
-func main() {
-    // Create configuration manager with validation
-    manager, err := configx.NewManager(ctx, logger, configx.Options{
-        ConfigFile:     "config.yaml",
-        WatchInterval:  5 * time.Second,
-        ValidationFunc: validateConfig,
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Load configuration
-    var cfg AppConfig
-    if err := manager.Bind(&cfg); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Use configuration
-    startService(cfg)
-}
-```
-
-### Hot Updates
-
-```go
-func main() {
-    // Create configuration manager
-    manager, err := configx.DefaultManager(ctx, logger)
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Load initial configuration
-    var cfg AppConfig
-    if err := manager.Bind(&cfg); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Watch for changes
-    if err := manager.Watch(ctx, &cfg, func() {
-        logger.Info("Configuration updated",
-            log.Str("service_name", cfg.ServiceName),
-            log.Str("service_version", cfg.ServiceVersion),
-        )
+    // Bind with update callback
+    err = manager.Bind(&cfg, configx.WithUpdateCallback(func() {
+        mu.Lock()
+        defer mu.Unlock()
         
-        // Update configuration-dependent components
-        updateComponents(cfg)
-    }); err != nil {
+        // Re-bind on updates
+        if err := manager.Bind(&cfg); err != nil {
+            logger.Error(err, "failed to reload config")
+            return
+        }
+        
+        logger.Info("configuration reloaded",
+            "database_url", cfg.DatabaseURL,
+            "max_conns", cfg.MaxConns,
+        )
+    }))
+    if err != nil {
         log.Fatal(err)
     }
     
-    // Start service
-    startService(cfg)
+    // Subscribe to raw updates
+    unsubscribe := manager.OnUpdate(func(snapshot map[string]string) {
+        logger.Info("config updated", "keys", len(snapshot))
+    })
+    defer unsubscribe()
+    
+    // Run application
+    runApp(&cfg, &mu)
 }
 
-func updateComponents(cfg AppConfig) {
-    // Update database connection
-    if err := updateDatabase(cfg.Database); err != nil {
-        logger.Error(err, "Failed to update database configuration")
-    }
-    
-    // Update HTTP server
-    if err := updateHTTPServer(cfg.HTTPPort); err != nil {
-        logger.Error(err, "Failed to update HTTP server configuration")
-    }
-    
-    // Update metrics configuration
-    if err := updateMetrics(cfg.MetricsPort); err != nil {
-        logger.Error(err, "Failed to update metrics configuration")
+func runApp(cfg *AppConfig, mu *sync.RWMutex) {
+    for {
+        mu.RLock()
+        dbURL := cfg.DatabaseURL
+        maxConns := cfg.MaxConns
+        mu.RUnlock()
+        
+        // Use configuration safely
+        useConfig(dbURL, maxConns)
     }
 }
 ```
 
-## Configuration Sources
+## Example: Custom Configuration Struct
 
-### Environment Variables
+```go
+type MyServiceConfig struct {
+    configx.BaseConfig
+    
+    // API Configuration
+    API APIConfig
+    
+    // Feature Flags
+    Features FeatureFlags
+    
+    // Custom Settings
+    RateLimit   int           `env:"RATE_LIMIT" default:"100"`
+    CacheTTL    time.Duration `env:"CACHE_TTL" default:"5m"`
+    EnableRetry bool          `env:"ENABLE_RETRY" default:"true"`
+}
 
-```bash
-# Service configuration
-SERVICE_NAME=user-service
-SERVICE_VERSION=1.0.0
-ENV=production
+type APIConfig struct {
+    Endpoint string        `env:"API_ENDPOINT" default:"https://api.example.com"`
+    Timeout  time.Duration `env:"API_TIMEOUT" default:"30s"`
+    APIKey   string        `env:"API_KEY" default:""`
+}
 
-# HTTP configuration
-HTTP_PORT=:8080
-HEALTH_PORT=:8081
-METRICS_PORT=:9091
+type FeatureFlags struct {
+    EnableNewUI     bool `env:"FEATURE_NEW_UI" default:"false"`
+    EnableBetaAPI   bool `env:"FEATURE_BETA_API" default:"false"`
+    EnableAnalytics bool `env:"FEATURE_ANALYTICS" default:"true"`
+}
 
-# Database configuration
-DB_DRIVER=mysql
-DB_DSN=user:password@tcp(localhost:3306)/db
-DB_MAX_IDLE=10
-DB_MAX_OPEN=100
+func main() {
+    ctx := context.Background()
+    manager, err := configx.DefaultManager(ctx, logger)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    var cfg MyServiceConfig
+    err = manager.Bind(&cfg)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Access nested configuration
+    fmt.Printf("API Endpoint: %s\n", cfg.API.Endpoint)
+    fmt.Printf("API Timeout: %s\n", cfg.API.Timeout)
+    fmt.Printf("New UI Enabled: %t\n", cfg.Features.EnableNewUI)
+}
 ```
 
-### Configuration File (YAML)
-
-```yaml
-service_name: "user-service"
-service_version: "1.0.0"
-env: "production"
-
-http_port: ":8080"
-health_port: ":8081"
-metrics_port: ":9091"
-
-database:
-  driver: "mysql"
-  dsn: "user:password@tcp(localhost:3306)/db"
-  max_idle: 10
-  max_open: 100
-
-features:
-  enable_debug_logs: false
-  enable_metrics: true
-  enable_tracing: true
-```
-
-### Kubernetes ConfigMap
+## Kubernetes ConfigMap Integration
 
 ```yaml
 apiVersion: v1
@@ -355,280 +329,143 @@ metadata:
   name: app-config
   namespace: default
 data:
-  config.yaml: |
-    service_name: "user-service"
-    service_version: "1.0.0"
-    env: "production"
-    
-    http_port: ":8080"
-    health_port: ":8081"
-    metrics_port: ":9091"
-    
-    database:
-      driver: "mysql"
-      dsn: "user:password@tcp(mysql:3306)/db"
-      max_idle: 10
-      max_open: 100
+  DATABASE_URL: "postgres://prod-db:5432/myapp"
+  MAX_CONNS: "50"
+  DEBUG: "false"
+  RATE_LIMIT: "1000"
+  CACHE_TTL: "10m"
 ```
-
-## Service Integration
-
-### With RuntimeX
 
 ```go
 func main() {
-    // Create configuration manager
+    ctx := context.Background()
+    
+    // Set ConfigMap name via environment variable
+    os.Setenv("APP_CONFIGMAP_NAME", "app-config")
+    
+    // DefaultManager automatically detects and watches ConfigMap
     manager, err := configx.DefaultManager(ctx, logger)
     if err != nil {
         log.Fatal(err)
     }
     
-    // Load configuration
     var cfg AppConfig
-    if err := manager.Bind(&cfg); err != nil {
+    err = manager.Bind(&cfg, configx.WithUpdateCallback(func() {
+        logger.Info("configuration updated from ConfigMap")
+    }))
+    if err != nil {
         log.Fatal(err)
     }
     
-    // Create HTTP mux
-    mux := http.NewServeMux()
-    mux.HandleFunc("/", handleRoot)
-    
-    // Start runtime with configuration
-    err = runtimex.Run(ctx, cancel, runtimex.Options{
-        Logger: logger,
-        HTTP: &runtimex.HTTPOptions{
-            Addr: cfg.HTTPPort,
-            H2C:  true,
-            Mux:  mux,
-        },
-        Health:  &runtimex.Endpoint{Addr: cfg.HealthPort},
-        Metrics: &runtimex.Endpoint{Addr: cfg.MetricsPort},
-        ShutdownTimeout: 15 * time.Second,
-    })
-    
-    if err != nil {
-        logger.Error(err, "Runtime failed")
-        os.Exit(1)
-    }
+    // Configuration will automatically reload when ConfigMap changes
+    runApp(cfg)
 }
 ```
 
-### With ConnectX
+## Supported Types
+
+The Bind() method supports the following field types:
+
+- `string`
+- `int`, `int8`, `int16`, `int32`, `int64`
+- `uint`, `uint8`, `uint16`, `uint32`, `uint64`
+- `bool`
+- `float32`, `float64`
+- `time.Duration` (parsed from string like "5m", "30s")
+- Nested structs (recursively bound)
+
+## Configuration Priority
+
+When using multiple sources, later sources override earlier ones:
+
+```
+Environment Variables (lowest priority)
+    ↓
+File Sources
+    ↓
+Kubernetes ConfigMaps (highest priority)
+```
+
+Example:
+```go
+sources := []configx.Source{
+    configx.NewEnvSource(...),      // Priority 1 (lowest)
+    configx.NewFileSource(...),     // Priority 2
+    configx.NewK8sConfigMapSource(...), // Priority 3 (highest)
+}
+```
+
+If `DATABASE_URL` is set in all three sources, the ConfigMap value wins.
+
+## Integration with servicex
 
 ```go
+import (
+    "github.com/eggybyte-technology/egg/servicex"
+    "github.com/eggybyte-technology/egg/configx"
+)
+
+type AppConfig struct {
+    configx.BaseConfig
+    CustomField string `env:"CUSTOM_FIELD" default:"value"`
+}
+
 func main() {
-    // Create configuration manager
-    manager, err := configx.DefaultManager(ctx, logger)
+    ctx := context.Background()
+    cfg := &AppConfig{}
+    
+    err := servicex.Run(ctx,
+        servicex.WithConfig(cfg),  // Automatically uses configx.DefaultManager
+        servicex.WithRegister(register),
+    )
     if err != nil {
         log.Fatal(err)
     }
-    
-    // Load configuration
-    var cfg AppConfig
-    if err := manager.Bind(&cfg); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Setup Connect interceptors with configuration
-    interceptors := connectx.DefaultInterceptors(connectx.Options{
-        Logger:            logger,
-        SlowRequestMillis: cfg.Connect.SlowRequestMillis,
-        PayloadAccounting: cfg.Connect.PayloadAccounting,
-        WithRequestBody:   cfg.Connect.WithRequestBody,
-        WithResponseBody:  cfg.Connect.WithResponseBody,
-    })
-    
-    // Create Connect handler
-    path, handler := userv1connect.NewUserServiceHandler(
-        service,
-        connect.WithInterceptors(interceptors...),
-    )
-    
-    // Register handler
-    mux.Handle(path, handler)
 }
 ```
 
 ## Testing
 
 ```go
-func TestConfiguration(t *testing.T) {
-    // Create test configuration manager
-    manager, err := configx.NewManager(ctx, &TestLogger{}, configx.Options{
-        ConfigFile: "test-config.yaml",
-    })
-    assert.NoError(t, err)
+func TestConfigBinding(t *testing.T) {
+    ctx := context.Background()
+    logger := logx.New(logx.WithWriter(io.Discard))
     
-    // Load configuration
+    // Set test environment variables
+    os.Setenv("DATABASE_URL", "postgres://test-db/myapp")
+    os.Setenv("MAX_CONNS", "5")
+    os.Setenv("DEBUG", "true")
+    defer func() {
+        os.Unsetenv("DATABASE_URL")
+        os.Unsetenv("MAX_CONNS")
+        os.Unsetenv("DEBUG")
+    }()
+    
+    // Create manager
+    manager, err := configx.DefaultManager(ctx, logger)
+    require.NoError(t, err)
+    
+    // Bind configuration
     var cfg AppConfig
     err = manager.Bind(&cfg)
-    assert.NoError(t, err)
+    require.NoError(t, err)
     
-    // Verify configuration
-    assert.Equal(t, "test-service", cfg.ServiceName)
-    assert.Equal(t, "1.0.0", cfg.ServiceVersion)
-    assert.Equal(t, ":8080", cfg.HTTPPort)
-}
-
-func TestHotUpdates(t *testing.T) {
-    // Create test configuration manager
-    manager, err := configx.NewManager(ctx, &TestLogger{}, configx.Options{
-        ConfigFile:    "test-config.yaml",
-        WatchInterval: 100 * time.Millisecond,
-    })
-    assert.NoError(t, err)
-    
-    // Load configuration
-    var cfg AppConfig
-    err = manager.Bind(&cfg)
-    assert.NoError(t, err)
-    
-    // Watch for changes
-    updateCount := 0
-    err = manager.Watch(ctx, &cfg, func() {
-        updateCount++
-    })
-    assert.NoError(t, err)
-    
-    // Simulate configuration change
-    time.Sleep(200 * time.Millisecond)
-    
-    // Verify update was detected
-    assert.Greater(t, updateCount, 0)
-}
-
-type TestLogger struct{}
-
-func (l *TestLogger) With(kv ...any) log.Logger { return l }
-func (l *TestLogger) Debug(msg string, kv ...any) {}
-func (l *TestLogger) Info(msg string, kv ...any) {}
-func (l *TestLogger) Warn(msg string, kv ...any) {}
-func (l *TestLogger) Error(err error, msg string, kv ...any) {}
-```
-
-## Best Practices
-
-### 1. Use Structured Configuration
-
-```go
-type AppConfig struct {
-    configx.BaseConfig
-    
-    // Group related configuration
-    Database DatabaseConfig
-    Features FeatureConfig
-    Business BusinessConfig
-}
-
-type DatabaseConfig struct {
-    Driver  string `env:"DB_DRIVER" default:"mysql"`
-    DSN     string `env:"DB_DSN" default:"user:password@tcp(localhost:3306)/db"`
-    MaxIdle int    `env:"DB_MAX_IDLE" default:"10"`
-    MaxOpen int    `env:"DB_MAX_OPEN" default:"100"`
+    // Verify values
+    assert.Equal(t, "postgres://test-db/myapp", cfg.DatabaseURL)
+    assert.Equal(t, 5, cfg.MaxConns)
+    assert.True(t, cfg.Debug)
 }
 ```
 
-### 2. Validate Configuration
+## Stability
 
-```go
-func validateConfig(cfg interface{}) error {
-    appCfg, ok := cfg.(*AppConfig)
-    if !ok {
-        return errors.New("CONFIG_ERROR", "invalid configuration type")
-    }
-    
-    // Validate required fields
-    if utils.IsEmpty(appCfg.ServiceName) {
-        return errors.New("CONFIG_ERROR", "service name is required")
-    }
-    
-    // Validate formats
-    if !utils.IsValidPort(extractPort(appCfg.HTTPPort)) {
-        return errors.New("CONFIG_ERROR", "invalid HTTP port")
-    }
-    
-    return nil
-}
-```
+**Status**: Stable  
+**Layer**: L2 (Capability)  
+**API Guarantees**: Backward-compatible changes only
 
-### 3. Use Hot Updates
-
-```go
-func main() {
-    // Create configuration manager
-    manager, err := configx.DefaultManager(ctx, logger)
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Load configuration
-    var cfg AppConfig
-    if err := manager.Bind(&cfg); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Watch for changes
-    if err := manager.Watch(ctx, &cfg, func() {
-        logger.Info("Configuration updated")
-        updateComponents(cfg)
-    }); err != nil {
-        log.Fatal(err)
-    }
-    
-    // Start service
-    startService(cfg)
-}
-```
-
-### 4. Handle Configuration Errors
-
-```go
-func main() {
-    // Create configuration manager
-    manager, err := configx.DefaultManager(ctx, logger)
-    if err != nil {
-        logger.Error(err, "Failed to create configuration manager")
-        os.Exit(1)
-    }
-    
-    // Load configuration
-    var cfg AppConfig
-    if err := manager.Bind(&cfg); err != nil {
-        logger.Error(err, "Failed to bind configuration")
-        os.Exit(1)
-    }
-    
-    // Validate configuration
-    if err := validateConfig(&cfg); err != nil {
-        logger.Error(err, "Configuration validation failed")
-        os.Exit(1)
-    }
-    
-    // Start service
-    startService(cfg)
-}
-```
-
-## Thread Safety
-
-All functions in this package are safe for concurrent use. The configuration manager is designed to handle concurrent access safely.
-
-## Dependencies
-
-- **Go 1.21+** required
-- **Kubernetes client-go** - ConfigMap support (optional)
-- **Standard library** - Core functionality
-
-## Version Compatibility
-
-- **Go 1.21+** required
-- **API Stability**: Evolving (L3 module)
-- **Breaking Changes**: Possible in minor versions
-
-## Contributing
-
-Contributions are welcome! Please see the main project [Contributing Guide](../CONTRIBUTING.md) for details.
+The configx module is production-ready and follows semantic versioning.
 
 ## License
 
-This package is part of the EggyByte framework and is licensed under the MIT License.
+This package is part of the egg framework and is licensed under the MIT License.
+See the root LICENSE file for details.

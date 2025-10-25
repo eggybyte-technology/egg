@@ -16,19 +16,9 @@
 
 set -e  # Exit on error
 
-# ==============================================================================
-# Configuration
-# ==============================================================================
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-GRAY='\033[0;90m'
-NC='\033[0m' # No Color
+# Source the unified logger
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/logger.sh"
 
 # Test configuration
 TEST_DIR="test-egg-project"
@@ -50,35 +40,16 @@ done
 # Helper Functions
 # ==============================================================================
 
-# Print colored output with professional symbols
-print_header() {
-    echo ""
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}▶ $1${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-}
-
-print_section() {
+# Print colored output with professional symbols (using unified logger)
+print_cli_section() {
     echo ""
     echo -e "${CYAN}┌─────────────────────────────────────────────────────────────────┐${NC}"
     echo -e "${CYAN}│ $1${NC}"
     echo -e "${CYAN}└─────────────────────────────────────────────────────────────────┘${NC}"
 }
 
-print_success() {
-    echo -e "${GREEN}[✓] SUCCESS:${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[✗] ERROR:${NC} $1"
-}
-
-print_info() {
-    echo -e "${CYAN}[i] INFO:${NC} $1"
-}
-
-print_command() {
-    echo -e "${MAGENTA}[→] COMMAND:${NC} $1"
+print_cli_command() {
+    print_command "$1"
 }
 
 print_output_header() {
@@ -95,8 +66,8 @@ run_egg_command() {
     shift
     local cmd="$@"
     
-    print_section "$description"
-    print_command "$EGG_CLI $cmd"
+    print_cli_section "$description"
+    print_cli_command "$EGG_CLI $cmd"
     print_output_header
     
     # Run command and capture output
@@ -231,7 +202,7 @@ run_egg_command "Project Initialization (egg init)" init \
     --version v1.0.0
 
 # Validate directory structure
-print_section "Validating directory structure"
+print_cli_section "Validating directory structure"
 check_dir "api"
 check_dir "backend"
 check_dir "frontend"

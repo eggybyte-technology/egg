@@ -14,6 +14,7 @@
 package model
 
 import (
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,6 +30,10 @@ type User struct {
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
+
+// emailRegex defines a basic email validation pattern.
+// This regex validates that the email has a local part, @ symbol, and domain part.
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 
 // TableName returns the table name for the User model.
 // This ensures consistent table naming across environments.
@@ -47,12 +52,28 @@ func (u *User) BeforeCreate(tx *gorm.DB) error {
 
 // Validate performs basic validation on the user data.
 // Returns an error if validation fails.
+//
+// Validation rules:
+//   - Email must not be empty
+//   - Email must match a valid email format (RFC 5322 basic pattern)
+//   - Name must not be empty
+//   - Name length must be <= 255 characters
+//
+// Concurrency:
+//   - Safe for concurrent use (read-only regex)
 func (u *User) Validate() error {
 	if u.Email == "" {
 		return ErrInvalidEmail
 	}
+
+	// Validate email format using regex
+	if !emailRegex.MatchString(u.Email) {
+		return ErrInvalidEmail
+	}
+
 	if u.Name == "" {
 		return ErrInvalidName
 	}
+
 	return nil
 }

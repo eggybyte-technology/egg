@@ -25,11 +25,9 @@ package configx
 import (
 	"context"
 	"fmt"
-	"reflect"
-	"strconv"
-	"sync"
 	"time"
 
+	"github.com/eggybyte-technology/egg/configx/internal"
 	"github.com/eggybyte-technology/egg/core/log"
 )
 
@@ -108,6 +106,18 @@ type BaseConfig struct {
 	OTLPEndpoint   string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" default:""`
 	ConfigMapName  string `env:"APP_CONFIGMAP_NAME" default:""` // Empty means Env-only mode
 	DebounceMillis int    `env:"CONFIG_DEBOUNCE_MS" default:"200"`
+
+	// Database configuration (optional, embedded)
+	Database DatabaseConfig
+}
+
+// DatabaseConfig holds database connection settings.
+type DatabaseConfig struct {
+	Driver      string        `env:"DB_DRIVER" default:"mysql"`
+	DSN         string        `env:"DB_DSN" default:""`
+	MaxIdle     int           `env:"DB_MAX_IDLE" default:"10"`
+	MaxOpen     int           `env:"DB_MAX_OPEN" default:"100"`
+	MaxLifetime time.Duration `env:"DB_MAX_LIFETIME" default:"1h"`
 }
 
 // GetHTTPPort returns the HTTP server port.
@@ -125,19 +135,23 @@ func (c *BaseConfig) GetMetricsPort() string {
 	return c.MetricsPort
 }
 
-// manager implements the Manager interface.
+// manager wraps the internal manager implementation.
 type manager struct {
-	logger     log.Logger
-	sources    []Source
-	debounce   time.Duration
-	snapshot   map[string]string
-	mu         sync.RWMutex
-	updateSubs map[int]func(map[string]string)
-	subsMu     sync.RWMutex
-	nextSubID  int
+	impl *internal.ManagerImpl
 }
 
 // NewManager creates a new configuration manager.
+//
+// Parameters:
+//   - ctx: context for manager initialization
+//   - opts: manager configuration options
+//
+// Returns:
+//   - Manager: initialized manager instance
+//   - error: initialization error if any
+//
+// Concurrency:
+//   - Safe to call from multiple goroutines
 func NewManager(ctx context.Context, opts Options) (Manager, error) {
 	if opts.Logger == nil {
 		return nil, fmt.Errorf("logger is required")
@@ -147,173 +161,39 @@ func NewManager(ctx context.Context, opts Options) (Manager, error) {
 		return nil, fmt.Errorf("at least one source is required")
 	}
 
+	// Convert sources to internal type
+	internalSources := make([]internal.Source, len(opts.Sources))
+	for i, src := range opts.Sources {
+		internalSources[i] = src
+	}
+
 	// Set default debounce duration
 	debounce := opts.Debounce
 	if debounce == 0 {
 		debounce = 200 * time.Millisecond
 	}
 
-	m := &manager{
-		logger:     opts.Logger,
-		sources:    opts.Sources,
-		debounce:   debounce,
-		snapshot:   make(map[string]string),
-		updateSubs: make(map[int]func(map[string]string)),
+	impl, err := internal.NewManager(opts.Logger, internalSources, debounce)
+	if err != nil {
+		return nil, err
 	}
 
-	// Load initial configuration
-	if err := m.loadInitial(ctx); err != nil {
-		return nil, fmt.Errorf("failed to load initial configuration: %w", err)
+	// Initialize the manager
+	if err := impl.Initialize(ctx); err != nil {
+		return nil, err
 	}
 
-	// Start watching for updates
-	if err := m.startWatching(ctx); err != nil {
-		return nil, fmt.Errorf("failed to start watching: %w", err)
-	}
-
-	return m, nil
-}
-
-// loadInitial loads configuration from all sources and merges them.
-func (m *manager) loadInitial(ctx context.Context) error {
-	merged := make(map[string]string)
-
-	for i, source := range m.sources {
-		snapshot, err := source.Load(ctx)
-		if err != nil {
-			return fmt.Errorf("source %d load failed: %w", i, err)
-		}
-
-		// Merge with later sources taking precedence
-		// Only set values that are non-empty to avoid overriding env vars with empty ConfigMap values
-		for k, v := range snapshot {
-			if v != "" {
-				merged[k] = v
-			}
-		}
-	}
-
-	m.mu.Lock()
-	m.snapshot = merged
-	m.mu.Unlock()
-
-	m.logger.Info("configuration loaded", "keys", len(merged))
-	return nil
-}
-
-// startWatching starts watching all sources for updates.
-func (m *manager) startWatching(ctx context.Context) error {
-	for i, source := range m.sources {
-		updateChan, err := source.Watch(ctx)
-		if err != nil {
-			return fmt.Errorf("source %d watch failed: %w", i, err)
-		}
-
-		go m.watchSource(ctx, i, updateChan)
-	}
-
-	return nil
-}
-
-// watchSource watches a single source for updates.
-func (m *manager) watchSource(ctx context.Context, sourceIndex int, updateChan <-chan map[string]string) {
-	var debounceTimer *time.Timer
-	var pendingUpdate map[string]string
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case snapshot, ok := <-updateChan:
-			if !ok {
-				return // Channel closed
-			}
-
-			// Debounce updates
-			if debounceTimer != nil {
-				debounceTimer.Stop()
-			}
-
-			pendingUpdate = snapshot
-			debounceTimer = time.AfterFunc(m.debounce, func() {
-				m.applyUpdate(sourceIndex, pendingUpdate)
-			})
-		}
-	}
-}
-
-// applyUpdate applies a configuration update from a specific source.
-func (m *manager) applyUpdate(sourceIndex int, update map[string]string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Re-merge all sources with the updated one
-	merged := make(map[string]string)
-
-	for i, source := range m.sources {
-		var snapshot map[string]string
-		if i == sourceIndex {
-			snapshot = update
-		} else {
-			// For other sources, we'd need to cache their last snapshot
-			// For simplicity, we'll reload all sources (this could be optimized)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			snap, err := source.Load(ctx)
-			cancel()
-			if err != nil {
-				m.logger.Error(err, "failed to reload source for update", log.Int("source", i))
-				continue
-			}
-			snapshot = snap
-		}
-
-		for k, v := range snapshot {
-			if v != "" {
-				merged[k] = v
-			}
-		}
-	}
-
-	m.snapshot = merged
-	m.logger.Info("configuration updated", log.Int("keys", len(merged)))
-
-	// Notify subscribers
-	m.notifySubscribers(merged)
-}
-
-// notifySubscribers notifies all subscribers of configuration updates.
-func (m *manager) notifySubscribers(snapshot map[string]string) {
-	m.subsMu.RLock()
-	subs := make(map[int]func(map[string]string))
-	for k, v := range m.updateSubs {
-		subs[k] = v
-	}
-	m.subsMu.RUnlock()
-
-	for _, sub := range subs {
-		go sub(snapshot)
-	}
+	return &manager{impl: impl}, nil
 }
 
 // Snapshot returns a copy of the current configuration.
 func (m *manager) Snapshot() map[string]string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	snapshot := make(map[string]string, len(m.snapshot))
-	for k, v := range m.snapshot {
-		snapshot[k] = v
-	}
-	return snapshot
+	return m.impl.Snapshot()
 }
 
 // Value returns the value for a key and whether it exists.
 func (m *manager) Value(key string) (string, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	value, exists := m.snapshot[key]
-	return value, exists
+	return m.impl.Value(key)
 }
 
 // Bind decodes the configuration into a struct.
@@ -327,127 +207,78 @@ func (m *manager) Bind(target any, opts ...BindOption) error {
 		opt.apply(&cfg)
 	}
 
-	snapshot := m.Snapshot()
-	return bindToStruct(snapshot, target, cfg.onUpdate)
+	return m.impl.Bind(target, internal.BindConfig{
+		OnUpdate: cfg.onUpdate,
+	})
 }
 
 // OnUpdate subscribes to configuration update events.
 func (m *manager) OnUpdate(fn func(snapshot map[string]string)) func() {
-	m.subsMu.Lock()
-	defer m.subsMu.Unlock()
-
-	// Assign unique ID to this subscription
-	subID := m.nextSubID
-	m.nextSubID++
-	m.updateSubs[subID] = fn
-
-	// Return unsubscribe function
-	return func() {
-		m.subsMu.Lock()
-		defer m.subsMu.Unlock()
-		delete(m.updateSubs, subID)
-	}
+	return m.impl.OnUpdate(fn)
 }
 
-// bindToStruct binds configuration values to struct fields using env tags.
-func bindToStruct(snapshot map[string]string, target any, onUpdate func()) error {
-	targetValue := reflect.ValueOf(target)
-	if targetValue.Kind() != reflect.Ptr || targetValue.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("target must be a pointer to struct")
-	}
+// --- Public wrappers for source constructors (delegating to internal) ---
 
-	return bindStructFields(snapshot, targetValue.Elem())
+// NewEnvSource creates an environment variable configuration source.
+func NewEnvSource(opts EnvOptions) Source {
+	return internal.NewEnvSource(internal.EnvOptions{
+		Prefix:    opts.Prefix,
+		Lowercase: opts.Lowercase,
+		Uppercase: opts.Uppercase,
+	})
 }
 
-// bindStructFields recursively binds configuration values to struct fields.
-func bindStructFields(snapshot map[string]string, structValue reflect.Value) error {
-	structType := structValue.Type()
-
-	for i := 0; i < structValue.NumField(); i++ {
-		field := structValue.Field(i)
-		fieldType := structType.Field(i)
-
-		// Skip unexported fields
-		if !field.CanSet() {
-			continue
-		}
-
-		// Handle nested structs (embedded or regular)
-		if field.Kind() == reflect.Struct {
-			if err := bindStructFields(snapshot, field); err != nil {
-				return fmt.Errorf("failed to bind nested struct %s: %w", fieldType.Name, err)
-			}
-			continue
-		}
-
-		// Get env tag
-		envTag := fieldType.Tag.Get("env")
-		if envTag == "" {
-			continue
-		}
-
-		// Get default value
-		defaultValue := fieldType.Tag.Get("default")
-
-		// Get value from snapshot or use default
-		value, exists := snapshot[envTag]
-		if !exists {
-			value = defaultValue
-		}
-
-		// Set field value
-		if err := setFieldValue(field, value); err != nil {
-			return fmt.Errorf("failed to set field %s: %w", fieldType.Name, err)
-		}
-	}
-
-	return nil
+// NewFileSource creates a file-based configuration source.
+func NewFileSource(path string, opts FileOptions) Source {
+	return internal.NewFileSource(path, internal.FileOptions{
+		Watch:    opts.Watch,
+		Format:   opts.Format,
+		Interval: opts.Interval,
+	})
 }
 
-// setFieldValue sets a field value from a string.
-func setFieldValue(field reflect.Value, value string) error {
-	if value == "" {
-		return nil // Keep zero value
-	}
+// NewK8sConfigMapSource creates a Kubernetes ConfigMap configuration source.
+func NewK8sConfigMapSource(name string, opts K8sOptions) Source {
+	return internal.NewK8sConfigMapSource(name, internal.K8sOptions{
+		Namespace: opts.Namespace,
+		Logger:    opts.Logger,
+	})
+}
 
-	switch field.Kind() {
-	case reflect.String:
-		field.SetString(value)
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if field.Type() == reflect.TypeOf(time.Duration(0)) {
-			duration, err := time.ParseDuration(value)
-			if err != nil {
-				return err
-			}
-			field.SetInt(int64(duration))
-		} else {
-			intValue, err := strconv.ParseInt(value, 10, 64)
-			if err != nil {
-				return err
-			}
-			field.SetInt(intValue)
-		}
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		uintValue, err := strconv.ParseUint(value, 10, 64)
-		if err != nil {
-			return err
-		}
-		field.SetUint(uintValue)
-	case reflect.Bool:
-		boolValue, err := strconv.ParseBool(value)
-		if err != nil {
-			return err
-		}
-		field.SetBool(boolValue)
-	case reflect.Float32, reflect.Float64:
-		floatValue, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return err
-		}
-		field.SetFloat(floatValue)
-	default:
-		return fmt.Errorf("unsupported field type: %s", field.Kind())
+// DefaultManager creates a configuration manager with default sources (Env + optional K8s).
+func DefaultManager(ctx context.Context, logger log.Logger) (Manager, error) {
+	internalSources, err := internal.BuildSources(ctx, logger)
+	if err != nil {
+		return nil, err
 	}
+	// Convert internal.Source to configx.Source
+	sources := make([]Source, len(internalSources))
+	for i, s := range internalSources {
+		sources[i] = s
+	}
+	return NewManager(ctx, Options{
+		Logger:   logger,
+		Sources:  sources,
+		Debounce: 200 * time.Millisecond,
+	})
+}
 
-	return nil
+// EnvOptions configures environment variable source behavior.
+type EnvOptions struct {
+	Prefix    string
+	Lowercase bool
+	Uppercase bool
+}
+
+// FileOptions configures file source behavior.
+type FileOptions struct {
+	Watch    bool
+	Format   string
+	Interval time.Duration
+}
+
+// K8sOptions configures Kubernetes ConfigMap source behavior.
+type K8sOptions struct {
+	Namespace string
+	Logger    log.Logger
 }

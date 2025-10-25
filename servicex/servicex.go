@@ -1,360 +1,267 @@
 // Package servicex provides a unified microservice initialization framework with DI.
+//
+// Overview:
+//   - Responsibility: Simplify microservice startup with integrated config, logging, DB, tracing
+//   - Key Types: Options for configuration, App for service registration
+//   - Concurrency Model: All components are safe for concurrent use
+//   - Error Semantics: Initialization errors are returned immediately
+//   - Performance Notes: Components are initialized lazily when needed
+//
+// Usage:
+//
+//	type AppConfig struct {
+//	    configx.BaseConfig
+//	    CustomField string `env:"CUSTOM_FIELD" default:"value"`
+//	}
+//
+//	func register(app *servicex.App) error {
+//	    handler := myhandler.New(app.Logger())
+//	    connectx.Bind(app.Mux(), "/connect/user.v1.UserService/", handler)
+//	    return nil
+//	}
+//
+//	func main() {
+//	    ctx := context.Background()
+//	    cfg := &AppConfig{}
+//	    err := servicex.Run(ctx,
+//	        servicex.WithConfig(cfg),
+//	        servicex.WithDatabase(&cfg.Database),
+//	        servicex.WithRegister(register),
+//	    )
+//	    log.Fatal(err)
+//	}
 package servicex
 
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/eggybyte-technology/egg/configx"
-	"github.com/eggybyte-technology/egg/connectx"
 	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/logx"
 	"github.com/eggybyte-technology/egg/obsx"
-	"github.com/eggybyte-technology/egg/runtimex"
+	"github.com/eggybyte-technology/egg/servicex/internal"
 	"gorm.io/gorm"
 )
 
-// Option is a functional option for configuring the service.
-type Option func(*serviceConfig)
-
-// serviceConfig holds the service configuration.
-type serviceConfig struct {
-	serviceName    string
-	serviceVersion string
-	config         any
-	logger         log.Logger
-	enableTracing  bool
-	enableMetrics  bool
-	registerFn     func(*App) error
-
-	// Server ports
-	httpPort    string
-	healthPort  string
-	metricsPort string
-
-	// Connect options
-	defaultTimeoutMs  int64
-	slowRequestMillis int64
-
-	// Database
-	dbConfig          *DatabaseConfig
-	autoMigrateModels []any
-
-	// Shutdown
-	shutdownTimeout time.Duration
-	shutdownHooks   []func(context.Context) error
+// App provides access to service components during registration.
+type App struct {
+	mux           *http.ServeMux
+	logger        log.Logger
+	interceptors  []connect.Interceptor
+	otel          *obsx.Provider
+	container     *internal.Container
+	shutdownHooks []func(context.Context) error
+	db            *gorm.DB
 }
+
+// Mux returns the HTTP mux for handler registration.
+func (a *App) Mux() *http.ServeMux { return a.mux }
+
+// Logger returns the logger instance.
+func (a *App) Logger() log.Logger { return a.logger }
+
+// Interceptors returns the configured Connect interceptors.
+func (a *App) Interceptors() []connect.Interceptor { return a.interceptors }
+
+// OtelProvider returns the OpenTelemetry provider (may be nil if disabled).
+func (a *App) OtelProvider() *obsx.Provider { return a.otel }
+
+// Provide registers a constructor in the DI container.
+func (a *App) Provide(constructor any) error { return a.container.Provide(constructor) }
+
+// Resolve resolves a dependency from the DI container.
+func (a *App) Resolve(target any) error { return a.container.Resolve(target) }
+
+// AddShutdownHook registers a shutdown hook (executed in LIFO order at shutdown).
+func (a *App) AddShutdownHook(hook func(context.Context) error) {
+	a.shutdownHooks = append(a.shutdownHooks, hook)
+}
+
+// DB returns the GORM database instance or nil if not configured.
+func (a *App) DB() *gorm.DB { return a.db }
+
+// MustDB returns the GORM database instance or panics if not configured.
+func (a *App) MustDB() *gorm.DB {
+	if a.db == nil {
+		panic(fmt.Errorf("database not configured; use WithDatabase option"))
+	}
+	return a.db
+}
+
+// Option is a functional option for configuring the service.
+type Option func(*internal.ServiceConfig)
 
 // WithService sets the service name and version.
 func WithService(name, version string) Option {
-	return func(c *serviceConfig) {
-		c.serviceName = name
-		c.serviceVersion = version
+	return func(c *internal.ServiceConfig) {
+		c.ServiceName = name
+		c.ServiceVersion = version
 	}
 }
 
 // WithConfig sets the configuration struct.
 func WithConfig(cfg any) Option {
-	return func(c *serviceConfig) {
-		c.config = cfg
+	return func(c *internal.ServiceConfig) {
+		c.Config = cfg
 	}
 }
 
 // WithLogger sets the logger.
 func WithLogger(logger log.Logger) Option {
-	return func(c *serviceConfig) {
-		c.logger = logger
+	return func(c *internal.ServiceConfig) {
+		c.Logger = logger
 	}
 }
 
 // WithTracing enables tracing.
 func WithTracing(enabled bool) Option {
-	return func(c *serviceConfig) {
-		c.enableTracing = enabled
+	return func(c *internal.ServiceConfig) {
+		c.EnableTracing = enabled
 	}
 }
 
 // WithMetrics enables metrics.
 func WithMetrics(enabled bool) Option {
-	return func(c *serviceConfig) {
-		c.enableMetrics = enabled
+	return func(c *internal.ServiceConfig) {
+		c.EnableMetrics = enabled
 	}
 }
 
 // WithRegister sets the service registration function.
 func WithRegister(fn func(*App) error) Option {
-	return func(c *serviceConfig) {
-		c.registerFn = fn
+	return func(c *internal.ServiceConfig) {
+		c.RegisterFn = func(app interface{}) error {
+			return fn(app.(*App))
+		}
 	}
 }
 
 // WithTimeout sets the default RPC timeout in milliseconds.
 func WithTimeout(timeoutMs int64) Option {
-	return func(c *serviceConfig) {
-		c.defaultTimeoutMs = timeoutMs
+	return func(c *internal.ServiceConfig) {
+		c.DefaultTimeoutMs = timeoutMs
 	}
 }
 
 // WithSlowRequestThreshold sets the slow request threshold in milliseconds.
 func WithSlowRequestThreshold(millis int64) Option {
-	return func(c *serviceConfig) {
-		c.slowRequestMillis = millis
+	return func(c *internal.ServiceConfig) {
+		c.SlowRequestMillis = millis
 	}
 }
 
 // WithShutdownTimeout sets the graceful shutdown timeout.
 func WithShutdownTimeout(timeout time.Duration) Option {
-	return func(c *serviceConfig) {
-		c.shutdownTimeout = timeout
+	return func(c *internal.ServiceConfig) {
+		c.ShutdownTimeout = timeout
+	}
+}
+
+// WithDebugLogs enables debug-level logging.
+func WithDebugLogs(enabled bool) Option {
+	return func(c *internal.ServiceConfig) {
+		c.EnableDebug = enabled
+	}
+}
+
+// WithDatabase enables database support for the service.
+func WithDatabase(cfg *DatabaseConfig) Option {
+	return func(c *internal.ServiceConfig) {
+		if cfg != nil {
+			c.DBConfig = &internal.DatabaseConfig{
+				Driver:          cfg.Driver,
+				DSN:             cfg.DSN,
+				MaxIdleConns:    cfg.MaxIdleConns,
+				MaxOpenConns:    cfg.MaxOpenConns,
+				ConnMaxLifetime: cfg.ConnMaxLifetime,
+				PingTimeout:     cfg.PingTimeout,
+			}
+		}
+	}
+}
+
+// WithAutoMigrate specifies database models to auto-migrate during startup.
+func WithAutoMigrate(models ...any) Option {
+	return func(c *internal.ServiceConfig) {
+		c.AutoMigrateModels = models
 	}
 }
 
 // Run starts the service with the given options.
+//
+// Parameters:
+//   - ctx: context for service lifecycle
+//   - opts: functional options for service configuration
+//
+// Returns:
+//   - error: service error if any
+//
+// Concurrency:
+//   - Blocks until context is cancelled
+//   - All components run concurrently
 func Run(ctx context.Context, opts ...Option) error {
-	// Build configuration
-	cfg := &serviceConfig{
-		serviceName:       "app",
-		serviceVersion:    "0.0.0",
-		enableTracing:     true,
-		enableMetrics:     true,
-		httpPort:          ":8080",
-		healthPort:        ":8081",
-		metricsPort:       ":9091",
-		defaultTimeoutMs:  30000,
-		slowRequestMillis: 1000,
-		shutdownTimeout:   15 * time.Second,
-	}
+	cfg := internal.NewServiceConfig()
 
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
-	// Create or use provided logger
-	if cfg.logger == nil {
-		// Use logx as default logger with logfmt format
-		cfg.logger = logx.New(
-			logx.WithFormat(logx.FormatLogfmt),
-			logx.WithLevel(slog.LevelInfo),
-			logx.WithColor(false),
-		)
+	runtime, err := internal.NewServiceRuntime(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create runtime: %w", err)
 	}
 
-	// Log startup banner with service identity (only at initialization)
-	cfg.logger.Info("starting service",
-		"service", cfg.serviceName,
-		"version", cfg.serviceVersion,
-	)
+	return runtime.Run(ctx)
+}
 
-	// Initialize configuration if provided
-	var configMgr configx.Manager
-	var err error
-	if cfg.config != nil {
-		configMgr, err = configx.DefaultManager(ctx, cfg.logger)
-		if err != nil {
-			return fmt.Errorf("config init failed: %w", err)
-		}
-		if err := configMgr.Bind(cfg.config); err != nil {
-			return fmt.Errorf("config bind failed: %w", err)
-		}
+// DatabaseConfig holds database connection configuration.
+type DatabaseConfig struct {
+	Driver          string        `env:"DB_DRIVER" default:"mysql"`
+	DSN             string        `env:"DB_DSN" default:""`
+	MaxIdleConns    int           `env:"DB_MAX_IDLE" default:"10"`
+	MaxOpenConns    int           `env:"DB_MAX_OPEN" default:"100"`
+	ConnMaxLifetime time.Duration `env:"DB_MAX_LIFETIME" default:"1h"`
+	PingTimeout     time.Duration `env:"DB_PING_TIMEOUT" default:"5s"`
+}
 
-		// Extract port configuration from BaseConfig if available
-		if baseGetter, ok := cfg.config.(interface {
-			GetHTTPPort() string
-			GetHealthPort() string
-			GetMetricsPort() string
-		}); ok {
-			if port := baseGetter.GetHTTPPort(); port != "" {
-				cfg.httpPort = port
-			}
-			if port := baseGetter.GetHealthPort(); port != "" {
-				cfg.healthPort = port
-			}
-			if port := baseGetter.GetMetricsPort(); port != "" {
-				cfg.metricsPort = port
-			}
-		}
+// DatabaseMigrator defines a function that performs database migrations.
+type DatabaseMigrator func(db *gorm.DB) error
+
+// ServiceRegistrar defines a function that registers services with the application.
+type ServiceRegistrar func(app *App) error
+
+// Options documents high-level configuration shape for one-call startup.
+type Options struct {
+	ServiceName       string `env:"SERVICE_NAME" default:"app"`
+	ServiceVersion    string `env:"SERVICE_VERSION" default:"0.0.0"`
+	Config            any
+	Database          *DatabaseConfig
+	Migrate           DatabaseMigrator
+	Register          ServiceRegistrar
+	EnableTracing     bool          `env:"ENABLE_TRACING" default:"true"`
+	EnableHealthCheck bool          `env:"ENABLE_HEALTH_CHECK" default:"true"`
+	EnableMetrics     bool          `env:"ENABLE_METRICS" default:"true"`
+	EnableDebugLogs   bool          `env:"ENABLE_DEBUG_LOGS" default:"false"`
+	SlowRequestMillis int64         `env:"SLOW_REQUEST_MILLIS" default:"1000"`
+	PayloadAccounting bool          `env:"PAYLOAD_ACCOUNTING" default:"true"`
+	ShutdownTimeout   time.Duration `env:"SHUTDOWN_TIMEOUT" default:"15s"`
+	Logger            log.Logger
+}
+
+// FromBaseConfig creates a DatabaseConfig from configx.DatabaseConfig.
+func FromBaseConfig(dbCfg *configx.DatabaseConfig) *DatabaseConfig {
+	if dbCfg == nil {
+		return nil
 	}
-
-	// Initialize database if configured
-	var db any // Using any to avoid import cycle; will be *gorm.DB
-	if cfg.dbConfig != nil {
-		cfg.logger.Info("initializing database", "driver", cfg.dbConfig.Driver)
-		db, err = initDatabase(ctx, cfg.dbConfig, cfg.logger)
-		if err != nil {
-			return fmt.Errorf("database init failed: %w", err)
-		}
-
-		// Run auto-migration if models provided
-		if len(cfg.autoMigrateModels) > 0 {
-			if gormDB, ok := db.(interface{ AutoMigrate(...interface{}) error }); ok {
-				if err := autoMigrate(gormDB.(*gorm.DB), cfg.logger, cfg.autoMigrateModels); err != nil {
-					return fmt.Errorf("auto-migration failed: %w", err)
-				}
-			}
-		}
+	return &DatabaseConfig{
+		Driver:          dbCfg.Driver,
+		DSN:             dbCfg.DSN,
+		MaxIdleConns:    dbCfg.MaxIdle,
+		MaxOpenConns:    dbCfg.MaxOpen,
+		ConnMaxLifetime: dbCfg.MaxLifetime,
+		PingTimeout:     5 * time.Second,
 	}
-
-	// Initialize observability
-	var otelProvider *obsx.Provider
-	if cfg.enableTracing {
-		otelProvider, err = obsx.NewProvider(ctx, obsx.Options{
-			ServiceName:    cfg.serviceName,
-			ServiceVersion: cfg.serviceVersion,
-		})
-		if err != nil {
-			cfg.logger.Error(err, "otel init failed, continuing without tracing")
-		}
-	}
-
-	// Create HTTP mux for application routes
-	mux := http.NewServeMux()
-
-	// Create separate health check mux
-	healthMux := http.NewServeMux()
-
-	// Register health check endpoints on health mux
-	healthMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// Check all registered health checkers
-		ctx := r.Context()
-		if err := runtimex.CheckHealth(ctx); err != nil {
-			cfg.logger.Error(err, "health check failed")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, `{"status":"unhealthy","error":"%s"}`, err.Error())
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"status":"healthy"}`)
-	})
-
-	healthMux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// Readiness is same as health for now
-		ctx := r.Context()
-		if err := runtimex.CheckHealth(ctx); err != nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, `{"status":"not_ready","error":"%s"}`, err.Error())
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"status":"ready"}`)
-	})
-
-	healthMux.HandleFunc("/live", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"status":"alive"}`)
-	})
-
-	// Build default interceptors
-	interceptors := connectx.DefaultInterceptors(connectx.Options{
-		Logger:            cfg.logger,
-		Otel:              otelProvider,
-		DefaultTimeoutMs:  cfg.defaultTimeoutMs,
-		EnableTimeout:     true,
-		SlowRequestMillis: cfg.slowRequestMillis,
-	})
-
-	// Create App instance for DI and registration
-	app := &App{
-		mux:           mux,
-		logger:        cfg.logger,
-		interceptors:  interceptors,
-		otel:          otelProvider,
-		container:     newContainer(),
-		shutdownHooks: cfg.shutdownHooks,
-	}
-
-	// Set database if initialized
-	if db != nil {
-		if gormDB, ok := db.(*gorm.DB); ok {
-			app.db = gormDB
-		}
-	}
-
-	// Register services
-	if cfg.registerFn != nil {
-		if err := cfg.registerFn(app); err != nil {
-			return fmt.Errorf("service registration failed: %w", err)
-		}
-	}
-
-	// Start HTTP server for application routes
-	httpServer := &http.Server{
-		Addr:    cfg.httpPort,
-		Handler: mux,
-	}
-
-	// Start health check server
-	healthServer := &http.Server{
-		Addr:    cfg.healthPort,
-		Handler: healthMux,
-	}
-
-	// Start HTTP server
-	go func() {
-		cfg.logger.Info("HTTP server listening", "addr", cfg.httpPort)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			cfg.logger.Error(err, "HTTP server error")
-		}
-	}()
-
-	// Start health check server
-	go func() {
-		cfg.logger.Info("health check server listening", "addr", cfg.healthPort)
-		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			cfg.logger.Error(err, "health server error")
-		}
-	}()
-
-	// Wait for context cancellation
-	<-ctx.Done()
-	cfg.logger.Info("shutting down service")
-
-	// Execute shutdown hooks in LIFO order
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.shutdownTimeout)
-	defer cancel()
-
-	for i := len(app.shutdownHooks) - 1; i >= 0; i-- {
-		if err := app.shutdownHooks[i](shutdownCtx); err != nil {
-			cfg.logger.Error(err, "shutdown hook failed", "index", i)
-		}
-	}
-
-	// Shutdown health check server
-	if err := healthServer.Shutdown(shutdownCtx); err != nil {
-		cfg.logger.Error(err, "health server shutdown failed")
-	}
-
-	// Shutdown HTTP server
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		cfg.logger.Error(err, "HTTP server shutdown failed")
-	}
-
-	// Shutdown observability
-	if otelProvider != nil {
-		if err := otelProvider.Shutdown(shutdownCtx); err != nil {
-			cfg.logger.Error(err, "otel shutdown failed")
-		}
-	}
-
-	cfg.logger.Info("service stopped")
-	return nil
 }

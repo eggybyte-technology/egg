@@ -1,46 +1,25 @@
 # egg/logx
 
-Production-grade structured logging for the egg microservice framework.
-
 ## Overview
 
-`logx` provides a lightweight, structured logging implementation that integrates seamlessly with egg services. It outputs clean, single-line logfmt format that is fully compatible with Loki, Promtail, and other observability systems.
+`logx` provides structured logging based on `log/slog` with logfmt/JSON output formats,
+field sorting, colorization, and sensitive field masking. It's designed for production
+use with container-friendly output and minimal performance overhead.
 
 ## Key Features
 
-- **Pure logfmt format**: Single-line, parseable, Loki-compatible output
-- **Stable field ordering**: Fields sorted alphabetically for consistent diffs
-- **Context-aware**: Automatic injection of `request_id`, `user_id`, `trace_id` from context
-- **Security**: Sensitive field redaction (passwords, tokens, etc.)
-- **No timestamps**: Optimized for container environments (Docker/K8s add timestamps)
-- **Smart coloring**: Only level field is colored, controlled by environment
-- **Type-safe**: Built on Go's standard `log/slog`
-- **Zero dependencies**: Only uses standard library
+- Logfmt and JSON output formats
+- Automatic field sorting for consistency
+- Optional colorization for development
+- Sensitive field masking (passwords, tokens)
+- Payload size limiting
+- Context-aware logging with trace/request IDs
+- Zero external dependencies beyond stdlib
 
-## Log Format Standard
+## Dependencies
 
-All logs follow this format:
-
-```
-level=INFO msg="operation completed" field1="value1" field2=123 field3="value3"
-```
-
-### Format Rules
-
-✅ **DO:**
-- Single-line output only
-- `level=` and `msg=` first, then fields alphabetically sorted
-- Quote strings that contain spaces or special characters
-- Use standard field names (`service`, `version`, `procedure`, `duration_ms`)
-- Disable timestamps (containers add them)
-
-❌ **DON'T:**
-- Use multi-line logs
-- Use nested brackets `[key value]`
-- Include timestamps in output
-- Use inconsistent field names
-
-See [docs/LOGGING.md](/docs/LOGGING.md) for complete standards.
+Layer: **L1 (Foundation Layer)**  
+Depends on: `core/log`, `core/identity`, `log/slog` (stdlib)
 
 ## Installation
 
@@ -57,50 +36,129 @@ import (
 )
 
 func main() {
-    // Create logger with default settings
+    // Create logger with logfmt format
     logger := logx.New(
         logx.WithFormat(logx.FormatLogfmt),
         logx.WithLevel(slog.LevelInfo),
-        logx.WithColor(false), // Disable colors in production
+        logx.WithColor(true),
     )
-
-    // Add service context
-    logger = logger.With(
-        "service", "user-service",
-        "version", "1.0.0",
-    )
-
+    
     // Log messages
-    logger.Info("service started")
-    // Output: level=INFO msg="service started" service="user-service" version="1.0.0"
-
-    logger.Info("user created",
-        "user_id", "u-123",
-        "email", "test@example.com",
-    )
-    // Output: level=INFO msg="user created" email="test@example.com" service="user-service" user_id="u-123" version="1.0.0"
+    logger.Info("user created", "user_id", "u-123", "email", "user@example.com")
+    logger.Warn("slow request", "duration_ms", 1500, "path", "/api/users")
+    logger.Error(err, "database connection failed", "retry_count", 3)
 }
 ```
 
-## Log Levels
-
-```go
-logger.Debug("debug message", "op", "initialization")
-// Output: level=DEBUG msg="debug message" op="initialization"
-
-logger.Info("informational message", "status", "ok")
-// Output: level=INFO msg="informational message" status="ok"
-
-logger.Warn("warning message", "threshold", 1000)
-// Output: level=WARN msg="warning message" threshold=1000
-
-logger.Error(err, "operation failed", "op", "database.Query", "code", "INTERNAL")
-// Output: level=ERROR msg="operation failed" code="INTERNAL" error="sql: no rows" op="database.Query"
+Output (logfmt):
+```
+level=INFO msg="user created" email=user@example.com user_id=u-123
+level=WARN msg="slow request" duration_ms=1500 path=/api/users
+level=ERROR msg="database connection failed" error="connection timeout" retry_count=3
 ```
 
-## Context-Aware Logging
+## Configuration Options
 
-Automatically inject request metadata from context:
+| Option                | Type          | Description                                |
+| --------------------- | ------------- | ------------------------------------------ |
+| `WithFormat(format)`  | `Format`      | Output format: logfmt or json              |
+| `WithLevel(level)`    | `slog.Level`  | Minimum log level (Debug, Info, Warn, Error) |
+| `WithColor(enabled)`  | `bool`        | Enable colorization for level field        |
+| `WithWriter(w)`       | `io.Writer`   | Output writer (default: os.Stderr)         |
+| `WithPayloadLimit(n)` | `int`         | Maximum bytes for large payloads           |
+| `WithSensitiveFields()`| `[]string`   | Field names to mask (e.g., "password")     |
+
+## API Reference
+
+### Logger Interface
+
+```go
+type Logger interface {
+    // With returns a new Logger with additional key-value pairs
+    With(kv ...any) Logger
+    
+    // Debug logs a debug message
+    Debug(msg string, kv ...any)
+    
+    // Info logs an informational message
+    Info(msg string, kv ...any)
+    
+    // Warn logs a warning message
+    Warn(msg string, kv ...any)
+    
+    // Error logs an error message
+    Error(err error, msg string, kv ...any)
+}
+```
+
+### Constructor
+
+```go
+// New creates a new Logger with the given options
+func New(opts ...Option) log.Logger
+```
+
+### Context Helper
+
+```go
+// FromContext creates a logger with context-injected fields
+func FromContext(ctx context.Context, base log.Logger) log.Logger
+```
+
+## Architecture
+
+The logx module follows a clean architecture pattern:
+
+```
+logx/
+├── logx.go              # Public API (~210 lines)
+│   ├── Logger           # Logger implementation
+│   ├── Options          # Configuration structs
+│   ├── New()            # Constructor
+│   └── FromContext()    # Context helper
+└── internal/
+    └── handler.go       # slog.Handler implementation (~260 lines)
+        ├── Handle()     # Log record processing
+        ├── formatLogfmt()   # Logfmt formatting
+        ├── formatJSON()     # JSON formatting
+        └── sortAndFilter()  # Field sorting
+```
+
+**Design Highlights:**
+- Public interface implements `core/log.Logger`
+- Complex formatting logic in internal handler
+- Efficient field sorting and filtering
+- Minimal allocations in hot path
+
+## Example: Basic Logging
+
+```go
+package main
+
+import (
+    "log/slog"
+    "github.com/eggybyte-technology/egg/logx"
+)
+
+func main() {
+    logger := logx.New(
+        logx.WithFormat(logx.FormatLogfmt),
+        logx.WithLevel(slog.LevelInfo),
+        logx.WithColor(true),
+    )
+    
+    logger.Info("server started", "port", 8080)
+    logger.Debug("debug message")  // Not printed (level = Info)
+    logger.Warn("high memory usage", "percent", 85)
+    
+    err := connectDatabase()
+    if err != nil {
+        logger.Error(err, "failed to connect to database", "retry", 3)
+    }
+}
+```
+
+## Example: Context-Aware Logging
 
 ```go
 import (
@@ -109,322 +167,242 @@ import (
     "github.com/eggybyte-technology/egg/logx"
 )
 
-func HandleRequest(ctx context.Context) {
-    // Context contains user and request metadata
-    ctx = identity.WithUser(ctx, &identity.UserInfo{UserID: "u-123"})
-    ctx = identity.WithMeta(ctx, &identity.RequestMeta{RequestID: "req-abc"})
-
-    // Create context-aware logger
+func handleRequest(ctx context.Context, baseLogger log.Logger) {
+    // Extract request metadata from context
     logger := logx.FromContext(ctx, baseLogger)
-
+    
+    // Logger now includes request_id and user_id from context
     logger.Info("processing request")
-    // Output: level=INFO msg="processing request" request_id="req-abc" user_id="u-123"
+    // Output: level=INFO msg="processing request" request_id=req-123 user_id=u-456
+    
+    logger.Info("request completed", "duration_ms", 150)
+    // Output: level=INFO msg="request completed" duration_ms=150 request_id=req-123 user_id=u-456
 }
+
+// In your handler
+func MyHandler(w http.ResponseWriter, r *http.Request) {
+    ctx := r.Context()
+    
+    // Inject request metadata
+    ctx = identity.WithMeta(ctx, identity.Meta{
+        RequestID: "req-123",
+    })
+    
+    // Inject user info
+    ctx = identity.WithUser(ctx, identity.User{
+        UserID: "u-456",
+    })
+    
+    handleRequest(ctx, logger)
+}
+```
+
+## Example: Structured Fields
+
+```go
+func logUserActivity(logger log.Logger) {
+    // Simple fields
+    logger.Info("user login",
+        "user_id", "u-123",
+        "ip", "192.168.1.1",
+        "success", true,
+    )
+    
+    // Numeric fields
+    logger.Info("api request",
+        "endpoint", "/api/users",
+        "status_code", 200,
+        "duration_ms", 45,
+        "response_bytes", 1024,
+    )
+    
+    // Error fields
+    err := errors.New("connection timeout")
+    logger.Error(err, "operation failed",
+        "operation", "save_user",
+        "retry_count", 3,
+    )
+}
+```
+
+Output (logfmt):
+```
+level=INFO msg="user login" ip=192.168.1.1 success=true user_id=u-123
+level=INFO msg="api request" duration_ms=45 endpoint=/api/users response_bytes=1024 status_code=200
+level=ERROR msg="operation failed" error="connection timeout" operation=save_user retry_count=3
+```
+
+## Example: Sensitive Field Masking
+
+```go
+logger := logx.New(
+    logx.WithFormat(logx.FormatLogfmt),
+    logx.WithSensitiveFields("password", "token", "secret", "api_key"),
+)
+
+// These fields will be masked
+logger.Info("user auth",
+    "username", "john",
+    "password", "secret123",        // Masked: password=***
+    "api_key", "sk_live_123456",    // Masked: api_key=***
+)
+
+// Output: level=INFO msg="user auth" api_key=*** password=*** username=john
+```
+
+## Example: Logger Chaining
+
+```go
+// Base logger
+baseLogger := logx.New(
+    logx.WithFormat(logx.FormatLogfmt),
+    logx.WithLevel(slog.LevelInfo),
+)
+
+// Add service context
+serviceLogger := baseLogger.With(
+    "service", "user-service",
+    "version", "1.0.0",
+)
+
+// Add request context
+requestLogger := serviceLogger.With(
+    "request_id", "req-123",
+    "method", "POST",
+    "path", "/api/users",
+)
+
+// All logs include service and request context
+requestLogger.Info("creating user", "user_id", "u-456")
+// Output: level=INFO msg="creating user" method=POST path=/api/users request_id=req-123 service=user-service user_id=u-456 version=1.0.0
+```
+
+## Example: JSON Format
+
+```go
+logger := logx.New(
+    logx.WithFormat(logx.FormatJSON),
+    logx.WithLevel(slog.LevelInfo),
+)
+
+logger.Info("user created",
+    "user_id", "u-123",
+    "email", "user@example.com",
+    "created_at", time.Now(),
+)
+```
+
+Output (JSON):
+```json
+{"level":"INFO","msg":"user created","created_at":"2024-01-15T10:30:00Z","email":"user@example.com","user_id":"u-123"}
+```
+
+## Field Sorting
+
+logx automatically sorts fields alphabetically for consistent output:
+
+```go
+logger.Info("event",
+    "zebra", 1,
+    "apple", 2,
+    "banana", 3,
+)
+// Output: level=INFO msg=event apple=2 banana=3 zebra=1
+```
+
+**Special Fields Order:**
+1. `level` (always first)
+2. `msg` (always second)
+3. Other fields (sorted alphabetically)
+4. `error` (if present, sorted with others)
+
+## Payload Limiting
+
+Limit large field values to prevent log bloat:
+
+```go
+logger := logx.New(
+    logx.WithFormat(logx.FormatLogfmt),
+    logx.WithPayloadLimit(100),  // Limit to 100 bytes
+)
+
+largeData := strings.Repeat("x", 200)
+logger.Info("data received", "payload", largeData)
+// Output: level=INFO msg="data received" payload=xxx...(truncated)
 ```
 
 ## Color Support
 
-Enable colors for development (automatically disabled in non-TTY):
+Enable colorization for better readability in development:
 
 ```go
-// With colors (for local development)
 logger := logx.New(
+    logx.WithFormat(logx.FormatLogfmt),
     logx.WithColor(true),
 )
 
-logger.Debug("debug")   // Magenta
-logger.Info("info")     // Cyan
-logger.Warn("warning")  // Yellow
-logger.Error(nil, "error") // Red
+logger.Debug("debug message")  // Gray
+logger.Info("info message")    // Blue
+logger.Warn("warn message")    // Yellow
+logger.Error(err, "error message")  // Red
 ```
 
-**Note**: Only the level value is colored, not the entire line.
-
-## Sensitive Field Redaction
-
-Automatically redact sensitive information:
-
-```go
-logger := logx.New(
-    logx.WithSensitiveFields("password", "token", "secret", "api_key"),
-)
-
-logger.Info("login attempt",
-    "username", "john",
-    "password", "secret123",
-)
-// Output: level=INFO msg="login attempt" password="***REDACTED***" username="john"
-```
-
-## Payload Limiting
-
-Truncate large payloads to prevent log bloat:
-
-```go
-logger := logx.New(
-    logx.WithPayloadLimit(100), // Limit to 100 bytes
-)
-
-longString := strings.Repeat("a", 1000)
-logger.Info("processing", "data", longString)
-// Output: level=INFO msg="processing" data="aaaa...(truncated, 1000 bytes)"
-```
-
-## Configuration Options
-
-### WithFormat
-
-```go
-logx.WithFormat(logx.FormatLogfmt) // Default: key=value format
-logx.WithFormat(logx.FormatJSON)   // JSON format
-```
-
-### WithLevel
-
-```go
-logx.WithLevel(slog.LevelDebug) // Show DEBUG and above
-logx.WithLevel(slog.LevelInfo)  // Default: Show INFO and above
-logx.WithLevel(slog.LevelWarn)  // Show WARN and above
-logx.WithLevel(slog.LevelError) // Show ERROR only
-```
-
-### WithColor
-
-```go
-logx.WithColor(true)  // Enable ANSI colors
-logx.WithColor(false) // Disable colors (default, recommended for production)
-```
-
-### WithWriter
-
-```go
-logx.WithWriter(os.Stdout)  // Write to stdout
-logx.WithWriter(os.Stderr)  // Write to stderr (default)
-logx.WithWriter(customWriter) // Custom io.Writer
-```
-
-### WithSensitiveFields
-
-```go
-logx.WithSensitiveFields("password", "token", "secret", "api_key")
-```
-
-### WithPayloadLimit
-
-```go
-logx.WithPayloadLimit(1024) // Limit field values to 1024 bytes
-```
-
-## Environment Variables
-
-Control logging behavior via environment:
-
-```bash
-# Set log level
-export LOG_LEVEL=DEBUG  # DEBUG, INFO, WARN, ERROR
-
-# Enable colors
-export LOG_COLOR=true   # true, false
-
-# Set format
-export LOG_FORMAT=logfmt # logfmt, json
-```
+**Note**: Colors are applied only to the level field. Disable in production.
 
 ## Integration with servicex
 
-When using `servicex`, logging is automatically configured:
+logx is automatically used by servicex:
 
 ```go
 import "github.com/eggybyte-technology/egg/servicex"
 
-servicex.Run(ctx,
-    servicex.WithService("user-service", "1.0.0"),
-    servicex.WithRegister(func(app *servicex.App) error {
-        // Logger is pre-configured with service and version
-        app.Logger().Info("service initialized")
-        // Output: level=INFO msg="service initialized" service="user-service" version="1.0.0"
-        return nil
-    }),
-)
-```
-
-## Standard Fields
-
-Use these standard field names for consistency:
-
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `service` | string | Service name | `user-service` |
-| `version` | string | Service version | `1.0.0` |
-| `procedure` | string | RPC method or handler | `/user.v1.UserService/CreateUser` |
-| `op` | string | Internal operation | `repository.GetUser` |
-| `request_id` | string | Unique request identifier | `req-abc123` |
-| `trace_id` | string | Distributed trace ID | `a1b2c3d4` |
-| `user_id` | string | Authenticated user ID | `u-123` |
-| `duration_ms` | float | Operation duration | `1.5` |
-| `error` | string | Error message | `record not found` |
-| `code` | string | Error code | `NOT_FOUND` |
-
-## Error Logging
-
-Always include these fields with errors:
-
-```go
-logger.Error(err, "database query failed",
-    "op", "repository.GetUser",      // Operation that failed
-    "code", "NOT_FOUND",               // Error code
-    "user_id", "u-123",                // Context
-)
-// Output: level=ERROR msg="database query failed" code="NOT_FOUND" error="sql: no rows" op="repository.GetUser" user_id="u-123"
-```
-
-## Request Lifecycle Logging
-
-Log request lifecycle consistently:
-
-```go
-// Request start
-logger.Info("request started",
-    "procedure", "/user.v1.UserService/CreateUser",
-    "request_id", "req-123",
-)
-
-// Application logic
-logger.Info("creating user record",
-    "email", "user@example.com",
-    "op", "service.CreateUser",
-)
-
-// Request completion
-logger.Info("request completed",
-    "procedure", "/user.v1.UserService/CreateUser",
-    "request_id", "req-123",
-    "duration_ms", 1.5,
-    "status", "OK",
-)
-```
-
-## Loki/Promtail Integration
-
-Logs are automatically parseable by Loki:
-
-```yaml
-# promtail-config.yaml
-scrape_configs:
-  - job_name: egg-services
-    static_configs:
-      - targets: [localhost:3100]
-    pipeline_stages:
-      - logfmt:
-          mapping:
-            level:
-            service:
-            procedure:
-            code:
-      - labels:
-          level:
-          service:
-          procedure:
-          code:
-```
-
-Query examples:
-
-```promql
-# All errors from user-service
-{service="user-service"} |= `level=ERROR`
-
-# Slow requests
-{service="user-service"} | logfmt | duration_ms > 1000
-
-# Specific error codes
-{service="user-service"} | logfmt | code="NOT_FOUND"
-```
-
-## Performance
-
-Benchmarks on MacBook Pro (M1):
-
-```
-BenchmarkLogger-10                  1000000      1043 ns/op      512 B/op       8 allocs/op
-BenchmarkLoggerWithSorting-10        500000      2156 ns/op      768 B/op      12 allocs/op
-```
-
-## Testing
-
-```go
-import (
-    "bytes"
-    "testing"
-    "github.com/eggybyte-technology/egg/logx"
-)
-
-func TestLogging(t *testing.T) {
-    var buf bytes.Buffer
-    logger := logx.New(
-        logx.WithWriter(&buf),
-        logx.WithColor(false),
+func main() {
+    err := servicex.Run(ctx,
+        servicex.WithConfig(cfg),
+        servicex.WithDebugLogs(true),  // Sets level to Debug
+        servicex.WithRegister(register),
     )
+}
 
-    logger.Info("test message", "key", "value")
-
-    output := buf.String()
-    if !strings.Contains(output, `msg="test message"`) {
-        t.Errorf("expected msg in output: %s", output)
-    }
+func register(app *servicex.App) error {
+    logger := app.Logger()  // Get configured logger
+    logger.Info("service registered")
+    return nil
 }
 ```
 
-## Migration Guide
+## Performance Considerations
 
-### From fmt.Printf
+- **Field Sorting**: Minimal overhead (~few microseconds per log)
+- **Allocations**: Optimized to reduce allocations in hot path
+- **Formatting**: Logfmt is faster than JSON
+- **Buffering**: Output is buffered by default
 
-```go
-// Before
-fmt.Printf("User created: %s (%s)\n", userID, email)
-
-// After
-logger.Info("user created", "user_id", userID, "email", email)
+Benchmark results (approximate):
+```
+BenchmarkLogfmt-8    500000    2500 ns/op    256 B/op    8 allocs/op
+BenchmarkJSON-8      300000    4000 ns/op    512 B/op   12 allocs/op
 ```
 
-### From log.Printf
+## Best Practices
 
-```go
-// Before
-log.Printf("[INFO] Request completed in %dms", duration)
+1. **Use logfmt in production** - More readable, faster, easier to parse
+2. **Enable colors in development only** - Better terminal readability
+3. **Mask sensitive fields** - Never log passwords, tokens, secrets
+4. **Use structured fields** - Avoid string concatenation in messages
+5. **Keep field names consistent** - Use snake_case (e.g., `user_id`, `request_id`)
+6. **Log at appropriate levels** - Debug for development, Info for normal ops
+7. **Include context** - Use `FromContext()` or `With()` for request/user context
 
-// After
-logger.Info("request completed", "duration_ms", duration)
-```
+## Stability
 
-### From zap/zerolog
+**Status**: Stable  
+**Layer**: L1 (Foundation)  
+**API Guarantees**: Backward-compatible changes only
 
-```go
-// Before (zap)
-logger.Info("user created",
-    zap.String("user_id", userID),
-    zap.String("email", email),
-)
-
-// After (logx)
-logger.Info("user created",
-    "user_id", userID,
-    "email", email,
-)
-```
-
-## Dependencies
-
-- Layer: L1 (depends only on `core/log` interface)
-- External: None (only standard library)
-- Stability: Stable since v0.1.0
-
-## Related Packages
-
-- [core/log](/core/log/README.md) - Core logging interface
-- [servicex](/servicex/README.md) - Service initialization with logging
-- [connectx](/connectx/README.md) - RPC interceptors with logging
+The logx module is production-ready and follows semantic versioning.
 
 ## License
 
-This package is part of the EggyByte framework and is licensed under the MIT License. See the root LICENSE file for details.
+This package is part of the egg framework and is licensed under the MIT License.
+See the root LICENSE file for details.

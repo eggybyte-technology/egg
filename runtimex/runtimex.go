@@ -71,6 +71,18 @@ type Options struct {
 // Run starts all services and manages their lifecycle.
 // This function blocks until the context is cancelled or an error occurs.
 // Services are started concurrently and stopped gracefully on shutdown.
+//
+// Parameters:
+//   - ctx: context for lifecycle management
+//   - services: list of services to manage
+//   - opts: runtime configuration options
+//
+// Returns:
+//   - error: runtime error if any
+//
+// Concurrency:
+//   - Services are started and stopped concurrently
+//   - Blocks until context is cancelled
 func Run(ctx context.Context, services []Service, opts Options) error {
 	if opts.Logger == nil {
 		return fmt.Errorf("logger is required")
@@ -143,4 +155,49 @@ func Run(ctx context.Context, services []Service, opts Options) error {
 	}
 
 	return nil
+}
+
+// --- Health check aggregation ---
+
+// HealthChecker defines the interface for health checks.
+// Implementations should perform quick checks and honor context deadlines.
+type HealthChecker interface {
+	// Name returns the name of the health check.
+	Name() string
+	// Check performs the health check and returns an error if unhealthy.
+	Check(ctx context.Context) error
+}
+
+// RegisterHealthChecker registers a global health checker.
+//
+// Parameters:
+//   - checker: health checker implementation
+//
+// Concurrency:
+//   - Safe for concurrent use
+func RegisterHealthChecker(checker HealthChecker) {
+	internal.RegisterHealthChecker(checker)
+}
+
+// CheckHealth runs all registered health checkers.
+// Returns nil if all checks pass, otherwise returns the first error.
+//
+// Parameters:
+//   - ctx: context with deadline for checks
+//
+// Returns:
+//   - error: first error encountered, or nil if all pass
+//
+// Concurrency:
+//   - Safe for concurrent use
+func CheckHealth(ctx context.Context) error {
+	return internal.CheckHealth(ctx)
+}
+
+// ClearHealthCheckers clears all registered health checkers (intended for testing).
+//
+// Concurrency:
+//   - Safe for concurrent use
+func ClearHealthCheckers() {
+	internal.ClearHealthCheckers()
 }

@@ -16,91 +16,221 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
+	"connectrpc.com/connect"
+	"github.com/eggybyte-technology/egg/core/errors"
 	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/servicex"
+	{{.ServiceNameCamel}}v1connect "{{.ModulePrefix}}/backend/{{.ServiceName}}/gen/go/{{.ServiceName}}/v1/{{.ServiceName}}v1connect"
 	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/config"
 	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/handler"
 	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/model"
 	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/repository"
 	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/service"
+	"github.com/eggybyte-technology/egg/servicex"
+	"github.com/eggybyte-technology/egg/storex"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-// SimpleLogger implements the log.Logger interface for basic logging.
-type SimpleLogger struct{}
-
-func (l *SimpleLogger) With(kv ...any) log.Logger   { return l }
-func (l *SimpleLogger) Debug(msg string, kv ...any) { fmt.Printf("[DEBUG] %s %v\n", msg, kv) }
-func (l *SimpleLogger) Info(msg string, kv ...any)  { fmt.Printf("[INFO] %s %v\n", msg, kv) }
-func (l *SimpleLogger) Warn(msg string, kv ...any)  { fmt.Printf("[WARN] %s %v\n", msg, kv) }
-func (l *SimpleLogger) Error(err error, msg string, kv ...any) {
-	if err != nil {
-		fmt.Printf("[ERROR] %s: %v %v\n", msg, err, kv)
-	} else {
-		fmt.Printf("[ERROR] %s %v\n", msg, kv)
-	}
-}
-
 func main() {
-	// Initialize logger
-	logger := &SimpleLogger{}
-	logger.Info("Starting {{.ServiceName}} service")
+	// Create context with signal handling
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Create context
-	ctx := context.Background()
-
-	// Initialize configuration
-	var cfg config.AppConfig
+	// Initialize configuration - will be populated by servicex
+	cfg := &config.AppConfig{}
 
 	// Run the service using servicex
-	err := servicex.Run(ctx, servicex.Options{
-		ServiceName: "{{.ServiceName}}",
-		Config:      &cfg,
-		Database: &servicex.DatabaseConfig{
-			Driver:      "mysql",
-			DSN:         "", // Will be set from config
-			MaxIdle:     10,
-			MaxOpen:     100,
-			MaxLifetime: 1 * time.Hour,
-		},
-		Migrate: func(db *gorm.DB) error {
-			return db.AutoMigrate(&model.{{.ServiceNameCamel}}{})
-		},
-		Register: func(app *servicex.App) error {
-			// Initialize repository
+	err := servicex.Run(ctx,
+		servicex.WithService("{{.ServiceName}}", "0.1.0"),
+		servicex.WithConfig(cfg),
+		servicex.WithTracing(true),
+		servicex.WithMetrics(true),
+		servicex.WithTimeout(30000),
+		servicex.WithSlowRequestThreshold(1000),
+		servicex.WithShutdownTimeout(15*time.Second),
+		servicex.WithRegister(func(app *servicex.App) error {
+			// At this point, cfg has been loaded by servicex
 			var {{.ServiceNameCamel}}Repo repository.{{.ServiceNameCamel}}Repository
-			if db := app.DB(); db != nil {
+
+			// Check if database is configured
+			if cfg.Database.DSN != "" {
+				app.Logger().Info("Database configuration found, initializing connection",
+					log.Str("driver", cfg.Database.Driver),
+				)
+
+				// Initialize database manually
+				db, err := initializeDatabase(ctx, cfg, app.Logger())
+				if err != nil {
+					return errors.Wrap(errors.CodeInternal, "database initialization", err)
+				}
+
+				// Auto-migrate
+				if err := db.AutoMigrate(&model.{{.ServiceNameCamel}}{}); err != nil {
+					return errors.Wrap(errors.CodeInternal, "database migration", err)
+				}
+
+				app.Logger().Info("Database initialized successfully")
 				{{.ServiceNameCamel}}Repo = repository.New{{.ServiceNameCamel}}Repository(db)
-				logger.Info("Repository initialized successfully")
 			} else {
-				logger.Info("No database connection, repository will be nil")
+				// Use in-memory repository
+				app.Logger().Info("No database configured, using mock repository")
+				{{.ServiceNameCamel}}Repo = &mock{{.ServiceNameCamel}}Repository{}
 			}
 
 			// Initialize service and handler
-			{{.ServiceNameCamel}}Service := service.New{{.ServiceNameCamel}}Service({{.ServiceNameCamel}}Repo, logger)
-			{{.ServiceNameCamel}}Handler := handler.New{{.ServiceNameCamel}}Handler({{.ServiceNameCamel}}Service, logger)
+			{{.ServiceNameCamel}}Service := service.New{{.ServiceNameCamel}}Service({{.ServiceNameCamel}}Repo, app.Logger())
+			{{.ServiceNameCamel}}Handler := handler.New{{.ServiceNameCamel}}Handler({{.ServiceNameCamel}}Service, app.Logger())
 
-			// Register HTTP routes
-			{{.ServiceNameCamel}}Handler.RegisterRoutes(app.Mux())
+			// Create Connect handler with interceptors
+			path, connectHandler := {{.ServiceNameCamel}}v1connect.New{{.ServiceNameCamel}}ServiceHandler(
+				{{.ServiceNameCamel}}Handler,
+				connect.WithInterceptors(app.Interceptors()...),
+			)
 
-			logger.Info("{{.ServiceNameCamel}} service initialized successfully")
+			// Register handler
+			app.Mux().Handle(path, connectHandler)
+			app.Logger().Info("Registered Connect handler", log.Str("path", path))
+
+			app.Logger().Info("{{.ServiceNameCamel}} service initialized successfully")
 			return nil
-		},
-		EnableTracing:     true,
-		EnableHealthCheck: true,
-		EnableMetrics:     true,
-		EnableDebugLogs:   false,
-		SlowRequestMillis: 1000,
-		PayloadAccounting: true,
-		ShutdownTimeout:   15 * time.Second,
-		Logger:            logger,
-	})
+		}),
+	)
 	if err != nil {
-		logger.Error(err, "Service failed")
+		// servicex handles logging internally, but we can still log here if needed
 		return
 	}
+}
 
-	logger.Info("{{.ServiceNameCamel}} service stopped gracefully")
+// initializeDatabase initializes the database connection using storex
+func initializeDatabase(ctx context.Context, cfg *config.AppConfig, logger log.Logger) (*gorm.DB, error) {
+	store, err := storex.NewGORMStore(storex.GORMOptions{
+		DSN:             cfg.Database.DSN,
+		Driver:          cfg.Database.Driver,
+		MaxIdleConns:    cfg.Database.MaxIdle,
+		MaxOpenConns:    cfg.Database.MaxOpen,
+		ConnMaxLifetime: cfg.Database.MaxLifetime,
+		Logger:          logger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create database store: %w", err)
+	}
+
+	// Test connection
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if err := store.Ping(pingCtx); err != nil {
+		store.Close()
+		return nil, fmt.Errorf("database ping failed: %w", err)
+	}
+
+	return store.GetDB(), nil
+}
+
+// mock{{.ServiceNameCamel}}Repository is a simple in-memory implementation for demo purposes
+type mock{{.ServiceNameCamel}}Repository struct {
+	{{.ServiceNameVar}}s map[string]*model.{{.ServiceNameCamel}}
+	mutex sync.RWMutex
+}
+
+func (m *mock{{.ServiceNameCamel}}Repository) Create(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if m.{{.ServiceNameVar}}s == nil {
+		m.{{.ServiceNameVar}}s = make(map[string]*model.{{.ServiceNameCamel}})
+	}
+
+	// Generate ID and timestamps
+	{{.ServiceNameVar}}.ID = uuid.New().String()
+	now := time.Now()
+	{{.ServiceNameVar}}.CreatedAt = now
+	{{.ServiceNameVar}}.UpdatedAt = now
+
+	m.{{.ServiceNameVar}}s[{{.ServiceNameVar}}.ID] = {{.ServiceNameVar}}
+	return {{.ServiceNameVar}}, nil
+}
+
+func (m *mock{{.ServiceNameCamel}}Repository) GetByID(ctx context.Context, id string) (*model.{{.ServiceNameCamel}}, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	if m.{{.ServiceNameVar}}s == nil {
+		return nil, errors.Wrap(errors.CodeNotFound, "get {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
+	}
+
+	{{.ServiceNameVar}}, exists := m.{{.ServiceNameVar}}s[id]
+	if !exists {
+		return nil, errors.Wrap(errors.CodeNotFound, "get {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
+	}
+
+	return {{.ServiceNameVar}}, nil
+}
+
+func (m *mock{{.ServiceNameCamel}}Repository) Update(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if m.{{.ServiceNameVar}}s == nil {
+		return nil, errors.Wrap(errors.CodeNotFound, "update {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
+	}
+
+	existing{{.ServiceNameCamel}}, exists := m.{{.ServiceNameVar}}s[{{.ServiceNameVar}}.ID]
+	if !exists {
+		return nil, errors.Wrap(errors.CodeNotFound, "update {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
+	}
+
+	// Update fields
+	existing{{.ServiceNameCamel}}.Name = {{.ServiceNameVar}}.Name
+	existing{{.ServiceNameCamel}}.UpdatedAt = time.Now()
+
+	m.{{.ServiceNameVar}}s[{{.ServiceNameVar}}.ID] = existing{{.ServiceNameCamel}}
+	return existing{{.ServiceNameCamel}}, nil
+}
+
+func (m *mock{{.ServiceNameCamel}}Repository) Delete(ctx context.Context, id string) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if m.{{.ServiceNameVar}}s == nil {
+		return errors.Wrap(errors.CodeNotFound, "delete {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
+	}
+
+	if _, exists := m.{{.ServiceNameVar}}s[id]; !exists {
+		return errors.Wrap(errors.CodeNotFound, "delete {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
+	}
+
+	delete(m.{{.ServiceNameVar}}s, id)
+	return nil
+}
+
+func (m *mock{{.ServiceNameCamel}}Repository) List(ctx context.Context, page, pageSize int) ([]*model.{{.ServiceNameCamel}}, int64, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	if m.{{.ServiceNameVar}}s == nil {
+		return []*model.{{.ServiceNameCamel}}{}, 0, nil
+	}
+
+	{{.ServiceNameVar}}s := make([]*model.{{.ServiceNameCamel}}, 0, len(m.{{.ServiceNameVar}}s))
+	for _, {{.ServiceNameVar}} := range m.{{.ServiceNameVar}}s {
+		{{.ServiceNameVar}}s = append({{.ServiceNameVar}}s, {{.ServiceNameVar}})
+	}
+
+	total := int64(len({{.ServiceNameVar}}s))
+	start := (page - 1) * pageSize
+	end := start + pageSize
+
+	if start >= int(total) {
+		return []*model.{{.ServiceNameCamel}}{}, total, nil
+	}
+
+	if end > int(total) {
+		end = int(total)
+	}
+
+	return {{.ServiceNameVar}}s[start:end], total, nil
 }

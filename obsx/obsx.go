@@ -20,17 +20,10 @@ package obsx
 
 import (
 	"context"
-	"fmt"
-	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"github.com/eggybyte-technology/egg/obsx/internal"
 	"go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 )
 
 // Options holds configuration for the observability provider.
@@ -44,135 +37,64 @@ type Options struct {
 }
 
 // Provider manages OpenTelemetry tracing and metrics providers.
+// The provider must be shut down when no longer needed.
 type Provider struct {
-	TracerProvider *sdktrace.TracerProvider
-	MeterProvider  *metric.MeterProvider
+	impl *internal.Provider
+}
+
+// TracerProvider returns the OpenTelemetry tracer provider.
+func (p *Provider) TracerProvider() *sdktrace.TracerProvider {
+	return p.impl.TracerProvider
+}
+
+// MeterProvider returns the OpenTelemetry meter provider.
+func (p *Provider) MeterProvider() *metric.MeterProvider {
+	return p.impl.MeterProvider
 }
 
 // NewProvider creates a new observability provider with the given options.
 // The provider must be shut down when no longer needed.
+//
+// Parameters:
+//   - ctx: context for provider initialization
+//   - opts: provider configuration options
+//
+// Returns:
+//   - *Provider: initialized provider instance
+//   - error: initialization error if any
+//
+// Concurrency:
+//   - Safe to call from multiple goroutines
+//
+// Performance:
+//   - Default sampling ratio is 10% if not specified
 func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
-	if opts.ServiceName == "" {
-		return nil, fmt.Errorf("service name is required")
-	}
-
-	// Set default sampling ratio
-	samplerRatio := opts.TraceSamplerRatio
-	if samplerRatio <= 0 {
-		samplerRatio = 0.1 // Default 10% sampling
-	}
-
-	// Create resource
-	res, err := resource.New(ctx,
-		resource.WithAttributes(
-			semconv.ServiceName(opts.ServiceName),
-			semconv.ServiceVersion(opts.ServiceVersion),
-		),
-	)
+	impl, err := internal.NewProvider(ctx, internal.ProviderOptions{
+		ServiceName:       opts.ServiceName,
+		ServiceVersion:    opts.ServiceVersion,
+		OTLPEndpoint:      opts.OTLPEndpoint,
+		ResourceAttrs:     opts.ResourceAttrs,
+		TraceSamplerRatio: opts.TraceSamplerRatio,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create resource: %w", err)
+		return nil, err
 	}
 
-	// Add custom resource attributes
-	if len(opts.ResourceAttrs) > 0 {
-		var attrs []attribute.KeyValue
-		for k, v := range opts.ResourceAttrs {
-			attrs = append(attrs, attribute.String(k, v))
-		}
-		res, err = resource.Merge(res, resource.NewWithAttributes(semconv.SchemaURL, attrs...))
-		if err != nil {
-			return nil, fmt.Errorf("failed to add resource attributes: %w", err)
-		}
-	}
-
-	// Create trace exporter if OTLP endpoint is provided
-	var traceExporter sdktrace.SpanExporter
-	if opts.OTLPEndpoint != "" {
-		traceExporter, err = otlptracegrpc.New(ctx,
-			otlptracegrpc.WithEndpoint(opts.OTLPEndpoint),
-			otlptracegrpc.WithInsecure(), // In production, use proper TLS
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create trace exporter: %w", err)
-		}
-	}
-
-	// Create tracer provider
-	var tp *sdktrace.TracerProvider
-	if traceExporter != nil {
-		tp = sdktrace.NewTracerProvider(
-			sdktrace.WithResource(res),
-			sdktrace.WithSampler(sdktrace.TraceIDRatioBased(samplerRatio)),
-			sdktrace.WithBatcher(traceExporter),
-		)
-	} else {
-		tp = sdktrace.NewTracerProvider(
-			sdktrace.WithResource(res),
-			sdktrace.WithSampler(sdktrace.TraceIDRatioBased(samplerRatio)),
-		)
-	}
-
-	// Create metric exporter if OTLP endpoint is provided
-	var metricExporter metric.Exporter
-	if opts.OTLPEndpoint != "" {
-		metricExporter, err = otlpmetricgrpc.New(ctx,
-			otlpmetricgrpc.WithEndpoint(opts.OTLPEndpoint),
-			otlpmetricgrpc.WithInsecure(), // In production, use proper TLS
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create metric exporter: %w", err)
-		}
-	}
-
-	// Create meter provider
-	var mp *metric.MeterProvider
-	if metricExporter != nil {
-		mp = metric.NewMeterProvider(
-			metric.WithResource(res),
-			metric.WithReader(metric.NewPeriodicReader(metricExporter)),
-		)
-	} else {
-		mp = metric.NewMeterProvider(
-			metric.WithResource(res),
-		)
-	}
-
-	// Set global providers
-	otel.SetTracerProvider(tp)
-	otel.SetMeterProvider(mp)
-
-	return &Provider{
-		TracerProvider: tp,
-		MeterProvider:  mp,
-	}, nil
+	return &Provider{impl: impl}, nil
 }
 
 // Shutdown gracefully shuts down the provider.
 // This should be called when the application is shutting down.
+//
+// Parameters:
+//   - ctx: context with shutdown timeout
+//
+// Returns:
+//   - error: shutdown error if any
+//
+// Concurrency:
+//   - Safe to call from multiple goroutines
+//   - Blocks until shutdown completes or timeout
 func (p *Provider) Shutdown(ctx context.Context) error {
-	// Create a timeout context for shutdown
-	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	var errors []error
-
-	// Shutdown tracer provider
-	if p.TracerProvider != nil {
-		if err := p.TracerProvider.Shutdown(shutdownCtx); err != nil {
-			errors = append(errors, fmt.Errorf("failed to shutdown tracer provider: %w", err))
-		}
-	}
-
-	// Shutdown meter provider
-	if p.MeterProvider != nil {
-		if err := p.MeterProvider.Shutdown(shutdownCtx); err != nil {
-			errors = append(errors, fmt.Errorf("failed to shutdown meter provider: %w", err))
-		}
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("shutdown errors: %v", errors)
-	}
-
-	return nil
+	return p.impl.Shutdown(ctx)
 }

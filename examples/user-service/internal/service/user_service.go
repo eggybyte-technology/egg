@@ -9,7 +9,7 @@
 //
 // Usage:
 //
-//	service := NewUserService(repo)
+//	service := NewUserService(repo, logger)
 //	user, err := service.CreateUser(ctx, &CreateUserRequest{Email: "user@example.com"})
 package service
 
@@ -50,7 +50,16 @@ type userService struct {
 
 // NewUserService creates a new UserService instance.
 // The returned service is safe for concurrent use.
+//
+// Panics if repo or logger is nil (fail-fast at startup).
 func NewUserService(repo repository.UserRepository, logger log.Logger) UserService {
+	if repo == nil {
+		panic("NewUserService: repository cannot be nil")
+	}
+	if logger == nil {
+		panic("NewUserService: logger cannot be nil")
+	}
+
 	return &userService{
 		repo:   repo,
 		logger: logger,
@@ -59,214 +68,228 @@ func NewUserService(repo repository.UserRepository, logger log.Logger) UserServi
 
 // CreateUser creates a new user with business validation.
 func (s *userService) CreateUser(ctx context.Context, req *userv1.CreateUserRequest) (*userv1.CreateUserResponse, error) {
-	// Check if repository is available
-	if s.repo == nil {
-		return nil, errors.New("SERVICE_UNAVAILABLE", "database repository not available")
-	}
+	s.logger.Debug("CreateUser started", log.Str("email", req.Email), log.Str("name", req.Name))
 
-	// Validate request
+	// Validate request fields
 	if req.Email == "" {
-		return nil, errors.New("INVALID_REQUEST", "email is required")
+		s.logger.Debug("CreateUser validation failed: empty email")
+		return nil, errors.New(errors.CodeInvalidArgument, "email is required")
 	}
 	if req.Name == "" {
-		return nil, errors.New("INVALID_REQUEST", "name is required")
+		s.logger.Debug("CreateUser validation failed: empty name")
+		return nil, errors.New(errors.CodeInvalidArgument, "name is required")
 	}
 
-	// Create user model
+	// Create and validate user model
 	user := &model.User{
 		Email: req.Email,
 		Name:  req.Name,
 	}
+
+	if err := user.Validate(); err != nil {
+		s.logger.Debug("CreateUser model validation failed", log.Str("email", req.Email), log.Str("error", err.Error()))
+		return nil, err
+	}
+
+	s.logger.Debug("CreateUser calling repository", log.Str("email", req.Email))
 
 	// Create user in repository
 	createdUser, err := s.repo.Create(ctx, user)
 	if err != nil {
-		s.logger.Error(err, "Failed to create user", log.Str("email", req.Email))
+		s.logger.Debug("CreateUser repository failed", log.Str("email", req.Email), log.Str("error", err.Error()))
 		return nil, err
 	}
 
-	s.logger.Info("User created successfully",
+	s.logger.Debug("CreateUser completed successfully",
 		log.Str("user_id", createdUser.ID),
 		log.Str("email", createdUser.Email))
 
-	// Convert to response
-	response := &userv1.CreateUserResponse{
-		User: &userv1.User{
-			Id:        createdUser.ID,
-			Email:     createdUser.Email,
-			Name:      createdUser.Name,
-			CreatedAt: createdUser.CreatedAt.Unix(),
-			UpdatedAt: createdUser.UpdatedAt.Unix(),
-		},
-	}
-
-	return response, nil
+	return &userv1.CreateUserResponse{
+		User: toProtoUser(createdUser),
+	}, nil
 }
 
 // GetUser retrieves a user by ID with proper error handling.
 func (s *userService) GetUser(ctx context.Context, req *userv1.GetUserRequest) (*userv1.GetUserResponse, error) {
-	// Check if repository is available
-	if s.repo == nil {
-		return nil, errors.New("SERVICE_UNAVAILABLE", "database repository not available")
-	}
+	s.logger.Debug("GetUser started", log.Str("user_id", req.Id))
 
-	// Validate request
 	if req.Id == "" {
-		return nil, errors.New("INVALID_REQUEST", "user ID is required")
+		s.logger.Debug("GetUser validation failed: empty ID")
+		return nil, errors.New(errors.CodeInvalidArgument, "user ID is required")
 	}
 
-	// Get user from repository
+	s.logger.Debug("GetUser calling repository", log.Str("user_id", req.Id))
+
 	user, err := s.repo.GetByID(ctx, req.Id)
 	if err != nil {
-		s.logger.Error(err, "Failed to get user", log.Str("user_id", req.Id))
+		s.logger.Debug("GetUser repository failed", log.Str("user_id", req.Id), log.Str("error", err.Error()))
 		return nil, err
 	}
 
-	s.logger.Info("User retrieved successfully", log.Str("user_id", user.ID))
+	s.logger.Debug("GetUser completed successfully",
+		log.Str("user_id", user.ID),
+		log.Str("email", user.Email))
 
-	// Convert to response
-	response := &userv1.GetUserResponse{
-		User: &userv1.User{
-			Id:        user.ID,
-			Email:     user.Email,
-			Name:      user.Name,
-			CreatedAt: user.CreatedAt.Unix(),
-			UpdatedAt: user.UpdatedAt.Unix(),
-		},
-	}
-
-	return response, nil
+	return &userv1.GetUserResponse{
+		User: toProtoUser(user),
+	}, nil
 }
 
 // UpdateUser updates an existing user with validation.
 func (s *userService) UpdateUser(ctx context.Context, req *userv1.UpdateUserRequest) (*userv1.UpdateUserResponse, error) {
-	// Check if repository is available
-	if s.repo == nil {
-		return nil, errors.New("SERVICE_UNAVAILABLE", "database repository not available")
-	}
+	s.logger.Debug("UpdateUser started",
+		log.Str("user_id", req.Id),
+		log.Str("email", req.Email),
+		log.Str("name", req.Name))
 
-	// Validate request
+	// Validate request fields
 	if req.Id == "" {
-		return nil, errors.New("INVALID_REQUEST", "user ID is required")
+		s.logger.Debug("UpdateUser validation failed: empty ID")
+		return nil, errors.New(errors.CodeInvalidArgument, "user ID is required")
 	}
 	if req.Email == "" {
-		return nil, errors.New("INVALID_REQUEST", "email is required")
+		s.logger.Debug("UpdateUser validation failed: empty email")
+		return nil, errors.New(errors.CodeInvalidArgument, "email is required")
 	}
 	if req.Name == "" {
-		return nil, errors.New("INVALID_REQUEST", "name is required")
+		s.logger.Debug("UpdateUser validation failed: empty name")
+		return nil, errors.New(errors.CodeInvalidArgument, "name is required")
 	}
 
-	// Create user model
-	user := &model.User{
-		ID:    req.Id,
-		Email: req.Email,
-		Name:  req.Name,
-	}
+	s.logger.Debug("UpdateUser fetching existing user", log.Str("user_id", req.Id))
 
-	// Update user in repository
-	updatedUser, err := s.repo.Update(ctx, user)
+	// Get existing user to preserve timestamps
+	existingUser, err := s.repo.GetByID(ctx, req.Id)
 	if err != nil {
-		s.logger.Error(err, "Failed to update user", log.Str("user_id", req.Id))
+		s.logger.Debug("UpdateUser get existing user failed", log.Str("user_id", req.Id), log.Str("error", err.Error()))
 		return nil, err
 	}
 
-	s.logger.Info("User updated successfully",
+	// Build updated user model
+	user := &model.User{
+		ID:        req.Id,
+		Email:     req.Email,
+		Name:      req.Name,
+		CreatedAt: existingUser.CreatedAt,
+	}
+
+	if err := user.Validate(); err != nil {
+		s.logger.Debug("UpdateUser model validation failed", log.Str("user_id", req.Id), log.Str("error", err.Error()))
+		return nil, err
+	}
+
+	s.logger.Debug("UpdateUser calling repository", log.Str("user_id", req.Id))
+
+	updatedUser, err := s.repo.Update(ctx, user)
+	if err != nil {
+		s.logger.Debug("UpdateUser repository failed", log.Str("user_id", req.Id), log.Str("error", err.Error()))
+		return nil, err
+	}
+
+	s.logger.Debug("UpdateUser completed successfully",
 		log.Str("user_id", updatedUser.ID),
 		log.Str("email", updatedUser.Email))
 
-	// Convert to response
-	response := &userv1.UpdateUserResponse{
-		User: &userv1.User{
-			Id:        updatedUser.ID,
-			Email:     updatedUser.Email,
-			Name:      updatedUser.Name,
-			CreatedAt: updatedUser.CreatedAt.Unix(),
-			UpdatedAt: updatedUser.UpdatedAt.Unix(),
-		},
-	}
-
-	return response, nil
+	return &userv1.UpdateUserResponse{
+		User: toProtoUser(updatedUser),
+	}, nil
 }
 
 // DeleteUser removes a user by ID.
 func (s *userService) DeleteUser(ctx context.Context, req *userv1.DeleteUserRequest) (*userv1.DeleteUserResponse, error) {
-	// Check if repository is available
-	if s.repo == nil {
-		return nil, errors.New("SERVICE_UNAVAILABLE", "database repository not available")
-	}
+	s.logger.Debug("DeleteUser started", log.Str("user_id", req.Id))
 
-	// Validate request
 	if req.Id == "" {
-		return nil, errors.New("INVALID_REQUEST", "user ID is required")
+		s.logger.Debug("DeleteUser validation failed: empty ID")
+		return nil, errors.New(errors.CodeInvalidArgument, "user ID is required")
 	}
 
-	// Delete user from repository
-	err := s.repo.Delete(ctx, req.Id)
-	if err != nil {
-		s.logger.Error(err, "Failed to delete user", log.Str("user_id", req.Id))
+	s.logger.Debug("DeleteUser calling repository", log.Str("user_id", req.Id))
+
+	if err := s.repo.Delete(ctx, req.Id); err != nil {
+		s.logger.Debug("DeleteUser repository failed", log.Str("user_id", req.Id), log.Str("error", err.Error()))
 		return nil, err
 	}
 
-	s.logger.Info("User deleted successfully", log.Str("user_id", req.Id))
+	s.logger.Debug("DeleteUser completed successfully", log.Str("user_id", req.Id))
 
-	// Convert to response
-	response := &userv1.DeleteUserResponse{
+	return &userv1.DeleteUserResponse{
 		Success: true,
-	}
-
-	return response, nil
+	}, nil
 }
 
 // ListUsers retrieves users with pagination.
 func (s *userService) ListUsers(ctx context.Context, req *userv1.ListUsersRequest) (*userv1.ListUsersResponse, error) {
-	// Check if repository is available
-	if s.repo == nil {
-		return nil, errors.New("SERVICE_UNAVAILABLE", "database repository not available")
-	}
+	// Normalize pagination parameters
+	page := normalizePage(int(req.Page))
+	pageSize := normalizePageSize(int(req.PageSize))
 
-	// Set default pagination
-	page := int(req.Page)
-	if page < 1 {
-		page = 1
-	}
+	s.logger.Debug("ListUsers started",
+		log.Int("requested_page", int(req.Page)),
+		log.Int("requested_page_size", int(req.PageSize)),
+		log.Int("normalized_page", page),
+		log.Int("normalized_page_size", pageSize))
 
-	pageSize := int(req.PageSize)
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 10
-	}
+	s.logger.Debug("ListUsers calling repository",
+		log.Int("page", page),
+		log.Int("page_size", pageSize))
 
-	// Get users from repository
 	users, total, err := s.repo.List(ctx, page, pageSize)
 	if err != nil {
-		s.logger.Error(err, "Failed to list users",
+		s.logger.Debug("ListUsers repository failed",
 			log.Int("page", page),
-			log.Int("page_size", pageSize))
+			log.Int("page_size", pageSize),
+			log.Str("error", err.Error()))
 		return nil, err
 	}
 
-	s.logger.Info("Users listed successfully",
-		log.Int("count", len(users)),
+	s.logger.Debug("ListUsers completed successfully",
+		log.Int("returned_count", len(users)),
 		log.Int("total", int(total)),
-		log.Int("page", page))
+		log.Int("page", page),
+		log.Int("page_size", pageSize))
 
-	// Convert to response
-	responseUsers := make([]*userv1.User, len(users))
+	// Convert users to proto
+	protoUsers := make([]*userv1.User, len(users))
 	for i, user := range users {
-		responseUsers[i] = &userv1.User{
-			Id:        user.ID,
-			Email:     user.Email,
-			Name:      user.Name,
-			CreatedAt: user.CreatedAt.Unix(),
-			UpdatedAt: user.UpdatedAt.Unix(),
-		}
+		protoUsers[i] = toProtoUser(user)
 	}
 
-	response := &userv1.ListUsersResponse{
-		Users:    responseUsers,
+	return &userv1.ListUsersResponse{
+		Users:    protoUsers,
 		Total:    int32(total),
 		Page:     int32(page),
 		PageSize: int32(pageSize),
-	}
+	}, nil
+}
 
-	return response, nil
+// toProtoUser converts a domain User model to protobuf User message.
+// This helper function eliminates code duplication across service methods.
+func toProtoUser(user *model.User) *userv1.User {
+	return &userv1.User{
+		Id:        user.ID,
+		Email:     user.Email,
+		Name:      user.Name,
+		CreatedAt: user.CreatedAt.Unix(),
+		UpdatedAt: user.UpdatedAt.Unix(),
+	}
+}
+
+// normalizePage ensures page number is at least 1.
+func normalizePage(page int) int {
+	if page < 1 {
+		return 1
+	}
+	return page
+}
+
+// normalizePageSize ensures page size is within valid range [1, 100].
+func normalizePageSize(pageSize int) int {
+	if pageSize < 1 {
+		return 10 // default
+	}
+	if pageSize > 100 {
+		return 100 // max
+	}
+	return pageSize
 }

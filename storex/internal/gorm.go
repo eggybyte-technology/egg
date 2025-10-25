@@ -4,6 +4,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/driver/mysql"
@@ -178,9 +179,62 @@ func (l *gormLogAdapter) Error(ctx context.Context, msg string, data ...interfac
 
 func (l *gormLogAdapter) Trace(ctx context.Context, begin time.Time, fc func() (sql string, rowsAffected int64), err error) {
 	if err != nil {
-		l.logger.Error(err, "database query failed")
+		// Only log as ERROR for real database connection issues
+		// Record not found errors are normal business logic and should be DEBUG
+		if isDatabaseConnectionError(err) {
+			l.logger.Error(err, "database query failed", log.Str("error_type", "connection_error"))
+		} else {
+			// For other errors (like constraint violations, etc.), log as WARN or DEBUG
+			l.logger.Debug("database query completed with error", log.Str("error", err.Error()))
+		}
 	} else {
 		sql, rows := fc()
-		l.logger.Debug("database query", log.Str("sql", sql), log.Int("rows", int(rows)))
+		// Only log slow queries or queries with results at DEBUG level
+		duration := time.Since(begin)
+		if duration > 100*time.Millisecond || rows > 0 {
+			l.logger.Debug("database query",
+				log.Str("sql", sql),
+				log.Int("rows", int(rows)),
+				log.Dur("duration", duration))
+		}
 	}
+}
+
+// isDatabaseConnectionError determines if a database error is a connection-related error
+// that should be logged as ERROR, or a business logic error that should be DEBUG.
+func isDatabaseConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	// Connection-related errors (real server errors)
+	if strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "network is unreachable") ||
+		strings.Contains(errStr, "no such host") ||
+		strings.Contains(errStr, "connection pool exhausted") ||
+		strings.Contains(errStr, "broken pipe") ||
+		strings.Contains(errStr, "EOF") {
+		return true
+	}
+
+	// GORM-specific errors that are business logic
+	if err == gorm.ErrRecordNotFound {
+		return false // This is normal business logic, not a connection error
+	}
+
+	// Database constraint violations are business logic
+	if strings.Contains(errStr, "duplicate key") ||
+		strings.Contains(errStr, "unique constraint") ||
+		strings.Contains(errStr, "foreign key constraint") ||
+		strings.Contains(errStr, "check constraint") ||
+		strings.Contains(errStr, "not null constraint") {
+		return false
+	}
+
+	// Unknown database errors - treat as connection errors for safety
+	return true
 }

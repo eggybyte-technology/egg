@@ -1,16 +1,16 @@
-// Package handler provides HTTP handlers for the {{.ServiceName}} service.
+// Package handler provides Connect protocol handlers for the {{.ServiceName}} service.
 //
 // Overview:
-//   - Responsibility: HTTP request handling and response formatting
-//   - Key Types: {{.ServiceNameCamel}}Handler with Connect integration
-//   - Concurrency Model: Thread-safe handler operations
-//   - Error Semantics: HTTP errors are mapped to appropriate status codes
-//   - Performance Notes: Optimized for high-throughput request handling
+//   - Responsibility: Connect protocol implementation and request handling
+//   - Key Types: {{.ServiceNameCamel}}Handler struct with Connect method implementations
+//   - Concurrency Model: Thread-safe handlers with context propagation
+//   - Error Semantics: Connect errors are properly mapped and returned
+//   - Performance Notes: Optimized for high-throughput Connect requests
 //
 // Usage:
 //
-//	handler := handler.New{{.ServiceNameCamel}}Handler(service, logger)
-//	handler.RegisterRoutes(mux)
+//	handler := New{{.ServiceNameCamel}}Handler(service)
+//	connectHandler := {{.ServiceName}}v1connect.New{{.ServiceNameCamel}}ServiceHandler(handler)
 package handler
 
 import (
@@ -18,91 +18,133 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/eggybyte-technology/egg/core/log"
+	{{.ServiceNameCamel}}v1 "{{.ModulePrefix}}/backend/{{.ServiceName}}/gen/go/{{.ServiceName}}/v1"
+	{{.ServiceNameCamel}}v1connect "{{.ModulePrefix}}/backend/{{.ServiceName}}/gen/go/{{.ServiceName}}/v1/{{.ServiceName}}v1connect"
 	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/service"
 )
 
-// {{.ServiceNameCamel}}Handler provides HTTP handlers for {{.ServiceName}}.
+// {{.ServiceNameCamel}}Handler implements the Connect protocol for the {{.ServiceName}} service.
+// It bridges the Connect protocol with the business logic service.
 type {{.ServiceNameCamel}}Handler struct {
+	{{.ServiceNameCamel}}v1connect.Unimplemented{{.ServiceNameCamel}}ServiceHandler
+
 	service service.{{.ServiceNameCamel}}Service
 	logger  log.Logger
 }
 
 // New{{.ServiceNameCamel}}Handler creates a new {{.ServiceNameCamel}}Handler instance.
 // The returned handler is safe for concurrent use.
-func New{{.ServiceNameCamel}}Handler(svc service.{{.ServiceNameCamel}}Service, logger log.Logger) *{{.ServiceNameCamel}}Handler {
+func New{{.ServiceNameCamel}}Handler(service service.{{.ServiceNameCamel}}Service, logger log.Logger) *{{.ServiceNameCamel}}Handler {
 	return &{{.ServiceNameCamel}}Handler{
-		service: svc,
+		service: service,
 		logger:  logger,
 	}
 }
 
-// RegisterRoutes registers all HTTP routes for the {{.ServiceName}} service.
-func (h *{{.ServiceNameCamel}}Handler) RegisterRoutes(mux interface{}) {
-	// TODO: Register HTTP routes here
-	// This is a placeholder for future HTTP route registration
-	// Currently, Connect handlers are registered through generated code
-}
+// Create{{.ServiceNameCamel}} handles Create{{.ServiceNameCamel}} Connect requests.
+// It validates the request and delegates to the business service.
+func (h *{{.ServiceNameCamel}}Handler) Create{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[{{.ServiceNameCamel}}v1.Create{{.ServiceNameCamel}}Request]) (*connect.Response[{{.ServiceNameCamel}}v1.Create{{.ServiceNameCamel}}Response], error) {
+	// Only log at DEBUG level for intermediate steps - Connect interceptor handles request lifecycle
+	h.logger.Debug("Create{{.ServiceNameCamel}} processing",
+		log.Str("name", req.Msg.Name))
 
-// {{.ServiceNameCamel}}ServiceHandler implements the Connect service interface.
-type {{.ServiceNameCamel}}ServiceHandler struct {
-	service service.{{.ServiceNameCamel}}Service
-	logger  log.Logger
-}
-
-// New{{.ServiceNameCamel}}ServiceHandler creates a new Connect service handler.
-func New{{.ServiceNameCamel}}ServiceHandler(svc service.{{.ServiceNameCamel}}Service, logger log.Logger) *{{.ServiceNameCamel}}ServiceHandler {
-	return &{{.ServiceNameCamel}}ServiceHandler{
-		service: svc,
-		logger:  logger,
-	}
-}
-
-// Create{{.ServiceNameCamel}} handles create {{.ServiceName}} requests via Connect.
-func (h *{{.ServiceNameCamel}}ServiceHandler) Create{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[service.Create{{.ServiceNameCamel}}Request]) (*connect.Response[service.Create{{.ServiceNameCamel}}Response], error) {
-	resp, err := h.service.Create{{.ServiceNameCamel}}(ctx, req.Msg)
+	// Delegate to business service
+	response, err := h.service.Create{{.ServiceNameCamel}}(ctx, req.Msg)
 	if err != nil {
-		h.logger.Error(err, "Failed to create {{.ServiceName}}")
+		// Error logging is handled by Connect interceptor with proper error classification
 		return nil, err
 	}
-	return connect.NewResponse(resp), nil
+
+	// Success logging is handled by Connect interceptor
+	h.logger.Debug("Create{{.ServiceNameCamel}} completed",
+		log.Str("{{.ServiceName}}_id", response.{{.ServiceNameCamel}}.Id))
+
+	return connect.NewResponse(response), nil
 }
 
-// Get{{.ServiceNameCamel}} handles get {{.ServiceName}} requests via Connect.
-func (h *{{.ServiceNameCamel}}ServiceHandler) Get{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[service.Get{{.ServiceNameCamel}}Request]) (*connect.Response[service.Get{{.ServiceNameCamel}}Response], error) {
-	resp, err := h.service.Get{{.ServiceNameCamel}}(ctx, req.Msg)
+// Get{{.ServiceNameCamel}} handles Get{{.ServiceNameCamel}} Connect requests.
+// It validates the request and delegates to the business service.
+func (h *{{.ServiceNameCamel}}Handler) Get{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[{{.ServiceNameCamel}}v1.Get{{.ServiceNameCamel}}Request]) (*connect.Response[{{.ServiceNameCamel}}v1.Get{{.ServiceNameCamel}}Response], error) {
+	// Only log at DEBUG level for intermediate steps - Connect interceptor handles request lifecycle
+	h.logger.Debug("Get{{.ServiceNameCamel}} processing",
+		log.Str("{{.ServiceName}}_id", req.Msg.Id))
+
+	// Delegate to business service
+	response, err := h.service.Get{{.ServiceNameCamel}}(ctx, req.Msg)
 	if err != nil {
-		h.logger.Error(err, "Failed to get {{.ServiceName}}")
+		// Error logging is handled by Connect interceptor with proper error classification
 		return nil, err
 	}
-	return connect.NewResponse(resp), nil
+
+	// Success logging is handled by Connect interceptor
+	h.logger.Debug("Get{{.ServiceNameCamel}} completed",
+		log.Str("{{.ServiceName}}_id", response.{{.ServiceNameCamel}}.Id))
+
+	return connect.NewResponse(response), nil
 }
 
-// Update{{.ServiceNameCamel}} handles update {{.ServiceName}} requests via Connect.
-func (h *{{.ServiceNameCamel}}ServiceHandler) Update{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[service.Update{{.ServiceNameCamel}}Request]) (*connect.Response[service.Update{{.ServiceNameCamel}}Response], error) {
-	resp, err := h.service.Update{{.ServiceNameCamel}}(ctx, req.Msg)
+// Update{{.ServiceNameCamel}} handles Update{{.ServiceNameCamel}} Connect requests.
+// It validates the request and delegates to the business service.
+func (h *{{.ServiceNameCamel}}Handler) Update{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[{{.ServiceNameCamel}}v1.Update{{.ServiceNameCamel}}Request]) (*connect.Response[{{.ServiceNameCamel}}v1.Update{{.ServiceNameCamel}}Response], error) {
+	// Only log at DEBUG level for intermediate steps - Connect interceptor handles request lifecycle
+	h.logger.Debug("Update{{.ServiceNameCamel}} processing",
+		log.Str("{{.ServiceName}}_id", req.Msg.Id),
+		log.Str("name", req.Msg.Name))
+
+	// Delegate to business service
+	response, err := h.service.Update{{.ServiceNameCamel}}(ctx, req.Msg)
 	if err != nil {
-		h.logger.Error(err, "Failed to update {{.ServiceName}}")
+		// Error logging is handled by Connect interceptor with proper error classification
 		return nil, err
 	}
-	return connect.NewResponse(resp), nil
+
+	// Success logging is handled by Connect interceptor
+	h.logger.Debug("Update{{.ServiceNameCamel}} completed",
+		log.Str("{{.ServiceName}}_id", response.{{.ServiceNameCamel}}.Id))
+
+	return connect.NewResponse(response), nil
 }
 
-// Delete{{.ServiceNameCamel}} handles delete {{.ServiceName}} requests via Connect.
-func (h *{{.ServiceNameCamel}}ServiceHandler) Delete{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[service.Delete{{.ServiceNameCamel}}Request]) (*connect.Response[service.Delete{{.ServiceNameCamel}}Response], error) {
-	resp, err := h.service.Delete{{.ServiceNameCamel}}(ctx, req.Msg)
+// Delete{{.ServiceNameCamel}} handles Delete{{.ServiceNameCamel}} Connect requests.
+// It validates the request and delegates to the business service.
+func (h *{{.ServiceNameCamel}}Handler) Delete{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[{{.ServiceNameCamel}}v1.Delete{{.ServiceNameCamel}}Request]) (*connect.Response[{{.ServiceNameCamel}}v1.Delete{{.ServiceNameCamel}}Response], error) {
+	// Only log at DEBUG level for intermediate steps - Connect interceptor handles request lifecycle
+	h.logger.Debug("Delete{{.ServiceNameCamel}} processing",
+		log.Str("{{.ServiceName}}_id", req.Msg.Id))
+
+	// Delegate to business service
+	response, err := h.service.Delete{{.ServiceNameCamel}}(ctx, req.Msg)
 	if err != nil {
-		h.logger.Error(err, "Failed to delete {{.ServiceName}}")
+		// Error logging is handled by Connect interceptor with proper error classification
 		return nil, err
 	}
-	return connect.NewResponse(resp), nil
+
+	// Success logging is handled by Connect interceptor
+	h.logger.Debug("Delete{{.ServiceNameCamel}} completed",
+		log.Str("{{.ServiceName}}_id", req.Msg.Id))
+
+	return connect.NewResponse(response), nil
 }
 
-// List{{.ServiceNameCamel}}s handles list {{.ServiceName}}s requests via Connect.
-func (h *{{.ServiceNameCamel}}ServiceHandler) List{{.ServiceNameCamel}}s(ctx context.Context, req *connect.Request[service.List{{.ServiceNameCamel}}sRequest]) (*connect.Response[service.List{{.ServiceNameCamel}}sResponse], error) {
-	resp, err := h.service.List{{.ServiceNameCamel}}s(ctx, req.Msg)
+// List{{.ServiceNameCamel}}s handles List{{.ServiceNameCamel}}s Connect requests.
+// It validates the request and delegates to the business service.
+func (h *{{.ServiceNameCamel}}Handler) List{{.ServiceNameCamel}}s(ctx context.Context, req *connect.Request[{{.ServiceNameCamel}}v1.List{{.ServiceNameCamel}}sRequest]) (*connect.Response[{{.ServiceNameCamel}}v1.List{{.ServiceNameCamel}}sResponse], error) {
+	// Only log at DEBUG level for intermediate steps - Connect interceptor handles request lifecycle
+	h.logger.Debug("List{{.ServiceNameCamel}}s processing",
+		log.Int("page", int(req.Msg.Page)),
+		log.Int("page_size", int(req.Msg.PageSize)))
+
+	// Delegate to business service
+	response, err := h.service.List{{.ServiceNameCamel}}s(ctx, req.Msg)
 	if err != nil {
-		h.logger.Error(err, "Failed to list {{.ServiceName}}s")
+		// Error logging is handled by Connect interceptor with proper error classification
 		return nil, err
 	}
-	return connect.NewResponse(resp), nil
+
+	// Success logging is handled by Connect interceptor
+	h.logger.Debug("List{{.ServiceNameCamel}}s completed",
+		log.Int("count", len(response.{{.ServiceNameCamel}}s)),
+		log.Int("total", int(response.Total)))
+
+	return connect.NewResponse(response), nil
 }

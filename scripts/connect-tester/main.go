@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -349,18 +350,284 @@ func printJSONResults(suite *TestSuite) {
 	fmt.Printf("%s\n", jsonData)
 }
 
+// runMinimalOperation runs a single operation for minimal service
+func runMinimalOperation(baseURL, operation string, args []string) (bool, string, error) {
+	client := greetv1connect.NewGreeterServiceClient(
+		http.DefaultClient,
+		baseURL,
+		connect.WithGRPC(),
+	)
+
+	switch operation {
+	case "sayhello":
+		if len(args) < 1 {
+			return false, "", fmt.Errorf("sayhello requires name argument")
+		}
+		return runSayHello(client, args[0])
+	case "sayhellostream":
+		if len(args) < 1 {
+			return false, "", fmt.Errorf("sayhellostream requires name argument")
+		}
+		count := 3
+		if len(args) >= 2 {
+			if c, err := strconv.Atoi(args[1]); err == nil {
+				count = c
+			}
+		}
+		return runSayHelloStream(client, args[0], count)
+	default:
+		return false, "", fmt.Errorf("unknown operation: %s", operation)
+	}
+}
+
+// runUserOperation runs a single operation for user service
+func runUserOperation(baseURL, operation string, args []string) (bool, string, error) {
+	client := userv1connect.NewUserServiceClient(
+		http.DefaultClient,
+		baseURL,
+		connect.WithGRPC(),
+	)
+
+	switch operation {
+	case "create":
+		if len(args) < 2 {
+			return false, "", fmt.Errorf("create requires email and name arguments")
+		}
+		return runCreateUser(client, args[0], args[1])
+	case "get":
+		if len(args) < 1 {
+			return false, "", fmt.Errorf("get requires user_id argument")
+		}
+		return runGetUser(client, args[0])
+	case "update":
+		if len(args) < 3 {
+			return false, "", fmt.Errorf("update requires user_id, email, and name arguments")
+		}
+		return runUpdateUser(client, args[0], args[1], args[2])
+	case "delete":
+		if len(args) < 1 {
+			return false, "", fmt.Errorf("delete requires user_id argument")
+		}
+		return runDeleteUser(client, args[0])
+	case "list":
+		page := 1
+		pageSize := 10
+		if len(args) >= 1 {
+			if p, err := strconv.Atoi(args[0]); err == nil {
+				page = p
+			}
+		}
+		if len(args) >= 2 {
+			if ps, err := strconv.Atoi(args[1]); err == nil {
+				pageSize = ps
+			}
+		}
+		return runListUsers(client, page, pageSize)
+	default:
+		return false, "", fmt.Errorf("unknown operation: %s", operation)
+	}
+}
+
+// Single operation functions for scripting
+
+// runSayHello runs a single SayHello operation
+func runSayHello(client greetv1connect.GreeterServiceClient, name string) (bool, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req := &greetv1.SayHelloRequest{
+		Name:     name,
+		Language: "en",
+	}
+
+	resp, err := client.SayHello(ctx, connect.NewRequest(req))
+	if err != nil {
+		return false, fmt.Sprintf("Error: %v\n", err), err
+	}
+
+	return true, fmt.Sprintf("✓ PASS SayHello: %s\n", resp.Msg.Message), nil
+}
+
+// runSayHelloStream runs a single SayHelloStream operation
+func runSayHelloStream(client greetv1connect.GreeterServiceClient, name string, count int) (bool, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	req := &greetv1.SayHelloStreamRequest{
+		Name:  name,
+		Count: int32(count),
+	}
+
+	stream, err := client.SayHelloStream(ctx, connect.NewRequest(req))
+	if err != nil {
+		return false, fmt.Sprintf("Error: %v\n", err), err
+	}
+
+	var messages []string
+	for stream.Receive() {
+		msg := stream.Msg()
+		messages = append(messages, msg.Message)
+	}
+
+	if err := stream.Err(); err != nil {
+		return false, fmt.Sprintf("Error: %v\n", err), err
+	}
+
+	return true, fmt.Sprintf("✓ PASS SayHelloStream: Received %d messages: %s\n", len(messages), strings.Join(messages, ", ")), nil
+}
+
+// runCreateUser runs a single CreateUser operation
+func runCreateUser(client userv1connect.UserServiceClient, email, name string) (bool, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req := &userv1.CreateUserRequest{
+		Email: email,
+		Name:  name,
+	}
+
+	resp, err := client.CreateUser(ctx, connect.NewRequest(req))
+	if err != nil {
+		return false, fmt.Sprintf("✗ FAIL CreateUser: %v\n", err), err
+	}
+
+	if resp.Msg.User != nil {
+		return true, fmt.Sprintf("✓ PASS CreateUser: Created user %s (%s) with ID: %s\n", resp.Msg.User.Name, resp.Msg.User.Email, resp.Msg.User.Id), nil
+	}
+
+	return true, "✓ PASS CreateUser: User created\n", nil
+}
+
+// runGetUser runs a single GetUser operation
+func runGetUser(client userv1connect.UserServiceClient, userID string) (bool, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req := &userv1.GetUserRequest{
+		Id: userID,
+	}
+
+	resp, err := client.GetUser(ctx, connect.NewRequest(req))
+	if err != nil {
+		return false, fmt.Sprintf("✗ FAIL GetUser: %v\n", err), err
+	}
+
+	if resp.Msg.User != nil {
+		return true, fmt.Sprintf("✓ PASS GetUser: Retrieved user %s (%s)\n", resp.Msg.User.Name, resp.Msg.User.Email), nil
+	}
+
+	return true, "✓ PASS GetUser: User retrieved\n", nil
+}
+
+// runUpdateUser runs a single UpdateUser operation
+func runUpdateUser(client userv1connect.UserServiceClient, userID, email, name string) (bool, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req := &userv1.UpdateUserRequest{
+		Id:    userID,
+		Email: email,
+		Name:  name,
+	}
+
+	resp, err := client.UpdateUser(ctx, connect.NewRequest(req))
+	if err != nil {
+		return false, fmt.Sprintf("✗ FAIL UpdateUser: %v\n", err), err
+	}
+
+	if resp.Msg.User != nil {
+		return true, fmt.Sprintf("✓ PASS UpdateUser: Updated user %s (%s)\n", resp.Msg.User.Name, resp.Msg.User.Email), nil
+	}
+
+	return true, "✓ PASS UpdateUser: User updated\n", nil
+}
+
+// runDeleteUser runs a single DeleteUser operation
+func runDeleteUser(client userv1connect.UserServiceClient, userID string) (bool, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req := &userv1.DeleteUserRequest{
+		Id: userID,
+	}
+
+	resp, err := client.DeleteUser(ctx, connect.NewRequest(req))
+	if err != nil {
+		return false, fmt.Sprintf("✗ FAIL DeleteUser: %v\n", err), err
+	}
+
+	return true, fmt.Sprintf("✓ PASS DeleteUser: success=%t\n", resp.Msg.Success), nil
+}
+
+// runListUsers runs a single ListUsers operation
+func runListUsers(client userv1connect.UserServiceClient, page, pageSize int) (bool, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req := &userv1.ListUsersRequest{
+		Page:     int32(page),
+		PageSize: int32(pageSize),
+	}
+
+	resp, err := client.ListUsers(ctx, connect.NewRequest(req))
+	if err != nil {
+		return false, fmt.Sprintf("✗ FAIL ListUsers: %v\n", err), err
+	}
+
+	return true, fmt.Sprintf("✓ PASS ListUsers: Listed %d users (total: %d, page: %d, page_size: %d)\n", len(resp.Msg.Users), resp.Msg.Total, resp.Msg.Page, resp.Msg.PageSize), nil
+}
+
 func main() {
 	if len(os.Args) < 3 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <service_url> <service_name>\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Examples:\n")
+		fmt.Fprintf(os.Stderr, "Usage: %s <service_url> <service_name> [operation] [args...]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  # Run full test suite\n")
 		fmt.Fprintf(os.Stderr, "  %s http://localhost:8080 minimal-service\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s http://localhost:8082 user-service\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\n  # Run single operations (for scripting)\n")
+		fmt.Fprintf(os.Stderr, "  %s http://localhost:8082 user-service create user@example.com \"Test User\"\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s http://localhost:8082 user-service get <user_id>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s http://localhost:8082 user-service update <user_id> user@example.com \"Updated Name\"\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s http://localhost:8082 user-service delete <user_id>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s http://localhost:8082 user-service list [page] [page_size]\n", os.Args[0])
 		os.Exit(1)
 	}
 
 	baseURL := os.Args[1]
 	serviceName := os.Args[2]
 
+	// Check if this is a single operation call (for scripting)
+	if len(os.Args) >= 4 {
+		operation := os.Args[3]
+		var result bool
+		var output string
+		var err error
+
+		switch serviceName {
+		case "minimal-service":
+			result, output, err = runMinimalOperation(baseURL, operation, os.Args[4:])
+		case "user-service":
+			result, output, err = runUserOperation(baseURL, operation, os.Args[4:])
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown service: %s\n", serviceName)
+			fmt.Fprintf(os.Stderr, "Supported services: minimal-service, user-service\n")
+			os.Exit(1)
+		}
+
+		// Always print the output first (contains ✗ FAIL or ✓ PASS)
+		fmt.Print(output)
+
+		// Then handle errors
+		if err != nil {
+			os.Exit(1)
+		}
+		if !result {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	// Run full test suite
 	var suite *TestSuite
 
 	switch serviceName {

@@ -1,462 +1,478 @@
-<div align="center">
+# Egg - Production-Ready Go Microservices Framework
 
-# 🥚 EggyByte Go Microservices Framework
+**A modern, layered Go framework for building Connect-RPC microservices with observability, configuration management, and clean architecture.**
 
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://golang.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
-[![Go Report Card](https://goreportcard.com/badge/github.com/eggybyte-technology/egg?style=for-the-badge)](https://goreportcard.com/report/github.com/eggybyte-technology/egg)
-[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen?style=for-the-badge)](https://github.com/eggybyte-technology/egg/actions)
-
-**A modern, production-ready Go microservices framework with Connect-first architecture**
-
-[📖 Documentation](docs/) • [🚀 Quick Start](#-quick-start) • [📋 Examples](examples/) • [🤝 Contributing](#-contributing)
-
-</div>
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat-square&logo=go)](https://golang.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 
 ---
 
-## ✨ Features
+## Overview
 
-<table>
-<tr>
-<td width="50%">
+Egg is a comprehensive microservices framework designed for building production-grade Go services with minimal boilerplate. It provides:
 
-### 🎯 **Core Principles**
-- **Ultra-thin core** + pluggable satellite libraries
-- **Connect-first** architecture with unified interceptor stack
-- **Zero business intrusion** - focus on your domain logic
-- **Production-ready** with observability built-in
+- **One-line service startup** with integrated configuration, logging, database, and tracing
+- **Clean layered architecture** with clear dependency boundaries
+- **Connect-RPC first** with automatic interceptor stack
+- **Hot configuration reloading** from Kubernetes ConfigMaps
+- **Production-ready observability** with OpenTelemetry
+- **Type-safe dependency injection** container
 
-</td>
-<td width="50%">
+## Core Philosophy
 
-### 🚀 **Key Capabilities**
-- **Unified port strategy** - single port for HTTP/Connect/gRPC-Web
-- **K8s-native** configuration with hot updates
-- **Layered authentication** model
-- **Stable API** with semantic versioning
+1. **Clarity over cleverness** - Explicit, readable code
+2. **Layered dependencies** - No circular imports, clear dependency flow
+3. **Interface-driven design** - Public API separate from implementation
+4. **Production-ready defaults** - Sensible configuration out of the box
+5. **CLI-driven development** - Never manually edit `go.mod` or `go.work`
 
-</td>
-</tr>
-</table>
-
-### 🏗️ **Architecture Highlights**
-
-```mermaid
-graph TB
-    A[Client] --> B[Higress Gateway]
-    B --> C[Connect Service]
-    C --> D[Business Logic]
-    C --> E[Database]
-    C --> F[Observability]
-    
-    subgraph "EggyByte Framework"
-        G[Core Modules]
-        H[Runtime Modules]
-        I[Connect Integration]
-        J[Configuration]
-        K[Observability]
-    end
-    
-    C --> G
-    C --> H
-    C --> I
-    C --> J
-    C --> K
-```
-
-- **🔧 Core Modules**: Zero-dependency interfaces and utilities
-- **⚡ Runtime Modules**: Service lifecycle and infrastructure
-- **🔗 Connect Integration**: Protocol support and interceptors
-- **⚙️ Configuration**: Hot updates and validation
-- **📊 Observability**: Metrics, tracing, and logging
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- **Go 1.21+** - [Download](https://golang.org/dl/)
-- **Docker** - [Download](https://www.docker.com/get-started)
-- **Make** (optional) - For development workflows
+## Quick Start
 
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/eggybyte-technology/egg.git
-cd egg
-
-# Build all modules and examples
-./scripts/build.sh all
-
-# Deploy services (one-click)
-./scripts/deploy.sh up
+go get github.com/eggybyte-technology/egg/servicex@latest
 ```
 
-### Verify Installation
+### Minimal Service
+
+```go
+package main
+
+import (
+    "context"
+    "github.com/eggybyte-technology/egg/configx"
+    "github.com/eggybyte-technology/egg/servicex"
+)
+
+type AppConfig struct {
+    configx.BaseConfig
+}
+
+func register(app *servicex.App) error {
+    // Register your Connect handlers here
+    app.Mux().HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        w.Write([]byte("Hello, Egg!"))
+    })
+    return nil
+}
+
+func main() {
+    ctx := context.Background()
+    cfg := &AppConfig{}
+    
+    err := servicex.Run(ctx,
+        servicex.WithConfig(cfg),
+        servicex.WithRegister(register),
+    )
+    if err != nil {
+        panic(err)
+    }
+}
+```
+
+Run with:
+```bash
+go run main.go
+```
+
+## Architecture
+
+### Layered Design
+
+Egg follows a strict layered architecture to prevent circular dependencies and ensure maintainability:
+
+```
+┌─────────────────────────────────────────────────┐
+│  L4: Integration Layer                          │
+│  ┌─────────────────────────────────────────┐    │
+│  │  servicex: One-line service startup     │    │
+│  └─────────────────────────────────────────┘    │
+└────────────────┬────────────────────────────────┘
+                 │
+┌────────────────┴────────────────────────────────┐
+│  L3: Runtime & Communication Layer              │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+│  │runtimex  │  │connectx  │  │clientx   │      │
+│  │(lifecycle)│  │(RPC)     │  │(client)  │      │
+│  └──────────┘  └──────────┘  └──────────┘      │
+└────────────────┬────────────────────────────────┘
+                 │
+┌────────────────┴────────────────────────────────┐
+│  L2: Capability Layer                           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+│  │configx   │  │obsx      │  │httpx     │      │
+│  │(config)  │  │(tracing) │  │(HTTP)    │      │
+│  └──────────┘  └──────────┘  └──────────┘      │
+└────────────────┬────────────────────────────────┘
+                 │
+┌────────────────┴────────────────────────────────┐
+│  L1: Foundation Layer                           │
+│  ┌─────────────────────────────────────────┐    │
+│  │  logx: Structured logging               │    │
+│  └─────────────────────────────────────────┘    │
+└────────────────┬────────────────────────────────┘
+                 │
+┌────────────────┴────────────────────────────────┐
+│  L0: Core Layer (Zero Dependencies)             │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+│  │errors    │  │identity  │  │log       │      │
+│  │(types)   │  │(context) │  │(interface)│     │
+│  └──────────┘  └──────────┘  └──────────┘      │
+└─────────────────────────────────────────────────┘
+
+Auxiliary Modules (can depend on any layer):
+┌─────────────────────────────────────────────────┐
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+│  │storex    │  │k8sx      │  │testingx  │      │
+│  │(storage) │  │(k8s)     │  │(testing) │      │
+│  └──────────┘  └──────────┘  └──────────┘      │
+└─────────────────────────────────────────────────┘
+```
+
+### Dependency Rules
+
+- **Rule 1**: A module can only depend on modules in the same or lower layers
+- **Rule 2**: No circular dependencies between modules
+- **Rule 3**: Core modules (L0) have zero external dependencies
+- **Rule 4**: Public interface files are thin (~100-200 lines), complex logic in `internal/`
+
+## Module Overview
+
+### L4: Integration Layer
+
+#### [servicex](servicex/) - One-Line Service Startup
+The highest-level module that integrates all components for microservice initialization.
+
+```go
+servicex.Run(ctx,
+    servicex.WithConfig(cfg),
+    servicex.WithDatabase(dbConfig),
+    servicex.WithTracing(true),
+    servicex.WithRegister(register),
+)
+```
+
+**Key Features:**
+- Integrated configuration, logging, database, tracing
+- Connect RPC interceptor stack
+- Graceful shutdown with hooks
+- Dependency injection container
+
+### L3: Runtime & Communication Layer
+
+#### [runtimex](runtimex/) - Service Lifecycle Management
+Manages service startup, shutdown, and health checks.
+
+```go
+runtimex.Run(ctx, services, runtimex.Options{
+    Logger: logger,
+    HTTP:   &runtimex.HTTPOptions{Addr: ":8080", Mux: mux},
+    Health: &runtimex.Endpoint{Addr: ":8081"},
+})
+```
+
+**Key Features:**
+- Concurrent service startup/shutdown
+- Health check aggregation
+- Multiple server support (HTTP, RPC, Health, Metrics)
+- Configurable shutdown timeout
+
+#### [connectx](connectx/) - Connect RPC Interceptors
+Provides a unified interceptor stack for Connect-RPC services.
+
+```go
+interceptors := connectx.DefaultInterceptors(connectx.Options{
+    Logger:            logger,
+    Otel:              provider,
+    SlowRequestMillis: 1000,
+})
+```
+
+**Key Features:**
+- Timeout enforcement with header override
+- Structured logging with correlation
+- Error mapping to Connect codes
+- OpenTelemetry tracing integration
+
+#### [clientx](clientx/) - Connect Client Factory
+Creates Connect HTTP clients with retry, circuit breaker, and timeouts.
+
+```go
+client := clientx.NewHTTPClient("https://api.example.com",
+    clientx.WithTimeout(5*time.Second),
+    clientx.WithRetry(3),
+)
+```
+
+### L2: Capability Layer
+
+#### [configx](configx/) - Configuration Management
+Unified configuration with hot reloading from multiple sources.
+
+```go
+manager, _ := configx.DefaultManager(ctx, logger)
+var cfg AppConfig
+manager.Bind(&cfg)
+```
+
+**Key Features:**
+- Multiple sources (Env, File, K8s ConfigMap)
+- Hot reload with debouncing
+- Struct binding with validation
+- Change notifications
+
+#### [obsx](obsx/) - OpenTelemetry Provider
+Simplified OpenTelemetry initialization for tracing and metrics.
+
+```go
+provider, _ := obsx.NewProvider(ctx, obsx.Options{
+    ServiceName:    "user-service",
+    ServiceVersion: "1.0.0",
+    OTLPEndpoint:   "otel-collector:4317",
+})
+```
+
+**Key Features:**
+- Trace and metric provider setup
+- Configurable sampling
+- Resource attributes
+- Graceful shutdown
+
+#### [httpx](httpx/) - HTTP Utilities
+HTTP helpers for binding, validation, and security.
+
+```go
+var req UserRequest
+httpx.BindAndValidate(r, &req)
+
+handler := httpx.SecureMiddleware(httpx.DefaultSecurityHeaders())(next)
+```
+
+### L1: Foundation Layer
+
+#### [logx](logx/) - Structured Logging
+Structured logging based on `log/slog` with logfmt/JSON output.
+
+```go
+logger := logx.New(
+    logx.WithFormat(logx.FormatLogfmt),
+    logx.WithLevel(slog.LevelInfo),
+)
+logger.Info("user created", "user_id", "u-123")
+```
+
+**Key Features:**
+- Logfmt and JSON formats
+- Field sorting and colorization
+- Payload limits and sensitive field masking
+- Context-aware logging
+
+### L0: Core Layer
+
+#### [core/errors](core/errors/) - Error Types
+Structured error types with codes for API responses.
+
+#### [core/identity](core/identity/) - Identity Context
+Request metadata and user identity extraction.
+
+#### [core/log](core/log/) - Logger Interface
+Zero-dependency logger interface.
+
+### Auxiliary Modules
+
+#### [storex](storex/) - Storage Abstraction
+GORM-based storage with health checks.
+
+```go
+store, _ := storex.NewGORMStore(storex.GORMOptions{
+    DSN:    "user:pass@tcp(localhost:3306)/mydb",
+    Driver: "mysql",
+    Logger: logger,
+})
+```
+
+#### [k8sx](k8sx/) - Kubernetes Integration
+ConfigMap watching and service discovery.
+
+#### [testingx](testingx/) - Testing Utilities
+Test helpers and utilities (planned).
+
+## Design Patterns
+
+### Interface-Implementation Separation
+
+All major modules follow a clean architecture pattern:
+
+```
+module/
+├── module.go              # Public API (~100-200 lines)
+│   ├── Interface definitions
+│   ├── Option functions
+│   └── Constructor (delegates to internal)
+└── internal/
+    ├── implementation.go  # Actual logic
+    ├── helpers.go         # Internal helpers
+    └── types.go           # Internal types
+```
+
+**Benefits:**
+- Public API surface is minimal and focused
+- Implementation details hidden
+- Easy to test and mock
+- Clear separation of concerns
+
+### Multi-Stage Initialization
+
+Complex initialization is split into logical stages (servicex example):
+
+```go
+1. initializeLogger()       → Setup logging
+2. initializeConfig()        → Load configuration
+3. initializeDatabase()      → Connect database
+4. initializeObservability() → Setup tracing
+5. buildApp()                → Create app context
+6. startServers()            → Start HTTP servers
+7. gracefulShutdown()        → Cleanup resources
+```
+
+### Functional Options
+
+All modules use functional options for configuration:
+
+```go
+servicex.Run(ctx,
+    servicex.WithConfig(cfg),
+    servicex.WithDatabase(dbCfg),
+    servicex.WithTracing(true),
+    servicex.WithRegister(register),
+)
+```
+
+## Complete Example
+
+See [examples/user-service](examples/user-service/) for a complete Connect-RPC service with:
+- Configuration management
+- Database integration with migrations
+- Connect RPC handlers
+- Health checks
+- OpenTelemetry tracing
 
 ```bash
-# Check service health
-./scripts/deploy.sh health
-
-# View service logs
-./scripts/deploy.sh logs
-
-# Access services
-curl http://localhost:8081/health  # Minimal service
-curl http://localhost:8083/health  # User service
+cd examples/user-service
+make run
 ```
 
-### 🧪 Testing
+## Development
+
+### Prerequisites
+
+- Go 1.21+
+- Docker and Docker Compose
+- Make
+
+### Build All Modules
 
 ```bash
-# Run comprehensive tests
-./scripts/test.sh all
-
-# Test CLI functionality
-./scripts/test.sh cli
-
-# Test production workflows
-./scripts/test.sh production
+make build
 ```
 
-## 📁 Project Structure
+### Run Tests
+
+```bash
+make test
+```
+
+### Run Linter
+
+```bash
+make lint
+```
+
+### Generate Documentation
+
+```bash
+make docs
+```
+
+## Project Structure
 
 ```
 egg/
-├── 📦 core/                    # L1: Zero-dependency interfaces and utilities (stable)
-│   ├── identity/              # 🔐 Identity container and permission checks
-│   ├── errors/                # ⚠️ Structured error handling
-│   ├── log/                   # 📝 Logging interface
-│   └── utils/                 # 🛠️ Common utility functions
-├── ⚡ runtimex/               # L2: Runtime kernel
-├── 🔗 connectx/               # L3: Connect binding + unified interceptors
-├── ⚙️ configx/                # L3: Unified configuration management
-├── 📊 obsx/                   # L3: OpenTelemetry integration
-├── ☸️ k8sx/                   # L3: Kubernetes integration
-├── 🗄️ storex/                 # L3: Database integration
-├── 🚀 deploy/                 # Unified deployment configuration
-│   ├── docker-compose.yaml
-│   ├── otel-collector-config.yaml
-│   ├── Dockerfile.minimal
-│   └── Dockerfile.user
-├── 🔧 scripts/                # Build and deployment scripts
-│   ├── build.sh              # Build script
-│   ├── deploy.sh             # Deployment script
-│   ├── test.sh               # Test script
-│   ├── test-cli.sh           # CLI test script
-│   └── test-cli-production.sh # Production test script
-├── 🎯 cli/                    # Command-line interface
-└── 📋 examples/              # Example projects
-    ├── minimal-connect-service/
-    └── user-service/
+├── core/            # L0: Core types and interfaces
+│   ├── errors/
+│   ├── identity/
+│   └── log/
+├── logx/            # L1: Structured logging
+├── configx/         # L2: Configuration management
+├── obsx/            # L2: OpenTelemetry provider
+├── httpx/           # L2: HTTP utilities
+├── runtimex/        # L3: Lifecycle management
+├── connectx/        # L3: Connect interceptors
+├── clientx/         # L3: Connect client
+├── servicex/        # L4: Service integration
+├── storex/          # Auxiliary: Storage
+├── k8sx/            # Auxiliary: Kubernetes
+├── examples/        # Example services
+├── docs/            # Documentation
+└── scripts/         # Build and deployment scripts
 ```
 
-### 🏗️ Module Architecture
+## Code Quality Standards
 
-| Layer | Module | Purpose | Stability |
-|-------|--------|---------|-----------|
-| **L1** | `core/` | Zero-dependency interfaces | 🔒 Stable |
-| **L2** | `runtimex/` | Runtime kernel | 🔒 Stable |
-| **L3** | `connectx/`, `configx/`, `obsx/`, `k8sx/`, `storex/` | Infrastructure modules | 🔄 Evolving |
+All modules follow strict quality standards:
 
-## 📚 Module Documentation
+1. **Documentation**: All exported symbols have GoDoc comments in English
+2. **Testing**: Comprehensive test coverage with table-driven tests
+3. **Linting**: Clean `golangci-lint` output
+4. **File Size**: Public interface files < 300 lines, implementation < 500 lines
+5. **Dependencies**: Minimal external dependencies, managed via `go work`
 
-### 🔧 Core Modules (L1 - Stable)
+## Contributing
 
-| Module | Description | Documentation |
-|--------|-------------|---------------|
-| [`core/identity`](core/identity/) | 🔐 User identity and request metadata management | [README](core/identity/README.md) |
-| [`core/errors`](core/errors/) | ⚠️ Structured error handling with codes | [README](core/errors/README.md) |
-| [`core/log`](core/log/) | 📝 Structured logging interface | [README](core/log/README.md) |
-| [`core/utils`](core/utils/) | 🛠️ Common utility functions | [README](core/utils/README.md) |
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-### ⚡ Runtime Modules (L2/L3)
+### Key Contribution Areas
 
-| Module | Description | Documentation |
-|--------|-------------|---------------|
-| [`runtimex`](runtimex/) | ⚡ Service lifecycle management | [README](runtimex/README.md) |
-| [`connectx`](connectx/) | 🔗 Connect protocol support and interceptors | [README](connectx/README.md) |
-| [`configx`](configx/) | ⚙️ Configuration management and hot updates | [README](configx/README.md) |
-| [`obsx`](obsx/) | 📊 OpenTelemetry integration | [README](obsx/README.md) |
-| [`k8sx`](k8sx/) | ☸️ Kubernetes integration | [README](k8sx/README.md) |
-| [`storex`](storex/) | 🗄️ Database integration | [README](storex/README.md) |
+- [ ] Additional storage backends (Redis, MongoDB)
+- [ ] More comprehensive testing utilities
+- [ ] Performance benchmarks
+- [ ] Additional examples
+- [ ] Documentation improvements
 
-### 🎯 Tools
+## Roadmap
 
-| Module | Description | Documentation |
-|--------|-------------|---------------|
-| [`cli`](cli/) | 🎯 Command-line interface for project management | [README](cli/README.md) |
+- [x] Core framework modules (L0-L4)
+- [x] Connect-RPC integration
+- [x] OpenTelemetry observability
+- [x] Configuration management with hot reload
+- [x] Database integration with GORM
+- [ ] Redis cache integration
+- [ ] Message queue integration (Kafka, RabbitMQ)
+- [ ] Service mesh integration (Istio, Linkerd)
+- [ ] CLI tool for project scaffolding
+- [ ] GraphQL support
 
-## ⚙️ Configuration Management
+## Documentation
 
-The framework uses a unified configuration management system that supports:
+- [Architecture Guide](docs/ARCHITECTURE.md) - Detailed architecture documentation
+- [Logging Standards](docs/LOGGING.md) - Logging format and practices
+- [Code Guidelines](docs/guidance.md) - Code quality standards
+- [Module Guide](docs/guide.md) - Module-by-module guide
 
-- 🔧 **Environment variable** configuration
-- 🔄 **Configuration file** hot updates
-- ☸️ **Kubernetes ConfigMap** monitoring
-- ✅ **Configuration validation** and default values
+## License
 
-### Base Configuration
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-```go
-type BaseConfig struct {
-    ServiceName    string `env:"SERVICE_NAME" default:"app"`
-    ServiceVersion string `env:"SERVICE_VERSION" default:"0.0.0"`
-    Env            string `env:"ENV" default:"dev"`
-    HTTPPort       string `env:"HTTP_PORT" default:":8080"`
-    HealthPort     string `env:"HEALTH_PORT" default:":8081"`
-    MetricsPort    string `env:"METRICS_PORT" default:":9091"`
-}
-```
+## Acknowledgments
 
-### Business Configuration
+Built with ❤️ by the EggyByte team.
 
-```go
-type AppConfig struct {
-    configx.BaseConfig
-    
-    // Business-specific configuration
-    Database DatabaseConfig
-    Business BusinessConfig
-    Features FeatureConfig
-}
-```
-
-## 🛠️ Service Development
-
-### 🚀 Quick Service Creation
-
-```bash
-# Use the CLI to create a new service
-./cli/egg create backend my-service
-
-# Build and deploy
-./scripts/build.sh service examples/my-service my-service
-./scripts/deploy.sh up
-```
-
-### 📝 Manual Service Implementation
-
-```go
-func main() {
-    // Initialize logger
-    logger := &SimpleLogger{}
-    
-    // Create context
-    ctx, cancel := context.WithCancel(context.Background())
-    defer cancel()
-    
-    // Initialize configuration manager
-    configManager, err := configx.DefaultManager(ctx, logger)
-    if err != nil {
-        logger.Error(err, "Failed to initialize configuration manager")
-        os.Exit(1)
-    }
-    
-    // Load configuration
-    var cfg AppConfig
-    if err := configManager.Bind(&cfg); err != nil {
-        logger.Error(err, "Failed to bind configuration")
-        os.Exit(1)
-    }
-    
-    // Create HTTP mux
-    mux := http.NewServeMux()
-    
-    // Setup Connect interceptors
-    interceptors := connectx.DefaultInterceptors(connectx.Options{
-        Logger:            logger,
-        WithRequestBody:   cfg.EnableDebugLogs,
-        WithResponseBody:  cfg.EnableDebugLogs,
-        SlowRequestMillis: cfg.SlowRequestMillis,
-        PayloadAccounting: true,
-    })
-    
-    // Create Connect handler
-    service := &YourService{}
-    path, handler := yourv1connect.NewYourServiceHandler(
-        service, 
-        connect.WithInterceptors(interceptors...),
-    )
-    
-    // Bind handler
-    mux.Handle(path, handler)
-    
-    // Start runtime
-    err = runtimex.Run(ctx, nil, runtimex.Options{
-        Logger: logger,
-        HTTP: &runtimex.HTTPOptions{
-            Addr: cfg.HTTPPort,
-            H2C:  true,
-            Mux:  mux,
-        },
-        Health:  &runtimex.Endpoint{Addr: cfg.HealthPort},
-        Metrics: &runtimex.Endpoint{Addr: cfg.MetricsPort},
-        ShutdownTimeout: 15 * time.Second,
-    })
-    
-    if err != nil {
-        logger.Error(err, "Runtime failed")
-        os.Exit(1)
-    }
-}
-```
-
-### 🔐 Identity and Permission Checks
-
-```go
-func (s *YourService) YourMethod(ctx context.Context, req *connect.Request[YourRequest]) (*connect.Response[YourResponse], error) {
-    // Check user identity
-    if user, ok := identity.UserFrom(ctx); ok {
-        logger.Info("User request", log.Str("user_id", user.UserID))
-    }
-    
-    // Permission check
-    if !identity.HasRole(ctx, "admin") {
-        return nil, connect.NewError(connect.CodePermissionDenied, errors.New("PERMISSION_DENIED", "admin role required"))
-    }
-    
-    // Business logic
-    // ...
-    
-    return connect.NewResponse(response), nil
-}
-```
-
-## 🚀 Deployment
-
-### 🐳 Docker Compose Deployment
-
-```bash
-# One-click deployment
-./scripts/deploy.sh up
-
-# Check service status
-./scripts/deploy.sh status
-
-# View logs
-./scripts/deploy.sh logs
-
-# Stop services
-./scripts/deploy.sh down
-```
-
-### 🌐 Service Endpoints
-
-| Service | URL | Description |
-|---------|-----|-------------|
-| **Minimal Service** | http://localhost:8080 | Connect service example |
-| **User Service** | http://localhost:8082 | Database-backed service |
-| **Jaeger UI** | http://localhost:16686 | Distributed tracing |
-| **Prometheus Metrics** | http://localhost:8889/metrics | Metrics collection |
-| **MySQL** | localhost:3306 | Database |
-
-## 🧪 Testing
-
-### 🔬 Unit Tests
-
-```bash
-# Run all tests
-go test ./...
-
-# Run tests with coverage report
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
-```
-
-### 🔗 Integration Tests
-
-```bash
-# Full workflow tests
-./scripts/test.sh all
-
-# Test CLI functionality
-./scripts/test.sh cli
-
-# Test production workflows
-./scripts/test.sh production
-
-# Test specific services
-curl http://localhost:8081/health
-curl http://localhost:8083/health
-```
-
-## 📖 Development Guide
-
-### 🆕 Adding New Modules
-
-1. **Create module directory** in root
-2. **Initialize Go module**: `go mod init github.com/eggybyte-technology/egg/module-name`
-3. **Update `go.work`** file
-4. **Implement functionality** with tests
-5. **Add documentation** and examples
-
-### 📋 Adding New Examples
-
-1. **Create example** in `examples/` directory
-2. **Initialize Go module** with proper dependencies
-3. **Implement example code** following patterns
-4. **Update build scripts** and deployment config
-5. **Test thoroughly** with integration tests
-
-### ⚙️ Configuration Best Practices
-
-- ✅ Use `configx.BaseConfig` as base configuration
-- ✅ Provide default values through environment variables
-- ✅ Support configuration hot updates
-- ✅ Use structured configuration validation
-- ✅ Document all configuration options
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Quick Start for Contributors
-
-1. **Fork** the repository
-2. **Create** a feature branch: `git checkout -b feature/amazing-feature`
-3. **Commit** your changes: `git commit -m 'Add amazing feature'`
-4. **Push** to the branch: `git push origin feature/amazing-feature`
-5. **Open** a Pull Request
-
-### Development Setup
-
-```bash
-# Clone your fork
-git clone https://github.com/your-username/egg.git
-cd egg
-
-# Install dependencies
-go mod download
-
-# Run tests
-./scripts/test.sh all
-
-# Build and deploy
-./scripts/build.sh all
-./scripts/deploy.sh up
-```
-
-## 📄 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-Need help? We're here for you!
-
-- 📖 **Documentation**: [docs/](docs/)
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/eggybyte-technology/egg/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/eggybyte-technology/egg/discussions)
-- 📧 **Email**: [support@eggybyte.com](mailto:support@eggybyte.com)
+Special thanks to:
+- [Connect-RPC](https://connectrpc.com/) for the excellent RPC framework
+- [OpenTelemetry](https://opentelemetry.io/) for observability standards
+- The Go community for inspiration and best practices
 
 ---
 
-<div align="center">
-
-**Made with ❤️ by the EggyByte Team**
-
-[⭐ Star us on GitHub](https://github.com/eggybyte-technology/egg) • [🐦 Follow us on Twitter](https://twitter.com/eggybyte) • [💼 Visit our website](https://eggybyte.com)
-
-</div>
+**Made with Go 🚀 | Built for Production 🏭 | Designed for Scale 📈**

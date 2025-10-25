@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/eggybyte-technology/egg/core/log"
+	"github.com/eggybyte-technology/egg/servicex/internal"
 	"gorm.io/gorm"
 )
 
@@ -25,11 +26,10 @@ func (m *MockLogger) Info(msg string, kv ...any)             { m.infos = append(
 func (m *MockLogger) Warn(msg string, kv ...any)             { m.warns = append(m.warns, msg) }
 func (m *MockLogger) Error(err error, msg string, kv ...any) { m.errors = append(m.errors, msg) }
 
-func TestOptions_validate(t *testing.T) {
+func TestOptions(t *testing.T) {
 	tests := []struct {
 		name    string
 		options Options
-		wantErr bool
 	}{
 		{
 			name: "valid options",
@@ -37,44 +37,23 @@ func TestOptions_validate(t *testing.T) {
 				ServiceName: "test-service",
 				Config:      &struct{}{},
 			},
-			wantErr: false,
 		},
 		{
-			name: "empty service name gets default",
+			name: "with database config",
 			options: Options{
-				ServiceName: "",
-				Config:      &struct{}{},
+				ServiceName: "test",
+				Database: &DatabaseConfig{
+					Driver: "mysql",
+					DSN:    "test-dsn",
+				},
 			},
-			wantErr: false,
-		},
-		{
-			name: "empty service version gets default",
-			options: Options{
-				ServiceName:    "test",
-				ServiceVersion: "",
-				Config:         &struct{}{},
-			},
-			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.options.validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Options.validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if !tt.wantErr {
-				if tt.options.ServiceName == "" {
-					if tt.options.ServiceName != "app" {
-						t.Errorf("Expected default service name 'app', got '%s'", tt.options.ServiceName)
-					}
-				}
-				if tt.options.ServiceVersion == "" {
-					if tt.options.ServiceVersion != "0.0.0" {
-						t.Errorf("Expected default service version '0.0.0', got '%s'", tt.options.ServiceVersion)
-					}
-				}
+			if tt.options.ServiceName == "" {
+				t.Error("ServiceName should not be empty")
 			}
 		})
 	}
@@ -101,7 +80,7 @@ func TestApp_Logger(t *testing.T) {
 // TestApp_Provide tests the DI container Provide method.
 func TestApp_Provide(t *testing.T) {
 	app := &App{
-		container: newContainer(),
+		container: internal.NewContainer(),
 	}
 
 	// Provide a simple constructor

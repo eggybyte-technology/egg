@@ -1,16 +1,16 @@
 // Package model provides data models for the {{.ServiceName}} service.
 //
 // Overview:
-//   - Responsibility: Domain entities and data structures
+//   - Responsibility: Define database models and data structures
 //   - Key Types: {{.ServiceNameCamel}} model with GORM annotations
-//   - Concurrency Model: Thread-safe model operations
-//   - Error Semantics: Model validation errors
-//   - Performance Notes: Optimized for database operations
+//   - Concurrency Model: Thread-safe database operations
+//   - Error Semantics: Database errors are wrapped and returned
+//   - Performance Notes: Optimized for database with proper indexing
 //
 // Usage:
 //
-//	user := &model.{{.ServiceNameCamel}}{Name: "example"}
-//	db.Create(user)
+//	{{.ServiceNameVar}} := &{{.ServiceNameCamel}}{Name: "example"}
+//	db.Create({{.ServiceNameVar}})
 package model
 
 import (
@@ -21,20 +21,22 @@ import (
 )
 
 // {{.ServiceNameCamel}} represents a {{.ServiceName}} entity in the database.
+// It includes GORM annotations for automatic table creation and indexing.
 type {{.ServiceNameCamel}} struct {
-	ID        string    `gorm:"type:varchar(36);primaryKey" json:"id"`
-	Name      string    `gorm:"type:varchar(255);not null" json:"name"`
+	ID        string    `gorm:"primaryKey;type:varchar(36)" json:"id"`
+	Name      string    `gorm:"not null;size:255" json:"name"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
 // TableName returns the table name for the {{.ServiceNameCamel}} model.
+// This ensures consistent table naming across environments.
 func ({{.ServiceNameCamel}}) TableName() string {
 	return "{{.ServiceName}}s"
 }
 
-// BeforeCreate generates a UUID for the {{.ServiceNameCamel}} before creating it.
+// BeforeCreate is called before creating a new {{.ServiceName}} record.
+// It generates a UUID if one is not provided.
 func (u *{{.ServiceNameCamel}}) BeforeCreate(tx *gorm.DB) error {
 	if u.ID == "" {
 		u.ID = uuid.New().String()
@@ -42,13 +44,11 @@ func (u *{{.ServiceNameCamel}}) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// Validate performs basic validation on the {{.ServiceNameCamel}} model.
+// Validate performs basic validation on the {{.ServiceName}} data.
+// Returns an error if validation fails.
 func (u *{{.ServiceNameCamel}}) Validate() error {
 	if u.Name == "" {
-		return gorm.ErrInvalidValue
-	}
-	if len(u.Name) > 255 {
-		return gorm.ErrInvalidValue
+		return ErrInvalidName
 	}
 	return nil
 }

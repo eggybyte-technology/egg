@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/eggybyte-technology/egg/configx"
 	greetv1 "github.com/eggybyte-technology/egg/examples/minimal-connect-service/gen/go/greet/v1"
 	greetv1connect "github.com/eggybyte-technology/egg/examples/minimal-connect-service/gen/go/greet/v1/greetv1connect"
 	"github.com/eggybyte-technology/egg/servicex"
@@ -86,6 +87,9 @@ func (s *GreeterService) SayHelloStream(ctx context.Context, req *connect.Reques
 
 // AppConfig extends BaseConfig with application-specific settings
 type AppConfig struct {
+	// Inherit BaseConfig for standard configuration (ports, service info, etc.)
+	configx.BaseConfig `env:""`
+
 	// Application-specific configuration
 	SlowRequestMillis int64 `env:"SLOW_REQUEST_MILLIS" default:"1000"`
 	RateLimitQPS      int   `env:"RATE_LIMIT_QPS" default:"100"`

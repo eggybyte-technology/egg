@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/eggybyte-technology/egg/configx/internal"
 	"github.com/eggybyte-technology/egg/core/log"
 )
 
@@ -138,7 +139,7 @@ func TestBuildSources(t *testing.T) {
 	logger := &testLogger{}
 
 	// Test with no ConfigMap names
-	sources, err := BuildSources(context.Background(), logger)
+	sources, err := internal.BuildSources(context.Background(), logger)
 	if err != nil {
 		t.Fatalf("BuildSources() error = %v", err)
 	}
@@ -155,7 +156,7 @@ func TestBuildSources(t *testing.T) {
 		os.Unsetenv("CACHE_CONFIGMAP_NAME")
 	}()
 
-	sources, err = BuildSources(context.Background(), logger)
+	sources, err = internal.BuildSources(context.Background(), logger)
 	if err != nil {
 		t.Fatalf("BuildSources() error = %v", err)
 	}

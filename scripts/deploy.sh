@@ -26,50 +26,24 @@
 
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+# Source the unified logger
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/logger.sh"
 
 # Get the project root directory
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_ROOT="$(get_project_root)"
 
-# Print colored output
-print_header() {
-    echo ""
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}▶ $1${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-}
 
-print_success() {
-    echo -e "${GREEN}[✓] SUCCESS:${NC} $1"
-}
 
-print_error() {
-    echo -e "${RED}[✗] ERROR:${NC} $1"
-}
-
-print_info() {
-    echo -e "${CYAN}[i] INFO:${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[!] WARNING:${NC} $1"
-}
-
-# Start all services
+# Start all services (infrastructure + application services)
 deploy_up() {
     print_header "Starting all services"
     
     # Clean up any existing containers first
     print_info "Cleaning up any existing containers..."
     cd "$PROJECT_ROOT/deploy"
-    docker-compose down --remove-orphans 2>/dev/null || true
-    docker-compose rm -f 2>/dev/null || true
+    docker-compose -f docker-compose.services.yaml down --remove-orphans 2>/dev/null || true
+    docker-compose -f docker-compose.infra.yaml down --remove-orphans 2>/dev/null || true
     
     # Run port cleanup
     print_info "Running port cleanup..."
@@ -81,14 +55,22 @@ deploy_up() {
     print_info "Building services..."
     "$PROJECT_ROOT/scripts/build.sh" all
     
-    # Start services
-    print_info "Starting services with docker-compose..."
+    # Start infrastructure first
+    print_info "Starting infrastructure services..."
     cd "$PROJECT_ROOT/deploy"
-    docker-compose up -d
+    docker-compose -f docker-compose.infra.yaml up -d
+    
+    # Wait for infrastructure to be ready
+    print_info "Waiting for infrastructure to be ready..."
+    sleep 15
+    
+    # Start application services
+    print_info "Starting application services..."
+    docker-compose -f docker-compose.services.yaml up -d
     
     # Wait for services to be ready
     print_info "Waiting for services to be ready..."
-    sleep 15
+    sleep 10
     
     # Check service health
     print_info "Checking service health..."
@@ -102,18 +84,21 @@ deploy_up() {
     print_info "  - Prometheus Metrics: http://localhost:8889/metrics"
 }
 
-# Stop all services
+# Stop all services (application + infrastructure)
 deploy_down() {
     print_header "Stopping all services"
     
-    print_info "Stopping services..."
+    print_info "Stopping application services..."
     cd "$PROJECT_ROOT/deploy"
-    docker-compose down
+    docker-compose -f docker-compose.services.yaml down --remove-orphans 2>/dev/null || true
+    
+    print_info "Stopping infrastructure services..."
+    docker-compose -f docker-compose.infra.yaml down --remove-orphans 2>/dev/null || true
     
     print_success "All services stopped"
 }
 
-# Restart all services
+# Restart all services (application + infrastructure)
 deploy_restart() {
     print_header "Restarting all services"
     
@@ -134,10 +119,11 @@ deploy_logs() {
     
     if [ -n "$service" ]; then
         print_info "Showing logs for service: $service"
-        docker-compose logs -f "$service"
+        docker-compose -f docker-compose.services.yaml logs -f "$service" 2>/dev/null || \
+        docker-compose -f docker-compose.infra.yaml logs -f "$service"
     else
         print_info "Showing logs for all services"
-        docker-compose logs -f
+        docker-compose -f docker-compose.services.yaml logs -f
     fi
 }
 
@@ -146,7 +132,11 @@ deploy_status() {
     print_header "Service status"
     
     cd "$PROJECT_ROOT/deploy"
-    docker-compose ps
+    print_info "Infrastructure services:"
+    docker-compose -f docker-compose.infra.yaml ps
+    echo
+    print_info "Application services:"
+    docker-compose -f docker-compose.services.yaml ps
     
     print_info "Service URLs:"
     print_info "  - Minimal Service: http://localhost:8080"
@@ -199,15 +189,17 @@ deploy_clean() {
     # Stop services
     print_info "Stopping services..."
     cd "$PROJECT_ROOT/deploy"
-    docker-compose down 2>/dev/null || true
+    docker-compose -f docker-compose.services.yaml down 2>/dev/null || true
+    docker-compose -f docker-compose.infra.yaml down 2>/dev/null || true
     
     # Remove containers
     print_info "Removing containers..."
-    docker-compose rm -f 2>/dev/null || true
+    docker-compose -f docker-compose.services.yaml rm -f 2>/dev/null || true
+    docker-compose -f docker-compose.infra.yaml rm -f 2>/dev/null || true
     
     # Remove volumes
     print_info "Removing volumes..."
-    docker volume rm deploy_mysql_data 2>/dev/null || true
+    docker-compose -f docker-compose.infra.yaml down -v 2>/dev/null || true
     
     # Remove images
     print_info "Removing images..."

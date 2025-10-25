@@ -3,6 +3,7 @@ package internal
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/eggybyte-technology/egg/core/errors"
 	"github.com/eggybyte-technology/egg/core/identity"
 	"github.com/eggybyte-technology/egg/core/log"
+	"gorm.io/gorm"
 )
 
 // RecoveryInterceptor creates a recovery interceptor that converts panics to errors.
@@ -67,26 +69,48 @@ func LoggingInterceptor(logger log.Logger, opts LoggingOptions) connect.UnaryInt
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			startTime := time.Now()
 
-			// Log request
-			logger.Info("request started",
-				log.Str("procedure", req.Spec().Procedure),
-			)
+			// Extract request context for logging
+			var requestContext []any
+
+			// Extract user information from context if available
+			if userInfo, ok := identity.UserFrom(ctx); ok {
+				requestContext = append(requestContext, log.Str("user_id", userInfo.UserID))
+			}
+
+			// Extract request metadata if available
+			if requestMeta, ok := identity.MetaFrom(ctx); ok {
+				if requestMeta.RequestID != "" {
+					requestContext = append(requestContext, log.Str("request_id", requestMeta.RequestID))
+				}
+			}
+
+			// Log request started
+			fields := append([]any{log.Str("procedure", req.Spec().Procedure)}, requestContext...)
+			logger.Info("request started", fields...)
 
 			// Call next handler
 			resp, err := next(ctx, req)
 
 			// Log response
 			duration := time.Since(startTime)
+			fields = append([]any{
+				log.Str("procedure", req.Spec().Procedure),
+				log.Dur("duration", duration),
+			}, requestContext...)
+
 			if err != nil {
-				logger.Error(err, "request failed",
-					log.Str("procedure", req.Spec().Procedure),
-					log.Dur("duration", duration),
-				)
+				// Only log as ERROR if it's a real server error, not business logic errors
+				// Business logic errors (like not found, already exists) should be logged as INFO
+				if isServerError(err) {
+					fields = append(fields, log.Str("error_type", "server_error"))
+					logger.Error(err, "request failed", fields...)
+				} else {
+					fields = append(fields, log.Str("status", "business_error"))
+					logger.Info("request completed", fields...)
+				}
 			} else {
-				logger.Info("request completed",
-					log.Str("procedure", req.Spec().Procedure),
-					log.Dur("duration", duration),
-				)
+				fields = append(fields, log.Str("status", "success"))
+				logger.Info("request completed", fields...)
 			}
 
 			return resp, err
@@ -289,4 +313,50 @@ func logRequestFields(req *http.Request, startTime time.Time, userInfo *identity
 	}
 
 	return fields
+}
+
+// isServerError determines if an error is a real server error that should be logged as ERROR,
+// or a business logic error that should be logged as INFO.
+// Business logic errors (like not found, already exists) are expected and should not be ERROR level.
+func isServerError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for database connection errors (real server errors)
+	if err == sql.ErrConnDone ||
+		err == sql.ErrTxDone ||
+		strings.Contains(err.Error(), "connection refused") ||
+		strings.Contains(err.Error(), "connection reset") ||
+		strings.Contains(err.Error(), "timeout") ||
+		strings.Contains(err.Error(), "network is unreachable") {
+		return true
+	}
+
+	// Check for GORM connection errors
+	if err == gorm.ErrRecordNotFound {
+		return false // This is a business logic error, not a server error
+	}
+
+	// Check core error codes - only internal errors should be treated as server errors
+	errorCode := errors.CodeOf(err)
+	switch errorCode {
+	case errors.CodeInvalidArgument,
+		errors.CodeNotFound,
+		errors.CodeAlreadyExists,
+		errors.CodePermissionDenied,
+		errors.CodeUnauthenticated,
+		errors.CodeResourceExhausted,
+		errors.CodeDeadlineExceeded,
+		errors.CodeUnimplemented,
+		errors.CodeAborted,
+		errors.CodeOutOfRange,
+		errors.CodeDataLoss:
+		return false // These are business logic errors
+	case errors.CodeInternal, errors.CodeUnavailable:
+		return true // These are real server errors
+	default:
+		// Unknown error code, treat as server error for safety
+		return true
+	}
 }

@@ -56,7 +56,25 @@ type userRepository struct {
 
 // NewUserRepository creates a new UserRepository instance.
 // The returned repository is safe for concurrent use.
+//
+// Parameters:
+//   - db: GORM database instance (must not be nil)
+//
+// Returns:
+//   - UserRepository: The created repository instance
+//
+// Panics:
+//   - If db is nil (fail-fast at startup)
+//
+// Rationale:
+// This function panics on nil database rather than returning an error
+// because this is a startup-time issue that should never occur in production.
+// If the database is nil, the repository cannot function and should not start.
 func NewUserRepository(db *gorm.DB) UserRepository {
+	if db == nil {
+		panic("NewUserRepository: database cannot be nil")
+	}
+
 	return &userRepository{db: db}
 }
 

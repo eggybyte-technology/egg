@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/eggybyte-technology/egg/httpx/internal"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -124,29 +125,18 @@ func DefaultSecurityHeaders() SecurityHeaders {
 
 // SecureMiddleware adds security headers to responses.
 func SecureMiddleware(headers SecurityHeaders) func(http.Handler) http.Handler {
+	internalHeaders := internal.SecurityHeaders{
+		ContentTypeOptions:    headers.ContentTypeOptions,
+		FrameOptions:          headers.FrameOptions,
+		ReferrerPolicy:        headers.ReferrerPolicy,
+		StrictTransportSec:    headers.StrictTransportSec,
+		HSTSMaxAge:            headers.HSTSMaxAge,
+		ContentSecurityPolicy: headers.ContentSecurityPolicy,
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if headers.ContentTypeOptions {
-				w.Header().Set("X-Content-Type-Options", "nosniff")
-			}
-
-			if headers.FrameOptions {
-				w.Header().Set("X-Frame-Options", "DENY")
-			}
-
-			if headers.ReferrerPolicy {
-				w.Header().Set("Referrer-Policy", "no-referrer")
-			}
-
-			if headers.StrictTransportSec {
-				hstsValue := fmt.Sprintf("max-age=%d; includeSubDomains", headers.HSTSMaxAge)
-				w.Header().Set("Strict-Transport-Security", hstsValue)
-			}
-
-			if headers.ContentSecurityPolicy != "" {
-				w.Header().Set("Content-Security-Policy", headers.ContentSecurityPolicy)
-			}
-
+			internal.ApplySecurityHeaders(w, internalHeaders)
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -174,67 +164,18 @@ func DefaultCORSOptions() CORSOptions {
 
 // CORSMiddleware adds CORS headers to responses.
 func CORSMiddleware(opts CORSOptions) func(http.Handler) http.Handler {
+	internalOpts := internal.CORSOptions{
+		AllowedOrigins:   opts.AllowedOrigins,
+		AllowedMethods:   opts.AllowedMethods,
+		AllowedHeaders:   opts.AllowedHeaders,
+		ExposedHeaders:   opts.ExposedHeaders,
+		AllowCredentials: opts.AllowCredentials,
+		MaxAge:           opts.MaxAge,
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
-
-			// Check if origin is allowed
-			allowed := false
-			for _, allowedOrigin := range opts.AllowedOrigins {
-				if allowedOrigin == "*" || allowedOrigin == origin {
-					allowed = true
-					break
-				}
-			}
-
-			if allowed {
-				if len(opts.AllowedOrigins) == 1 && opts.AllowedOrigins[0] == "*" {
-					w.Header().Set("Access-Control-Allow-Origin", "*")
-				} else {
-					w.Header().Set("Access-Control-Allow-Origin", origin)
-				}
-
-				if len(opts.AllowedMethods) > 0 {
-					methods := ""
-					for i, method := range opts.AllowedMethods {
-						if i > 0 {
-							methods += ", "
-						}
-						methods += method
-					}
-					w.Header().Set("Access-Control-Allow-Methods", methods)
-				}
-
-				if len(opts.AllowedHeaders) > 0 {
-					headers := ""
-					for i, header := range opts.AllowedHeaders {
-						if i > 0 {
-							headers += ", "
-						}
-						headers += header
-					}
-					w.Header().Set("Access-Control-Allow-Headers", headers)
-				}
-
-				if len(opts.ExposedHeaders) > 0 {
-					headers := ""
-					for i, header := range opts.ExposedHeaders {
-						if i > 0 {
-							headers += ", "
-						}
-						headers += header
-					}
-					w.Header().Set("Access-Control-Expose-Headers", headers)
-				}
-
-				if opts.AllowCredentials {
-					w.Header().Set("Access-Control-Allow-Credentials", "true")
-				}
-
-				if opts.MaxAge > 0 {
-					w.Header().Set("Access-Control-Max-Age", fmt.Sprintf("%d", opts.MaxAge))
-				}
-			}
+			internal.ApplyCORSHeaders(w, r, internalOpts)
 
 			// Handle preflight requests
 			if r.Method == http.MethodOptions {

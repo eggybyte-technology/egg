@@ -15,7 +15,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -29,9 +28,7 @@ import (
 	"github.com/eggybyte-technology/egg/examples/user-service/internal/repository"
 	"github.com/eggybyte-technology/egg/examples/user-service/internal/service"
 	"github.com/eggybyte-technology/egg/servicex"
-	"github.com/eggybyte-technology/egg/storex"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 func main() {
@@ -42,7 +39,7 @@ func main() {
 	// Initialize configuration - will be populated by servicex
 	cfg := &config.AppConfig{}
 
-	// Run the service using servicex
+	// Run the service using servicex with simplified database integration
 	err := servicex.Run(ctx,
 		servicex.WithService("user-service", "0.1.0"),
 		servicex.WithConfig(cfg),
@@ -51,28 +48,16 @@ func main() {
 		servicex.WithTimeout(30000),
 		servicex.WithSlowRequestThreshold(1000),
 		servicex.WithShutdownTimeout(15*time.Second),
+		// Enable database if configured in BaseConfig
+		servicex.WithDatabase(servicex.FromBaseConfig(&cfg.Database)),
+		servicex.WithAutoMigrate(&model.User{}),
 		servicex.WithRegister(func(app *servicex.App) error {
 			// At this point, cfg has been loaded by servicex
 			var userRepo repository.UserRepository
 
-			// Check if database is configured
-			if cfg.Database.DSN != "" {
-				app.Logger().Info("Database configuration found, initializing connection",
-					log.Str("driver", cfg.Database.Driver),
-				)
-
-				// Initialize database manually
-				db, err := initializeDatabase(ctx, cfg, app.Logger())
-				if err != nil {
-					return errors.Wrap(errors.CodeInternal, "database initialization", err)
-				}
-
-				// Auto-migrate
-				if err := db.AutoMigrate(&model.User{}); err != nil {
-					return errors.Wrap(errors.CodeInternal, "database migration", err)
-				}
-
-				app.Logger().Info("Database initialized successfully")
+			// Check if database is available
+			if db := app.DB(); db != nil {
+				app.Logger().Info("Using database-backed repository")
 				userRepo = repository.NewUserRepository(db)
 			} else {
 				// Use in-memory repository
@@ -102,32 +87,6 @@ func main() {
 		// servicex handles logging internally, but we can still log here if needed
 		return
 	}
-}
-
-// initializeDatabase initializes the database connection using storex
-func initializeDatabase(ctx context.Context, cfg *config.AppConfig, logger log.Logger) (*gorm.DB, error) {
-	store, err := storex.NewGORMStore(storex.GORMOptions{
-		DSN:             cfg.Database.DSN,
-		Driver:          cfg.Database.Driver,
-		MaxIdleConns:    cfg.Database.MaxIdle,
-		MaxOpenConns:    cfg.Database.MaxOpen,
-		ConnMaxLifetime: cfg.Database.MaxLifetime,
-		Logger:          logger,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create database store: %w", err)
-	}
-
-	// Test connection
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	if err := store.Ping(pingCtx); err != nil {
-		store.Close()
-		return nil, fmt.Errorf("database ping failed: %w", err)
-	}
-
-	return store.GetDB(), nil
 }
 
 // mockUserRepository is a simple in-memory implementation for demo purposes
