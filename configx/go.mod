@@ -3,7 +3,7 @@ module github.com/eggybyte-technology/egg/configx
 go 1.25.1
 
 require (
-	github.com/eggybyte-technology/egg/core v0.2.0-alpha.1
+	github.com/eggybyte-technology/egg/core v0.2.0-beta.1
 	github.com/go-playground/validator/v10 v10.28.0
 )
 
