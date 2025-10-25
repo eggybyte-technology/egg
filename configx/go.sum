@@ -1,7 +1,7 @@
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/eggybyte-technology/egg/core v0.1.0 h1:FRgxCYZKgBu9xaBDlEbZeSc1a0n0HhI2wvCXE5EyAbs=
-github.com/eggybyte-technology/egg/core v0.1.0/go.mod h1:euhQJG5z+1k3siHB/0gsWrIx/kg3txG6R1ov2XvFMLc=
+github.com/eggybyte-technology/egg/core v0.2.0-alpha.1 h1:wXJYRRr0iqKjDx93OpqeFEZvS5JVjnipBRiGKkI+Hg0=
+github.com/eggybyte-technology/egg/core v0.2.0-alpha.1/go.mod h1:euhQJG5z+1k3siHB/0gsWrIx/kg3txG6R1ov2XvFMLc=
 github.com/gabriel-vasile/mimetype v1.4.10 h1:zyueNbySn/z8mJZHLt6IPw0KoZsiQNszIpU+bX4+ZK0=
 github.com/gabriel-vasile/mimetype v1.4.10/go.mod h1:d+9Oxyo1wTzWdyVUPMmXFvp4F9tea18J8ufA774AB3s=
 github.com/go-playground/assert/v2 v2.2.0 h1:JvknZsQTYeFEAhQwI4qEt9cyV5ONwRHC+lYKSsYSR8s=
