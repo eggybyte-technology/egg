@@ -3,7 +3,7 @@ module github.com/eggybyte-technology/egg/storex
 go 1.25.1
 
 require (
-	github.com/eggybyte-technology/egg/core v0.1.0
+	github.com/eggybyte-technology/egg/core v0.2.0-alpha.1
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/driver/sqlite v1.6.0
