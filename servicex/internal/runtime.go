@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/eggybyte-technology/egg/configx"
@@ -96,9 +98,17 @@ func (r *ServiceRuntime) Run(ctx context.Context) error {
 func (r *ServiceRuntime) initializeLogger() error {
 	if r.config.Logger == nil {
 		level := slog.LevelInfo
+
+		// Determine log level from EnableDebug flag or LOG_LEVEL environment variable
 		if r.config.EnableDebug {
 			level = slog.LevelDebug
+		} else if logLevel := os.Getenv("LOG_LEVEL"); logLevel != "" {
+			// Parse LOG_LEVEL environment variable
+			if parsedLevel, err := ParseLogLevel(logLevel); err == nil {
+				level = parsedLevel
+			}
 		}
+
 		r.logger = logx.New(
 			logx.WithFormat(logx.FormatLogfmt),
 			logx.WithLevel(level),
@@ -143,6 +153,26 @@ func (r *ServiceRuntime) initializeConfig(ctx context.Context) error {
 		}
 		if port := baseGetter.GetMetricsPort(); port != "" {
 			r.config.MetricsPort = parsePort(port, 9091)
+		}
+	}
+
+	// Extract database configuration from BaseConfig after binding environment variables
+	// This ensures DSN is populated from environment variables
+	if r.config.DBConfig == nil {
+		if baseCfg, ok := ExtractBaseConfig(r.config.Config); ok {
+			if baseCfg.Database.DSN != "" {
+				r.config.DBConfig = &DatabaseConfig{
+					Driver:          baseCfg.Database.Driver,
+					DSN:             baseCfg.Database.DSN,
+					MaxIdleConns:    baseCfg.Database.MaxIdle,
+					MaxOpenConns:    baseCfg.Database.MaxOpen,
+					ConnMaxLifetime: baseCfg.Database.MaxLifetime,
+					PingTimeout:     5 * time.Second,
+				}
+				r.logger.Info("database configuration detected from BaseConfig",
+					"driver", baseCfg.Database.Driver,
+					"dsn_preview", maskDSN(baseCfg.Database.DSN))
+			}
 		}
 	}
 
@@ -285,6 +315,18 @@ func parsePort(portStr string, defaultPort int) int {
 	}
 
 	return defaultPort
+}
+
+// maskDSN masks sensitive information in DSN for logging.
+func maskDSN(dsn string) string {
+	// Mask password in DSN
+	// Example: user:password@tcp(host:port)/db -> user:***@tcp(host:port)/db
+	if idx := strings.Index(dsn, "@"); idx > 0 {
+		if colonIdx := strings.LastIndex(dsn[:idx], ":"); colonIdx > 0 {
+			return dsn[:colonIdx+1] + "***" + dsn[idx:]
+		}
+	}
+	return dsn
 }
 
 // gracefulShutdown performs graceful shutdown of all components.

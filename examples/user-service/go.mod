@@ -5,7 +5,8 @@ go 1.25.1
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/eggybyte-technology/egg/configx v0.1.0
-	github.com/eggybyte-technology/egg/core v0.1.0
+	github.com/eggybyte-technology/egg/core v0.2.0-alpha.1
+	github.com/eggybyte-technology/egg/logx v0.2.0-alpha.1
 	github.com/eggybyte-technology/egg/servicex v0.1.0
 	github.com/google/uuid v1.6.0
 	google.golang.org/protobuf v1.36.10

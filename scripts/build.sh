@@ -28,10 +28,23 @@ source "$SCRIPT_DIR/logger.sh"
 # Get the project root directory
 PROJECT_ROOT="$(get_project_root)"
 
-
+# Check if Docker is running
+check_docker() {
+    if ! docker ps >/dev/null 2>&1; then
+        print_error "Docker daemon is not running or not accessible"
+        print_info "Please start Docker Desktop and ensure it's fully initialized"
+        print_info "You can check Docker status with: docker ps"
+        print_info "If Docker Desktop is running but daemon is not accessible, try:"
+        print_info "  1. Restart Docker Desktop"
+        print_info "  2. Wait a few seconds for Docker to fully start"
+        print_info "  3. Run: docker ps to verify connection"
+        exit_with_error "Docker daemon not accessible"
+    fi
+}
 
 # Pull the base image (no longer building locally)
 pull_base() {
+    check_docker
     print_header "Pulling eggybyte-go-alpine base image"
     
     print_info "Pulling base image from remote registry..."
@@ -48,6 +61,8 @@ pull_base() {
 
 # Build a Go service
 build_service() {
+    check_docker
+    
     local service_dir="$1"
     local binary_name="$2"
     local build_path="${3:-.}"

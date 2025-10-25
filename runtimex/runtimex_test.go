@@ -46,15 +46,15 @@ func TestOptions(t *testing.T) {
 	opts := Options{
 		Logger: logger,
 		HTTP: &HTTPOptions{
-			Addr: ":8080",
+			Port: 8080,
 			H2C:  true,
 			Mux:  mux,
 		},
 		Health: &Endpoint{
-			Addr: ":8081",
+			Port: 8081,
 		},
 		Metrics: &Endpoint{
-			Addr: ":9091",
+			Port: 9091,
 		},
 		ShutdownTimeout: 15 * time.Second,
 	}
@@ -67,8 +67,8 @@ func TestOptions(t *testing.T) {
 		t.Error("HTTP options should not be nil")
 	}
 
-	if opts.HTTP.Addr != ":8080" {
-		t.Errorf("HTTP address = %v, want :8080", opts.HTTP.Addr)
+	if opts.HTTP.Port != 8080 {
+		t.Errorf("HTTP port = %v, want 8080", opts.HTTP.Port)
 	}
 
 	if !opts.HTTP.H2C {
@@ -115,30 +115,30 @@ func TestService(t *testing.T) {
 func TestEndpoint(t *testing.T) {
 	tests := []struct {
 		name string
-		addr string
+		port int
 	}{
 		{
-			name: "port only",
-			addr: ":8080",
+			name: "standard port",
+			port: 8080,
 		},
 		{
-			name: "host and port",
-			addr: "localhost:8080",
+			name: "health port",
+			port: 8081,
 		},
 		{
-			name: "IP and port",
-			addr: "127.0.0.1:8080",
+			name: "metrics port",
+			port: 9091,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			endpoint := &Endpoint{
-				Addr: tt.addr,
+				Port: tt.port,
 			}
 
-			if endpoint.Addr != tt.addr {
-				t.Errorf("Addr = %v, want %v", endpoint.Addr, tt.addr)
+			if endpoint.Port != tt.port {
+				t.Errorf("Port = %v, want %v", endpoint.Port, tt.port)
 			}
 		})
 	}
@@ -148,13 +148,13 @@ func TestHTTPOptions(t *testing.T) {
 	mux := http.NewServeMux()
 
 	opts := &HTTPOptions{
-		Addr: ":8080",
+		Port: 8080,
 		H2C:  true,
 		Mux:  mux,
 	}
 
-	if opts.Addr != ":8080" {
-		t.Errorf("Addr = %v, want :8080", opts.Addr)
+	if opts.Port != 8080 {
+		t.Errorf("Port = %v, want 8080", opts.Port)
 	}
 
 	if !opts.H2C {
@@ -168,11 +168,11 @@ func TestHTTPOptions(t *testing.T) {
 
 func TestRPCOptions(t *testing.T) {
 	opts := &RPCOptions{
-		Addr: ":9090",
+		Port: 9090,
 	}
 
-	if opts.Addr != ":9090" {
-		t.Errorf("Addr = %v, want :9090", opts.Addr)
+	if opts.Port != 9090 {
+		t.Errorf("Port = %v, want 9090", opts.Port)
 	}
 }
 
@@ -182,7 +182,7 @@ func TestRun_MissingLogger(t *testing.T) {
 
 	err := Run(ctx, nil, Options{
 		HTTP: &HTTPOptions{
-			Addr: ":8080",
+			Port: 8080,
 			Mux:  http.NewServeMux(),
 		},
 	})
@@ -208,7 +208,7 @@ func TestRun_WithShutdown(t *testing.T) {
 	opts := Options{
 		Logger: logger,
 		HTTP: &HTTPOptions{
-			Addr: ":18080", // Use a different port to avoid conflicts
+			Port: 18080, // Use a different port to avoid conflicts
 			H2C:  true,
 			Mux:  mux,
 		},
@@ -245,7 +245,7 @@ func TestRun_WithServices(t *testing.T) {
 	opts := Options{
 		Logger: logger,
 		HTTP: &HTTPOptions{
-			Addr: ":18081", // Use a different port
+			Port: 18081, // Use a different port
 			Mux:  http.NewServeMux(),
 		},
 		ShutdownTimeout: 1 * time.Second,

@@ -36,6 +36,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"connectrpc.com/connect"
@@ -103,9 +105,37 @@ func WithService(name, version string) Option {
 }
 
 // WithConfig sets the configuration struct.
+// If the config struct embeds configx.BaseConfig or has a Database field,
+// it will automatically be used for database configuration.
 func WithConfig(cfg any) Option {
 	return func(c *internal.ServiceConfig) {
 		c.Config = cfg
+
+		// Auto-detect database configuration from BaseConfig or embedded Database
+		if c.DBConfig == nil {
+			// Try to extract BaseConfig first
+			if baseCfg, ok := internal.ExtractBaseConfig(cfg); ok {
+				dbCfg := &DatabaseConfig{
+					Driver:          baseCfg.Database.Driver,
+					DSN:             baseCfg.Database.DSN,
+					MaxIdleConns:    baseCfg.Database.MaxIdle,
+					MaxOpenConns:    baseCfg.Database.MaxOpen,
+					ConnMaxLifetime: baseCfg.Database.MaxLifetime,
+					PingTimeout:     5 * time.Second,
+				}
+				// Only set if DSN is provided
+				if dbCfg.DSN != "" {
+					c.DBConfig = &internal.DatabaseConfig{
+						Driver:          dbCfg.Driver,
+						DSN:             dbCfg.DSN,
+						MaxIdleConns:    dbCfg.MaxIdleConns,
+						MaxOpenConns:    dbCfg.MaxOpenConns,
+						ConnMaxLifetime: dbCfg.ConnMaxLifetime,
+						PingTimeout:     dbCfg.PingTimeout,
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -134,7 +164,18 @@ func WithMetrics(enabled bool) Option {
 func WithRegister(fn func(*App) error) Option {
 	return func(c *internal.ServiceConfig) {
 		c.RegisterFn = func(app interface{}) error {
-			return fn(app.(*App))
+			// Convert internal.App to servicex.App
+			internalApp := app.(*internal.App)
+			servicexApp := &App{
+				mux:           internalApp.Mux,
+				logger:        internalApp.Logger,
+				interceptors:  internalApp.Interceptors,
+				otel:          internalApp.OtelProvider,
+				container:     internalApp.Container,
+				shutdownHooks: internalApp.ShutdownHooks,
+				db:            internalApp.DB,
+			}
+			return fn(servicexApp)
 		}
 	}
 }
@@ -161,6 +202,8 @@ func WithShutdownTimeout(timeout time.Duration) Option {
 }
 
 // WithDebugLogs enables debug-level logging.
+// Deprecated: Use LOG_LEVEL environment variable instead for more control.
+// This option is kept for backward compatibility.
 func WithDebugLogs(enabled bool) Option {
 	return func(c *internal.ServiceConfig) {
 		c.EnableDebug = enabled
@@ -168,17 +211,50 @@ func WithDebugLogs(enabled bool) Option {
 }
 
 // WithDatabase enables database support for the service.
+// If cfg is nil, it will automatically read configuration from environment variables via configx.
 func WithDatabase(cfg *DatabaseConfig) Option {
 	return func(c *internal.ServiceConfig) {
-		if cfg != nil {
-			c.DBConfig = &internal.DatabaseConfig{
-				Driver:          cfg.Driver,
-				DSN:             cfg.DSN,
-				MaxIdleConns:    cfg.MaxIdleConns,
-				MaxOpenConns:    cfg.MaxOpenConns,
-				ConnMaxLifetime: cfg.ConnMaxLifetime,
-				PingTimeout:     cfg.PingTimeout,
+		if cfg == nil {
+			// Use configx to read database configuration from environment
+			dbCfg := &configx.DatabaseConfig{}
+			// Create a temporary manager to read env vars
+			// Note: This is a simplified approach - in production, configx should be initialized
+			dbCfg.Driver = os.Getenv("DB_DRIVER")
+			if dbCfg.Driver == "" {
+				dbCfg.Driver = "mysql"
 			}
+			dbCfg.DSN = os.Getenv("DB_DSN")
+			if maxIdle := os.Getenv("DB_MAX_IDLE"); maxIdle != "" {
+				if val, err := strconv.Atoi(maxIdle); err == nil {
+					dbCfg.MaxIdle = val
+				}
+			}
+			if maxOpen := os.Getenv("DB_MAX_OPEN"); maxOpen != "" {
+				if val, err := strconv.Atoi(maxOpen); err == nil {
+					dbCfg.MaxOpen = val
+				}
+			}
+			if maxLifetime := os.Getenv("DB_MAX_LIFETIME"); maxLifetime != "" {
+				if val, err := time.ParseDuration(maxLifetime); err == nil {
+					dbCfg.MaxLifetime = val
+				}
+			}
+			cfg = &DatabaseConfig{
+				Driver:          dbCfg.Driver,
+				DSN:             dbCfg.DSN,
+				MaxIdleConns:    dbCfg.MaxIdle,
+				MaxOpenConns:    dbCfg.MaxOpen,
+				ConnMaxLifetime: dbCfg.MaxLifetime,
+				PingTimeout:     5 * time.Second,
+			}
+		}
+		c.DBConfig = &internal.DatabaseConfig{
+			Driver:          cfg.Driver,
+			DSN:             cfg.DSN,
+			MaxIdleConns:    cfg.MaxIdleConns,
+			MaxOpenConns:    cfg.MaxOpenConns,
+			ConnMaxLifetime: cfg.ConnMaxLifetime,
+			PingTimeout:     cfg.PingTimeout,
 		}
 	}
 }
@@ -187,6 +263,27 @@ func WithDatabase(cfg *DatabaseConfig) Option {
 func WithAutoMigrate(models ...any) Option {
 	return func(c *internal.ServiceConfig) {
 		c.AutoMigrateModels = models
+	}
+}
+
+// WithAppConfig is a convenience function that combines WithConfig and WithDatabase.
+// It automatically detects database configuration from the provided config struct.
+// This simplifies the common pattern of using BaseConfig with database.
+//
+// Example:
+//
+//	cfg := &MyConfig{configx.BaseConfig{}} // MyConfig embeds BaseConfig
+//	servicex.Run(ctx,
+//	    servicex.WithService("my-service", "1.0.0"),
+//	    servicex.WithLogger(logger),
+//	    servicex.WithAppConfig(cfg), // Automatically handles database config
+//	    servicex.WithAutoMigrate(&MyModel{}),
+//	    servicex.WithRegister(register),
+//	)
+func WithAppConfig(cfg any) Option {
+	return func(c *internal.ServiceConfig) {
+		WithConfig(cfg)(c)
+		// Database config is already extracted by WithConfig if BaseConfig is embedded
 	}
 }
 

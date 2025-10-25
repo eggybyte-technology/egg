@@ -1,16 +1,63 @@
 // Package main provides the main entry point for the user service.
 //
 // Overview:
-//   - Responsibility: Service initialization using servicex library
-//   - Key Types: Main function with minimal service setup
-//   - Concurrency Model: Graceful shutdown handled by servicex
-//   - Error Semantics: Startup errors are logged and cause exit
-//   - Performance Notes: Optimized for fast startup and graceful shutdown
+//
+//	This example demonstrates a production-ready CRUD service using the egg
+//	framework. It showcases proper layering (handler/service/repository),
+//	database integration with GORM, and comprehensive error handling.
+//
+// Key Features:
+//   - Full CRUD operations: Create, Read, Update, Delete, List (with pagination)
+//   - Database integration: MySQL with auto-migration and connection pooling
+//   - Layered architecture: Clear separation of concerns
+//   - Connect RPC: Modern HTTP/2-based RPC with streaming support
+//   - Structured logging: All operations logged with context
+//   - Comprehensive validation: Email format, required fields, uniqueness
+//   - Mock repository: Fallback in-memory implementation for testing
+//   - Automatic health checks: Database connectivity verification
+//   - Automatic metrics: Request counts, latencies, error rates
+//
+// Architecture:
+//
+//   - Handler layer: Connect RPC protocol implementation (thin adapter)
+//
+//   - Service layer: Business logic and domain validation
+//
+//   - Repository layer: Database operations and persistence
+//
+//   - Model layer: Domain entities and validation rules
+//
+//     This demonstrates the egg framework's recommended pattern for complex
+//     services that need proper layering and testability.
 //
 // Usage:
 //
-//	go run cmd/server/main.go
-//	./user-service
+//	Run with database:
+//	  DB_DSN="user:pass@tcp(localhost:3306)/dbname" ./user-service
+//
+//	Run without database (mock mode):
+//	  ./user-service
+//
+//	Configure via environment:
+//	  SERVICE_NAME=user-service HTTP_PORT=8080 ./user-service
+//
+// Endpoints:
+//   - HTTP: 8080 (configurable via HTTP_PORT)
+//   - Health: 8081 (configurable via HEALTH_PORT)
+//   - Metrics: 9091 (configurable via METRICS_PORT)
+//
+// Database:
+//
+//	The service auto-migrates the schema on startup. If DB_DSN is not provided,
+//	it falls back to an in-memory mock repository for demonstration purposes.
+//
+// Dependencies:
+//   - servicex: unified service initialization (L4)
+//   - configx: configuration management (L2)
+//   - logx: structured logging (L1)
+//   - connectx: Connect interceptor stack (L3)
+//   - core/errors: error codes and wrapping (L0)
+//   - GORM: database ORM
 package main
 
 import (
@@ -47,11 +94,11 @@ func main() {
 	cfg := &config.AppConfig{}
 
 	// Run the service using servicex with database integration
+	// WithAppConfig automatically detects BaseConfig and uses Database configuration
 	err := servicex.Run(ctx,
 		servicex.WithService("user-service", "0.1.0"),
 		servicex.WithLogger(logger),
-		servicex.WithConfig(cfg),
-		servicex.WithDatabase(servicex.FromBaseConfig(&cfg.Database)),
+		servicex.WithAppConfig(cfg), // Auto-detects database config from BaseConfig
 		servicex.WithAutoMigrate(&model.User{}),
 		servicex.WithRegister(registerServices),
 	)
@@ -88,7 +135,27 @@ func registerServices(app *servicex.App) error {
 	return nil
 }
 
-// mockUserRepository is a simple in-memory implementation for demo purposes
+// mockUserRepository is an in-memory implementation of UserRepository.
+//
+// This implementation provides a complete CRUD interface without requiring
+// a database, useful for:
+//   - Quick demonstrations and testing
+//   - Development without external dependencies
+//   - CI/CD environments
+//
+// Concurrency:
+//
+//	Safe for concurrent use via read-write mutex protection.
+//
+// Limitations:
+//   - Data is lost on service restart (no persistence)
+//   - Not suitable for production use
+//   - No transaction support
+//
+// Note:
+//
+//	This is automatically used when DB_DSN is not configured. For production,
+//	always configure a real database connection.
 type mockUserRepository struct {
 	users map[string]*model.User
 	mutex sync.RWMutex

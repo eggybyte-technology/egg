@@ -9,6 +9,7 @@ import (
 )
 
 // BuildInterceptors creates the default Connect interceptors based on options.
+// enableDebugLogs determines whether to log request/response bodies (verbose logging).
 func BuildInterceptors(logger log.Logger, otel *obsx.Provider, slowRequestMillis int64, enableDebugLogs, payloadAccounting bool) []connect.Interceptor {
 	connectxOpts := connectx.Options{
 		Logger:            logger,

@@ -60,3 +60,27 @@ func Dur(k string, v time.Duration) any {
 func Bool(k string, v bool) any {
 	return []any{k, v}
 }
+
+// Int32 creates an int32 key-value pair for structured logging.
+// This is a convenience function for creating key-value pairs.
+func Int32(k string, v int32) any {
+	return []any{k, v}
+}
+
+// Int64 creates an int64 key-value pair for structured logging.
+// This is a convenience function for creating key-value pairs.
+func Int64(k string, v int64) any {
+	return []any{k, v}
+}
+
+// Float64 creates a float64 key-value pair for structured logging.
+// This is a convenience function for creating key-value pairs.
+func Float64(k string, v float64) any {
+	return []any{k, v}
+}
+
+// String creates a string key-value pair for structured logging.
+// This is an alias for Str for convenience.
+func String(k, v string) any {
+	return Str(k, v)
+}
