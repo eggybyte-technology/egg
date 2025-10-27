@@ -177,17 +177,25 @@ for layer in "${MODULE_LAYERS[@]}"; do
         # Add replace directives for ALL processed modules (including transitive deps)
         # This ensures that go mod tidy won't try to download fake versions
         if [ ${#PROCESSED_MODULES[@]} -gt 0 ]; then
+            # Build lists of edits to apply in batch
+            local -a replace_args=()
+            local -a require_args=()
+            
             for dep in "${PROCESSED_MODULES[@]}"; do
                 # Always add replace directive for all processed modules
-                # This handles both direct and transitive dependencies
-                go mod edit -replace="$MODULE_BASE/$dep=$REPO_ROOT/$dep" 2>/dev/null || true
+                replace_args+=("-replace=$MODULE_BASE/$dep=$REPO_ROOT/$dep")
                 
                 # Only add require directive if this module actually imports it
                 if grep -r "\"$MODULE_BASE/$dep" . --include="*.go" --exclude-dir=vendor --exclude-dir=gen 2>/dev/null | head -1 > /dev/null; then
                     log_info "    ↳ Adding dependency: $dep"
-                    go mod edit -require="$MODULE_BASE/$dep@v0.0.0-00010101000000-000000000000" 2>/dev/null || true
+                    require_args+=("-require=$MODULE_BASE/$dep@v0.0.0-00010101000000-000000000000")
                 fi
             done
+            
+            # Apply all edits in a single go mod edit call to avoid conflicts
+            if [ ${#replace_args[@]} -gt 0 ] || [ ${#require_args[@]} -gt 0 ]; then
+                go mod edit "${replace_args[@]}" "${require_args[@]}" 2>/dev/null || true
+            fi
         fi
         
         # Run go mod tidy with error tolerance
