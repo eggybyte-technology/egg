@@ -229,13 +229,10 @@ release_single_module() {
             print_info "    ↳ No dependencies to update (first module)"
         fi
         
-        # Tidy up the go.mod file
-        # Use workspace mode to resolve dependencies from local modules
-        # This avoids issues with GOPROXY=direct and subdirectory module resolution
-        print_info "    ↳ Running go mod tidy (using workspace for local modules)..."
-        if ! go mod tidy; then
-            exit 1
-        fi
+        # Skip go mod tidy during release to avoid remote resolution issues
+        # The workspace will handle dependency resolution during development
+        # After all tags are pushed, users can run go mod tidy to sync
+        print_info "    ↳ Skipping go mod tidy (dependencies managed via workspace)"
     ) || return 1
     
     # Step 2: Commit changes if any
