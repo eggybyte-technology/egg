@@ -229,11 +229,11 @@ release_single_module() {
             print_info "    ↳ No dependencies to update (first module)"
         fi
         
-        # Tidy up the go.mod file (will resolve from already-pushed tags)
-        # Use GOPROXY=direct to bypass proxy cache and fetch directly from Git
-        # This avoids waiting for proxy synchronization during multi-module releases
-        print_info "    ↳ Running go mod tidy (with GOPROXY=direct)..."
-        if ! GOPROXY=direct GOSUMDB=off go mod tidy; then
+        # Tidy up the go.mod file
+        # Use workspace mode to resolve dependencies from local modules
+        # This avoids issues with GOPROXY=direct and subdirectory module resolution
+        print_info "    ↳ Running go mod tidy (using workspace for local modules)..."
+        if ! go mod tidy; then
             exit 1
         fi
     ) || return 1
