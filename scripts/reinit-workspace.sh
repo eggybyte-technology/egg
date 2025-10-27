@@ -193,8 +193,17 @@ for layer in "${MODULE_LAYERS[@]}"; do
             done
             
             # Apply all edits in a single go mod edit call to avoid conflicts
-            if [ ${#replace_args[@]} -gt 0 ] || [ ${#require_args[@]} -gt 0 ]; then
-                go mod edit "${replace_args[@]}" "${require_args[@]}" 2>/dev/null || true
+            # Build the complete argument list safely (avoiding empty array issues with set -u)
+            declare -a all_args=()
+            if [ ${#replace_args[@]} -gt 0 ]; then
+                all_args+=("${replace_args[@]}")
+            fi
+            if [ ${#require_args[@]} -gt 0 ]; then
+                all_args+=("${require_args[@]}")
+            fi
+            
+            if [ ${#all_args[@]} -gt 0 ]; then
+                go mod edit "${all_args[@]}" 2>/dev/null || true
             fi
         fi
         
