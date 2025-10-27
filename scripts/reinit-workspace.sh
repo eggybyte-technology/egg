@@ -178,8 +178,8 @@ for layer in "${MODULE_LAYERS[@]}"; do
         # This ensures that go mod tidy won't try to download fake versions
         if [ ${#PROCESSED_MODULES[@]} -gt 0 ]; then
             # Build lists of edits to apply in batch
-            local -a replace_args=()
-            local -a require_args=()
+            declare -a replace_args=()
+            declare -a require_args=()
             
             for dep in "${PROCESSED_MODULES[@]}"; do
                 # Always add replace directive for all processed modules
