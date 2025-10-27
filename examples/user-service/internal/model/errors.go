@@ -1,34 +1,87 @@
-// Package model provides error definitions for the user service.
+// Package model provides domain error definitions for the user service.
 //
 // Overview:
-//   - Responsibility: Define domain-specific error types
-//   - Key Types: Error constants and custom error types
-//   - Concurrency Model: Safe for concurrent use
-//   - Error Semantics: Structured error handling with codes
-//   - Performance Notes: Lightweight error definitions
+//   - Responsibility: Define domain-specific error types and codes
+//   - Key Types: Error constants (codes) and predefined error instances
+//   - Concurrency Model: Safe for concurrent use (immutable after initialization)
+//   - Error Semantics: Structured error handling with standardized error codes
+//   - Performance Notes: Lightweight, pre-allocated error instances
+//
+// Error Handling Strategy:
+//
+// This package follows the egg framework's error handling pattern:
+//  1. Define error codes as string constants (for API/logging)
+//  2. Create predefined error instances using core/errors package
+//  3. Use errors.Wrap() in repository/service layers for context
+//  4. Convert to Connect errors in handler layer
 //
 // Usage:
 //
-//	return ErrUserNotFound
-//	return ErrInvalidEmail
+//	// In validation logic:
+//	if user.Email == "" {
+//	    return model.ErrInvalidEmail
+//	}
+//
+//	// In repository layer with context:
+//	if err == gorm.ErrRecordNotFound {
+//	    return errors.Wrap(errors.CodeNotFound, "get user", model.ErrUserNotFound)
+//	}
 package model
 
-import "github.com/eggybyte-technology/egg/core/errors"
+import "go.eggybyte.com/egg/core/errors"
 
 // Domain error codes for the user service.
+//
+// These codes are used for:
+//   - API error responses (client-facing error identification)
+//   - Logging and monitoring (error categorization)
+//   - Metrics and alerting (error rate tracking)
+//
+// Convention: Use SCREAMING_SNAKE_CASE for error codes.
 const (
-	ErrCodeUserNotFound  = "USER_NOT_FOUND"
-	ErrCodeInvalidEmail  = "INVALID_EMAIL"
-	ErrCodeInvalidName   = "INVALID_NAME"
-	ErrCodeEmailExists   = "EMAIL_EXISTS"
+	// ErrCodeUserNotFound indicates that the requested user does not exist.
+	// HTTP Status: 404 Not Found
+	ErrCodeUserNotFound = "USER_NOT_FOUND"
+
+	// ErrCodeInvalidEmail indicates that the provided email format is invalid.
+	// HTTP Status: 400 Bad Request
+	ErrCodeInvalidEmail = "INVALID_EMAIL"
+
+	// ErrCodeInvalidName indicates that the provided name is invalid (empty or too long).
+	// HTTP Status: 400 Bad Request
+	ErrCodeInvalidName = "INVALID_NAME"
+
+	// ErrCodeEmailExists indicates that the email is already registered to another user.
+	// HTTP Status: 409 Conflict
+	ErrCodeEmailExists = "EMAIL_EXISTS"
+
+	// ErrCodeDatabaseError indicates a generic database operation failure.
+	// HTTP Status: 500 Internal Server Error
 	ErrCodeDatabaseError = "DATABASE_ERROR"
 )
 
-// Predefined errors for common scenarios.
+// Predefined domain errors for common scenarios.
+//
+// These errors are pre-allocated and should be returned directly for validation
+// errors, or wrapped with context for repository errors.
+//
+// Concurrency:
+//
+//	Safe for concurrent use. These are package-level immutable values.
 var (
-	ErrUserNotFound  = errors.New(ErrCodeUserNotFound, "user not found")
-	ErrInvalidEmail  = errors.New(ErrCodeInvalidEmail, "invalid email address")
-	ErrInvalidName   = errors.New(ErrCodeInvalidName, "invalid name")
-	ErrEmailExists   = errors.New(ErrCodeEmailExists, "email already exists")
+	// ErrUserNotFound is returned when a user lookup fails.
+	ErrUserNotFound = errors.New(ErrCodeUserNotFound, "user not found")
+
+	// ErrInvalidEmail is returned when email validation fails.
+	ErrInvalidEmail = errors.New(ErrCodeInvalidEmail, "invalid email address")
+
+	// ErrInvalidName is returned when name validation fails.
+	ErrInvalidName = errors.New(ErrCodeInvalidName, "invalid name")
+
+	// ErrEmailExists is returned when attempting to create/update with a duplicate email.
+	ErrEmailExists = errors.New(ErrCodeEmailExists, "email already exists")
+
+	// ErrDatabaseError is returned for unhandled database errors.
+	// Note: This should be used sparingly; prefer more specific errors.
 	ErrDatabaseError = errors.New(ErrCodeDatabaseError, "database operation failed")
 )

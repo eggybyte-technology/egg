@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package user.v1;
 
-option go_package = "github.com/eggybyte-technology/egg/examples/user-service/gen/go/user/v1;userv1";
+option go_package = "go.eggybyte.com/egg/examples/user-service/gen/go/user/v1;userv1";
 
 // UserService provides user management operations.
 service UserService {

@@ -286,7 +286,7 @@ check_file "backend/$BACKEND_SERVICE/cmd/server/main.go"
 
 # Validate go.mod DOES NOT contain local replace directives
 print_section "Validating go.mod uses remote dependencies"
-if grep -q "replace github.com/eggybyte-technology/egg" "backend/$BACKEND_SERVICE/go.mod"; then
+if grep -q "replace go.eggybyte.com/egg" "backend/$BACKEND_SERVICE/go.mod"; then
     print_error "go.mod contains local replace directives (should use remote)"
     exit 1
 fi

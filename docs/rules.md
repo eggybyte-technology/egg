@@ -62,7 +62,7 @@ Each module must include a top-level `doc.go` file containing the canonical GoDo
 //
 // Typical usage in a Connect service:
 //
-//   import "github.com/eggybyte-technology/egg/connectx"
+//   import "go.eggybyte.com/egg/connectx"
 //
 //   mux := http.NewServeMux()
 //   path, handler := myv1connect.NewMyServiceHandler(
@@ -152,7 +152,7 @@ package main
 
 import (
   "context"
-  "github.com/eggybyte-technology/egg/servicex"
+  "go.eggybyte.com/egg/servicex"
 )
 
 func main() {

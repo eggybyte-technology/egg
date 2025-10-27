@@ -20,9 +20,9 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
-	"github.com/eggybyte-technology/egg/connectx/internal"
-	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/obsx"
+	"go.eggybyte.com/egg/connectx/internal"
+	"go.eggybyte.com/egg/core/log"
+	"go.eggybyte.com/egg/obsx"
 )
 
 // HeaderMapping defines how HTTP headers map to identity and metadata fields.
@@ -69,8 +69,8 @@ type Options struct {
 // The interceptors are ordered for optimal performance and functionality:
 // 1. Recovery (panic handling)
 // 2. Timeout (service-level + request header override)
-// 3. OpenTelemetry (tracing and metrics)
-// 4. Identity injection (extract headers to context)
+// 3. Identity injection (extract headers to context)
+// 4. Metrics collection (RPC request metrics)
 // 5. Error mapping (core/errors to Connect codes)
 // 6. Logging (structured request/response logging)
 func DefaultInterceptors(opts Options) []connect.Interceptor {
@@ -112,6 +112,14 @@ func DefaultInterceptors(opts Options) []connect.Interceptor {
 		ForwardedFor:  opts.Headers.ForwardedFor,
 		UserAgent:     opts.Headers.UserAgent,
 	})))
+
+	// Add metrics interceptor (if OTEL provider is available)
+	if opts.Otel != nil {
+		if collector, err := internal.NewMetricsCollector(opts.Otel); err == nil {
+			interceptors = append(interceptors, connect.UnaryInterceptorFunc(internal.MetricsInterceptor(collector)))
+		}
+		// Silently skip metrics if initialization fails
+	}
 
 	// Add error mapping interceptor
 	interceptors = append(interceptors, connect.UnaryInterceptorFunc(internal.ErrorMappingInterceptor()))

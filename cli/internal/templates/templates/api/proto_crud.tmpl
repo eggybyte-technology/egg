@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package {{.ProtoPackage}}.{{.ServiceNameVar}}.v1;
+
+option go_package = "{{.ModulePrefix}}/gen/go/{{.ServiceNameVar}}/v1;{{.ServiceNameVar}}v1";
+
+// {{.ServiceNameCamel}}Service provides {{.ServiceName}} management operations.
+service {{.ServiceNameCamel}}Service {
+  // Create{{.ServiceNameCamel}} creates a new {{.ServiceName}}.
+  rpc Create{{.ServiceNameCamel}}(Create{{.ServiceNameCamel}}Request) returns (Create{{.ServiceNameCamel}}Response);
+  
+  // Get{{.ServiceNameCamel}} retrieves a {{.ServiceName}} by ID.
+  rpc Get{{.ServiceNameCamel}}(Get{{.ServiceNameCamel}}Request) returns (Get{{.ServiceNameCamel}}Response);
+  
+  // Update{{.ServiceNameCamel}} updates an existing {{.ServiceName}}.
+  rpc Update{{.ServiceNameCamel}}(Update{{.ServiceNameCamel}}Request) returns (Update{{.ServiceNameCamel}}Response);
+  
+  // Delete{{.ServiceNameCamel}} deletes a {{.ServiceName}} by ID.
+  rpc Delete{{.ServiceNameCamel}}(Delete{{.ServiceNameCamel}}Request) returns (Delete{{.ServiceNameCamel}}Response);
+  
+  // List{{.ServiceNameCamel}}s lists {{.ServiceName}}s with pagination.
+  rpc List{{.ServiceNameCamel}}s(List{{.ServiceNameCamel}}sRequest) returns (List{{.ServiceNameCamel}}sResponse);
+}
+
+// {{.ServiceNameCamel}} represents a {{.ServiceName}} entity.
+message {{.ServiceNameCamel}} {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+  int64 created_at = 4;
+  int64 updated_at = 5;
+}
+
+// Create{{.ServiceNameCamel}}Request is the request to create a {{.ServiceName}}.
+message Create{{.ServiceNameCamel}}Request {
+  string email = 1;
+  string name = 2;
+}
+
+// Create{{.ServiceNameCamel}}Response is the response when creating a {{.ServiceName}}.
+message Create{{.ServiceNameCamel}}Response {
+  {{.ServiceNameCamel}} {{.ServiceNameVar}} = 1;
+}
+
+// Get{{.ServiceNameCamel}}Request is the request to get a {{.ServiceName}}.
+message Get{{.ServiceNameCamel}}Request {
+  string id = 1;
+}
+
+// Get{{.ServiceNameCamel}}Response is the response when getting a {{.ServiceName}}.
+message Get{{.ServiceNameCamel}}Response {
+  {{.ServiceNameCamel}} {{.ServiceNameVar}} = 1;
+}
+
+// Update{{.ServiceNameCamel}}Request is the request to update a {{.ServiceName}}.
+message Update{{.ServiceNameCamel}}Request {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+}
+
+// Update{{.ServiceNameCamel}}Response is the response when updating a {{.ServiceName}}.
+message Update{{.ServiceNameCamel}}Response {
+  {{.ServiceNameCamel}} {{.ServiceNameVar}} = 1;
+}
+
+// Delete{{.ServiceNameCamel}}Request is the request to delete a {{.ServiceName}}.
+message Delete{{.ServiceNameCamel}}Request {
+  string id = 1;
+}
+
+// Delete{{.ServiceNameCamel}}Response is the response when deleting a {{.ServiceName}}.
+message Delete{{.ServiceNameCamel}}Response {
+  bool success = 1;
+}
+
+// List{{.ServiceNameCamel}}sRequest is the request to list {{.ServiceName}}s.
+message List{{.ServiceNameCamel}}sRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+// List{{.ServiceNameCamel}}sResponse is the response when listing {{.ServiceName}}s.
+message List{{.ServiceNameCamel}}sResponse {
+  repeated {{.ServiceNameCamel}} {{.ServiceNameVar}}s = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+

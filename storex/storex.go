@@ -18,8 +18,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/storex/internal"
+	"go.eggybyte.com/egg/core/log"
+	"go.eggybyte.com/egg/storex/internal"
 	"gorm.io/gorm"
 )
 

@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/eggybyte-technology/egg/core/log"
+	"go.eggybyte.com/egg/core/log"
 )
 
 // GORMStore implements the Store interface using GORM.

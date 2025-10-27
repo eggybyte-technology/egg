@@ -19,10 +19,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eggybyte-technology/egg/cli/internal/configschema"
-	"github.com/eggybyte-technology/egg/cli/internal/projectfs"
-	"github.com/eggybyte-technology/egg/cli/internal/ref"
-	"github.com/eggybyte-technology/egg/cli/internal/ui"
+	"go.eggybyte.com/egg/cli/internal/configschema"
+	"go.eggybyte.com/egg/cli/internal/projectfs"
+	"go.eggybyte.com/egg/cli/internal/ref"
+	"go.eggybyte.com/egg/cli/internal/ui"
 )
 
 // Renderer provides Helm chart rendering functionality.
@@ -398,7 +398,9 @@ func (r *Renderer) generateBackendValues(name string, service configschema.Backe
 
 	builder.WriteString("replicaCount: 1\n\n")
 	builder.WriteString("image:\n")
-	builder.WriteString("  repository: " + config.DockerRegistry + "/" + service.ImageName + "\n")
+	// Use auto-calculated image name
+	imageName := config.GetImageName(name)
+	builder.WriteString("  repository: " + config.DockerRegistry + "/" + imageName + "\n")
 	builder.WriteString("  tag: \"\"\n")
 	builder.WriteString("  pullPolicy: IfNotPresent\n\n")
 
@@ -471,7 +473,9 @@ func (r *Renderer) generateFrontendValues(name string, service configschema.Fron
 
 	builder.WriteString("replicaCount: 1\n\n")
 	builder.WriteString("image:\n")
-	builder.WriteString("  repository: " + config.DockerRegistry + "/" + service.ImageName + "\n")
+	// Use auto-calculated image name
+	imageName := config.GetImageName(name)
+	builder.WriteString("  repository: " + config.DockerRegistry + "/" + imageName + "\n")
 	builder.WriteString("  tag: \"\"\n")
 	builder.WriteString("  pullPolicy: IfNotPresent\n\n")
 

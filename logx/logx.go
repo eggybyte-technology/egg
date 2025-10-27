@@ -19,9 +19,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/eggybyte-technology/egg/core/identity"
-	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/logx/internal"
+	"go.eggybyte.com/egg/core/identity"
+	"go.eggybyte.com/egg/core/log"
+	"go.eggybyte.com/egg/logx/internal"
 )
 
 // Format specifies the output format for logs.
@@ -208,3 +208,90 @@ func FromContext(ctx context.Context, base log.Logger) log.Logger {
 	return base
 }
 
+// ParseLevel converts a log level string to slog.Level.
+//
+// Supported values (case-insensitive):
+//   - "debug", "DEBUG" -> slog.LevelDebug (-4)
+//   - "info", "INFO" -> slog.LevelInfo (0)
+//   - "warn", "warning", "WARN", "WARNING" -> slog.LevelWarn (4)
+//   - "error", "ERROR" -> slog.LevelError (8)
+//
+// Parameters:
+//   - level: log level string from configuration
+//
+// Returns:
+//   - slog.Level: parsed log level (defaults to Info if unrecognized)
+//
+// Examples:
+//
+//	level := logx.ParseLevel("debug")  // returns slog.LevelDebug
+//	level := logx.ParseLevel("INFO")   // returns slog.LevelInfo
+//	level := logx.ParseLevel("invalid") // returns slog.LevelInfo (default)
+//
+// Concurrency:
+//
+//	Safe for concurrent use (pure function, no shared state).
+func ParseLevel(level string) slog.Level {
+	switch level {
+	case "debug", "DEBUG":
+		return slog.LevelDebug
+	case "info", "INFO":
+		return slog.LevelInfo
+	case "warn", "warning", "WARN", "WARNING":
+		return slog.LevelWarn
+	case "error", "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo // Default to Info for unrecognized values
+	}
+}
+
+// NewFromEnv creates a new Logger with log level read from LOG_LEVEL environment variable.
+//
+// This is a convenience function for microservices that follows the egg framework's
+// configuration pattern. It automatically:
+//   - Reads LOG_LEVEL from environment (defaults to "info" if not set)
+//   - Uses console format for human-readable output
+//   - Enables colorization for development
+//
+// Environment Variables:
+//   - LOG_LEVEL: Log level (debug, info, warn, error); default: "info"
+//
+// Returns:
+//   - log.Logger: configured logger instance ready for use
+//
+// Examples:
+//
+//	// In main.go:
+//	logger := logx.NewFromEnv()
+//	logger.Info("service starting")
+//
+//	// With LOG_LEVEL=debug:
+//	// export LOG_LEVEL=debug
+//	// ./my-service
+//
+// Usage in servicex:
+//
+//	err := servicex.Run(ctx,
+//	    servicex.WithService("my-service", "1.0.0"),
+//	    servicex.WithLogger(logx.NewFromEnv()),  // Automatically reads LOG_LEVEL
+//	    // ... other options
+//	)
+//
+// Concurrency:
+//
+//	Safe to call from multiple goroutines (reads environment once).
+func NewFromEnv() log.Logger {
+	logLevelStr := os.Getenv("LOG_LEVEL")
+	if logLevelStr == "" {
+		logLevelStr = "info" // default
+	}
+
+	logLevel := ParseLevel(logLevelStr)
+
+	return New(
+		WithFormat(FormatConsole),
+		WithLevel(logLevel),
+		WithColor(true),
+	)
+}

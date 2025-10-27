@@ -13,7 +13,7 @@
 
 ## 2) 仓库与模块布局
 
-**仓库**：`github.com/eggybyte-technology/egg`
+**仓库**：`go.eggybyte.com/egg`
 
 ```
 egg/
@@ -24,30 +24,30 @@ egg/
 │  ├─ egg-cli.md                # CLI 工具使用说明
 │  └─ CONTRIBUTING.md
 ├─ core/        # L1：零依赖的接口与通用工具（稳定）
-│  ├─ go.mod -> module github.com/eggybyte-technology/egg/core
+│  ├─ go.mod -> module go.eggybyte.com/egg/core
 │  ├─ identity/                 # 身份容器与权限检查
 │  ├─ errors/                   # 结构化错误处理
 │  ├─ log/                      # 日志接口
 │  └─ utils/                     # 通用工具函数
 ├─ runtimex/    # L2：运行时（生命周期/服务器/健康/指标/基础配置；不含 Connect/K8s）
-│  └─ go.mod -> module github.com/eggybyte-technology/egg/runtimex
+│  └─ go.mod -> module go.eggybyte.com/egg/runtimex
 ├─ servicex/    # L2：微服务框架（整合 bootstrap/connectx/configx/obsx；一键启动）
-│  └─ go.mod -> module github.com/eggybyte-technology/egg/servicex
+│  └─ go.mod -> module go.eggybyte.com/egg/servicex
 ├─ connectx/    # L3：Connect 绑定 + 统一拦截器 + 身份注入 + 权限检查
-│  ├─ go.mod -> module github.com/eggybyte-technology/egg/connectx
+│  ├─ go.mod -> module go.eggybyte.com/egg/connectx
 │  └─ internal/                 # 内部拦截器实现
 ├─ configx/     # L3：统一配置（Env/File + K8s ConfigMap 热更新）
-│  └─ go.mod -> module github.com/eggybyte-technology/egg/configx
+│  └─ go.mod -> module go.eggybyte.com/egg/configx
 ├─ obsx/        # L3：OpenTelemetry/Prometheus 初始化
-│  └─ go.mod -> module github.com/eggybyte-technology/egg/obsx
+│  └─ go.mod -> module go.eggybyte.com/egg/obsx
 ├─ k8sx/        # L3：ConfigMap 名称法监听、服务发现、Secret 契约
-│  ├─ go.mod -> module github.com/eggybyte-technology/egg/k8sx
+│  ├─ go.mod -> module go.eggybyte.com/egg/k8sx
 │  └─ internal/                 # 内部实现
 ├─ storex/      # L3：TiDB/MySQL/GORM、仓库注册与健康探针（可选）
-│  ├─ go.mod -> module github.com/eggybyte-technology/egg/storex
+│  ├─ go.mod -> module go.eggybyte.com/egg/storex
 │  └─ internal/                 # 内部实现
 ├─ cli/         # CLI 工具（独立模块）
-│  ├─ go.mod -> module github.com/eggybyte-technology/egg/cli
+│  ├─ go.mod -> module go.eggybyte.com/egg/cli
 │  ├─ cmd/egg/                  # CLI 命令实现
 │  └─ internal/                 # CLI 内部实现
 └─ examples/
@@ -819,9 +819,9 @@ func (s *userService) CreateUser(ctx context.Context, req *userv1.CreateUserRequ
 * **业务仓库引用示例**
 
   ```bash
-  go get github.com/eggybyte-technology/egg/core@core/v1.0.0
-  go get github.com/eggybyte-technology/egg/runtimex@runtimex/v1.0.0
-  go get github.com/eggybyte-technology/egg/connectx@connectx/v1.2.0
+  go get go.eggybyte.com/egg/core@core/v1.0.0
+  go get go.eggybyte.com/egg/runtimex@runtimex/v1.0.0
+  go get go.eggybyte.com/egg/connectx@connectx/v1.2.0
   ```
 * **CI：两类工作流**
 

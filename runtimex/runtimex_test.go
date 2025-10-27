@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eggybyte-technology/egg/core/log"
+	"go.eggybyte.com/egg/core/log"
 )
 
 // testLogger is a test logger implementation.

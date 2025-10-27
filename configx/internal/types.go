@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/eggybyte-technology/egg/core/log"
+	"go.eggybyte.com/egg/core/log"
 )
 
 // Source describes a configuration source that can load and watch for updates.
@@ -66,4 +66,3 @@ func WithUpdateCallback(fn func()) BindOption {
 		cfg.onUpdate = fn
 	})
 }
-

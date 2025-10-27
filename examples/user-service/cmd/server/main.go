@@ -8,38 +8,31 @@
 //
 // Key Features:
 //   - Full CRUD operations: Create, Read, Update, Delete, List (with pagination)
-//   - Database integration: MySQL with auto-migration and connection pooling
-//   - Layered architecture: Clear separation of concerns
+//   - Database integration: MySQL/PostgreSQL with auto-migration and connection pooling
+//   - Layered architecture: Clear separation of concerns (handler/service/repository/model)
 //   - Connect RPC: Modern HTTP/2-based RPC with streaming support
 //   - Structured logging: All operations logged with context
-//   - Comprehensive validation: Email format, required fields, uniqueness
-//   - Mock repository: Fallback in-memory implementation for testing
+//   - Comprehensive validation: Email format, required fields, uniqueness constraints
 //   - Automatic health checks: Database connectivity verification
-//   - Automatic metrics: Request counts, latencies, error rates
+//   - Automatic metrics: Request counts, latencies, error rates, database stats
 //
 // Architecture:
 //
 //   - Handler layer: Connect RPC protocol implementation (thin adapter)
-//
 //   - Service layer: Business logic and domain validation
-//
 //   - Repository layer: Database operations and persistence
-//
 //   - Model layer: Domain entities and validation rules
 //
-//     This demonstrates the egg framework's recommended pattern for complex
-//     services that need proper layering and testability.
+// This demonstrates the egg framework's recommended pattern for production
+// services requiring proper layering, testability, and maintainability.
 //
 // Usage:
 //
-//	Run with database:
-//	  DB_DSN="user:pass@tcp(localhost:3306)/dbname" ./user-service
+//	Database is required. Configure via environment variable:
+//	  DB_DSN="user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local" ./user-service
 //
-//	Run without database (mock mode):
-//	  ./user-service
-//
-//	Configure via environment:
-//	  SERVICE_NAME=user-service HTTP_PORT=8080 ./user-service
+//	Additional configuration via environment:
+//	  SERVICE_NAME=user-service HTTP_PORT=8080 HEALTH_PORT=8081 ./user-service
 //
 // Endpoints:
 //   - HTTP: 8080 (configurable via HTTP_PORT)
@@ -48,82 +41,94 @@
 //
 // Database:
 //
-//	The service auto-migrates the schema on startup. If DB_DSN is not provided,
-//	it falls back to an in-memory mock repository for demonstration purposes.
+//	The service auto-migrates the schema on startup. Database connection is
+//	mandatory - the service will fail to start if DB_DSN is not configured.
+//	Supported databases: MySQL, PostgreSQL, SQLite (via GORM).
 //
 // Dependencies:
 //   - servicex: unified service initialization (L4)
 //   - configx: configuration management (L2)
 //   - logx: structured logging (L1)
 //   - connectx: Connect interceptor stack (L3)
+//   - storex: database connection and transaction management (附属)
 //   - core/errors: error codes and wrapping (L0)
 //   - GORM: database ORM
 package main
 
 import (
 	"context"
-	"log/slog"
-	"sync"
-	"time"
+	"fmt"
 
 	"connectrpc.com/connect"
-	"github.com/eggybyte-technology/egg/core/errors"
-	userv1connect "github.com/eggybyte-technology/egg/examples/user-service/gen/go/user/v1/userv1connect"
-	"github.com/eggybyte-technology/egg/examples/user-service/internal/config"
-	"github.com/eggybyte-technology/egg/examples/user-service/internal/handler"
-	"github.com/eggybyte-technology/egg/examples/user-service/internal/model"
-	"github.com/eggybyte-technology/egg/examples/user-service/internal/repository"
-	"github.com/eggybyte-technology/egg/examples/user-service/internal/service"
-	"github.com/eggybyte-technology/egg/logx"
-	"github.com/eggybyte-technology/egg/servicex"
-	"github.com/google/uuid"
+	userv1connect "go.eggybyte.com/egg/examples/user-service/gen/go/user/v1/userv1connect"
+	"go.eggybyte.com/egg/examples/user-service/internal/config"
+	"go.eggybyte.com/egg/examples/user-service/internal/handler"
+	"go.eggybyte.com/egg/examples/user-service/internal/model"
+	"go.eggybyte.com/egg/examples/user-service/internal/repository"
+	"go.eggybyte.com/egg/examples/user-service/internal/service"
+	"go.eggybyte.com/egg/servicex"
 )
 
 func main() {
 	// Create context for the service
 	ctx := context.Background()
 
-	// Create console logger for development (human-readable)
-	logger := logx.New(
-		logx.WithFormat(logx.FormatConsole),
-		logx.WithLevel(slog.LevelInfo),
-		logx.WithColor(true),
-	)
-
 	// Initialize configuration - will be populated by servicex
 	cfg := &config.AppConfig{}
 
 	// Run the service using servicex with database integration
+	// servicex automatically creates a logger with LOG_LEVEL from environment
 	// WithAppConfig automatically detects BaseConfig and uses Database configuration
 	err := servicex.Run(ctx,
 		servicex.WithService("user-service", "0.1.0"),
-		servicex.WithLogger(logger),
 		servicex.WithAppConfig(cfg), // Auto-detects database config from BaseConfig
 		servicex.WithAutoMigrate(&model.User{}),
+		servicex.WithMetricsConfig(true, true, true, false), // Enable runtime, process, and DB metrics
 		servicex.WithRegister(registerServices),
 	)
 	if err != nil {
-		logger.Error(err, "service failed to start")
+		// Logger is not available here if service fails, use panic
+		panic(fmt.Sprintf("service failed to start: %v", err))
 	}
 }
 
-// registerServices registers all service handlers
+// registerServices registers all service handlers with the application.
+//
+// This function is called by servicex during initialization. It demonstrates
+// production-ready service registration with mandatory database dependency.
+//
+// Parameters:
+//   - app: servicex application instance providing database, logger, mux, and interceptors
+//
+// Returns:
+//   - error: nil on success; error if database is not configured or registration fails
+//
+// Behavior:
+//   - Requires database to be configured via DB_DSN environment variable
+//   - Fails fast if database is not available (production best practice)
+//   - Registers Connect handler with full interceptor stack
+//   - Logs registration progress for observability
+//
+// Concurrency:
+//
+//	Called once during service startup, not safe for concurrent use.
 func registerServices(app *servicex.App) error {
-	// Get repository (database-backed or mock)
-	var userRepo repository.UserRepository
-	if db := app.DB(); db != nil {
-		app.Logger().Info("using database-backed repository")
-		userRepo = repository.NewUserRepository(db)
-	} else {
-		app.Logger().Info("no database configured, using mock repository")
-		userRepo = &mockUserRepository{}
+	// Ensure database is configured (production requirement)
+	db := app.DB()
+	if db == nil {
+		return fmt.Errorf("database is required but not configured: please set DB_DSN environment variable (e.g., DB_DSN=\"user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local\")")
 	}
 
-	// Initialize service and handler
+	app.Logger().Info("initializing user service with database-backed repository")
+
+	// Initialize repository with database
+	userRepo := repository.NewUserRepository(db)
+
+	// Initialize service and handler layers
 	userService := service.NewUserService(userRepo, app.Logger())
 	userHandler := handler.NewUserHandler(userService, app.Logger())
 
-	// Register Connect handler
+	// Register Connect handler with interceptors
 	path, connectHandler := userv1connect.NewUserServiceHandler(
 		userHandler,
 		connect.WithInterceptors(app.Interceptors()...),
@@ -132,155 +137,6 @@ func registerServices(app *servicex.App) error {
 	app.Mux().Handle(path, connectHandler)
 	app.Logger().Info("registered Connect handler", "path", path)
 	app.Logger().Info("user service initialized successfully")
+
 	return nil
-}
-
-// mockUserRepository is an in-memory implementation of UserRepository.
-//
-// This implementation provides a complete CRUD interface without requiring
-// a database, useful for:
-//   - Quick demonstrations and testing
-//   - Development without external dependencies
-//   - CI/CD environments
-//
-// Concurrency:
-//
-//	Safe for concurrent use via read-write mutex protection.
-//
-// Limitations:
-//   - Data is lost on service restart (no persistence)
-//   - Not suitable for production use
-//   - No transaction support
-//
-// Note:
-//
-//	This is automatically used when DB_DSN is not configured. For production,
-//	always configure a real database connection.
-type mockUserRepository struct {
-	users map[string]*model.User
-	mutex sync.RWMutex
-}
-
-func (m *mockUserRepository) Create(ctx context.Context, user *model.User) (*model.User, error) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	if m.users == nil {
-		m.users = make(map[string]*model.User)
-	}
-
-	// Check if email already exists
-	for _, existingUser := range m.users {
-		if existingUser.Email == user.Email {
-			return nil, errors.Wrap(errors.CodeAlreadyExists, "email check", model.ErrEmailExists)
-		}
-	}
-
-	// Generate ID and timestamps
-	user.ID = uuid.New().String()
-	now := time.Now()
-	user.CreatedAt = now
-	user.UpdatedAt = now
-
-	m.users[user.ID] = user
-	return user, nil
-}
-
-func (m *mockUserRepository) GetByID(ctx context.Context, id string) (*model.User, error) {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
-	if m.users == nil {
-		return nil, errors.Wrap(errors.CodeNotFound, "get user", errors.New(errors.CodeNotFound, "user not found"))
-	}
-
-	user, exists := m.users[id]
-	if !exists {
-		return nil, errors.Wrap(errors.CodeNotFound, "get user", errors.New(errors.CodeNotFound, "user not found"))
-	}
-
-	return user, nil
-}
-
-func (m *mockUserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
-	if m.users == nil {
-		return nil, errors.Wrap(errors.CodeNotFound, "get user", errors.New(errors.CodeNotFound, "user not found"))
-	}
-
-	for _, user := range m.users {
-		if user.Email == email {
-			return user, nil
-		}
-	}
-
-	return nil, errors.Wrap(errors.CodeNotFound, "get user", errors.New(errors.CodeNotFound, "user not found"))
-}
-
-func (m *mockUserRepository) Update(ctx context.Context, user *model.User) (*model.User, error) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	if m.users == nil {
-		return nil, errors.Wrap(errors.CodeNotFound, "update user", errors.New(errors.CodeNotFound, "user not found"))
-	}
-
-	existingUser, exists := m.users[user.ID]
-	if !exists {
-		return nil, errors.Wrap(errors.CodeNotFound, "update user", errors.New(errors.CodeNotFound, "user not found"))
-	}
-
-	// Update fields
-	existingUser.Name = user.Name
-	existingUser.Email = user.Email
-	existingUser.UpdatedAt = time.Now()
-
-	m.users[user.ID] = existingUser
-	return existingUser, nil
-}
-
-func (m *mockUserRepository) Delete(ctx context.Context, id string) error {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	if m.users == nil {
-		return errors.Wrap(errors.CodeNotFound, "delete user", errors.New(errors.CodeNotFound, "user not found"))
-	}
-
-	if _, exists := m.users[id]; !exists {
-		return errors.Wrap(errors.CodeNotFound, "delete user", errors.New(errors.CodeNotFound, "user not found"))
-	}
-
-	delete(m.users, id)
-	return nil
-}
-
-func (m *mockUserRepository) List(ctx context.Context, page, pageSize int) ([]*model.User, int64, error) {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
-	if m.users == nil {
-		return []*model.User{}, 0, nil
-	}
-
-	users := make([]*model.User, 0, len(m.users))
-	for _, user := range m.users {
-		users = append(users, user)
-	}
-
-	total := int64(len(users))
-	start := (page - 1) * pageSize
-	end := start + pageSize
-
-	if start >= int(total) {
-		return []*model.User{}, total, nil
-	}
-
-	if end > int(total) {
-		end = int(total)
-	}
-
-	return users[start:end], total, nil
 }

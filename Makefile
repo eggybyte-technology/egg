@@ -313,7 +313,7 @@ publish-modules:
 	@echo ""
 	$(call print_info,Users can now install modules with:)
 	@for module in $(MODULES); do \
-		echo "   go get github.com/eggybyte-technology/egg/$$module@$(VERSION)"; \
+		echo "   go get go.eggybyte.com/egg/$$module@$(VERSION)"; \
 	done
 
 # ==============================================================================

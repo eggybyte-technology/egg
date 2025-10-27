@@ -23,14 +23,14 @@ Depends on: `connectrpc.com/connect`, `github.com/sony/gobreaker`
 ## Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/clientx@latest
+go get go.eggybyte.com/egg/clientx@latest
 ```
 
 ## Basic Usage
 
 ```go
 import (
-    "github.com/eggybyte-technology/egg/clientx"
+    "go.eggybyte.com/egg/clientx"
     userv1connect "myapp/gen/go/user/v1/userv1connect"
 )
 

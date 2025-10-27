@@ -99,7 +99,7 @@ linters-settings:
     
   goimports:
     # Use goimports with local prefix
-    local-prefixes: github.com/eggybyte-technology/egg
+    local-prefixes: go.eggybyte.com/egg
     
   gocyclo:
     # Maximum cyclomatic complexity

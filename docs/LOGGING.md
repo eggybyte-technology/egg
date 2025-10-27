@@ -270,7 +270,7 @@ scrape_configs:
 
 ```go
 import (
-    "github.com/eggybyte-technology/egg/logx"
+    "go.eggybyte.com/egg/logx"
     "log/slog"
 )
 
@@ -305,7 +305,7 @@ logger.Error(err, "database query failed",
 servicex automatically configures logging with proper defaults:
 
 ```go
-import "github.com/eggybyte-technology/egg/servicex"
+import "go.eggybyte.com/egg/servicex"
 
 servicex.Run(ctx,
     servicex.WithService("user-service", "1.0.0"),

@@ -144,7 +144,7 @@ When adding new modules:
 2. Initialize the module:
    ```bash
    cd newmodule
-   go mod init github.com/eggybyte-technology/egg/newmodule
+   go mod init go.eggybyte.com/egg/newmodule
    ```
 3. Add to workspace:
    ```bash

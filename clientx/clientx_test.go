@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eggybyte-technology/egg/clientx/internal"
+	"go.eggybyte.com/egg/clientx/internal"
 )
 
 func TestNewHTTPClient(t *testing.T) {

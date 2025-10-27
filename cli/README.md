@@ -482,7 +482,7 @@ Contributions are welcome! Please see the main project [Contributing Guide](../C
 
 ```bash
 # Clone repository
-git clone https://github.com/eggybyte-technology/egg.git
+git clone https://go.eggybyte.com/egg.git
 cd egg
 
 # Build CLI

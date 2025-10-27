@@ -31,7 +31,7 @@ Egg is a comprehensive microservices framework designed for building production-
 ### Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/servicex@latest
+go get go.eggybyte.com/egg/servicex@latest
 ```
 
 ### Minimal Service
@@ -41,8 +41,10 @@ package main
 
 import (
     "context"
-    "github.com/eggybyte-technology/egg/configx"
-    "github.com/eggybyte-technology/egg/servicex"
+    "log/slog"
+    "go.eggybyte.com/egg/configx"
+    "go.eggybyte.com/egg/logx"
+    "go.eggybyte.com/egg/servicex"
 )
 
 type AppConfig struct {
@@ -59,21 +61,65 @@ func register(app *servicex.App) error {
 
 func main() {
     ctx := context.Background()
+    
+    // Create logger (optional - servicex creates one if not provided)
+    logger := logx.New(
+        logx.WithFormat(logx.FormatConsole),
+        logx.WithLevel(slog.LevelInfo),
+        logx.WithColor(true),
+    )
+    
     cfg := &AppConfig{}
     
     err := servicex.Run(ctx,
-        servicex.WithConfig(cfg),
+        servicex.WithService("my-service", "1.0.0"),
+        servicex.WithLogger(logger),
+        servicex.WithAppConfig(cfg), // Auto-detects database from BaseConfig
         servicex.WithRegister(register),
     )
     if err != nil {
-        panic(err)
+        logger.Error(err, "service failed to start")
     }
 }
 ```
 
 Run with:
 ```bash
+# Default log level (info)
 go run main.go
+
+# With debug logging
+LOG_LEVEL=debug go run main.go
+```
+
+## Recent Improvements
+
+### v0.2.0 - Simplified Configuration & Enhanced Logging
+
+**Environment-Based Log Level Control**
+- Use `LOG_LEVEL` environment variable instead of `WithDebugLogs()`
+- Supports: `debug`, `info`, `warn`, `error`
+- Automatically applied when using `servicex`
+
+**Simplified Database Configuration**
+- `WithAppConfig()` now auto-detects database configuration from `configx.BaseConfig`
+- No need for separate `WithDatabase()` call
+- Database settings loaded from environment variables after config binding
+
+**Enhanced Logging Helpers**
+- Added `Int32()`, `Int64()`, `Float64()`, `String()` to `core/log`
+- More convenient structured logging
+
+**Example:**
+```go
+// Old pattern
+servicex.WithConfig(cfg),
+servicex.WithDatabase(servicex.FromBaseConfig(&cfg.Database)),
+servicex.WithDebugLogs(true),
+
+// New pattern (recommended)
+servicex.WithAppConfig(cfg), // Auto-detects database
+// Set LOG_LEVEL=debug via environment variable
 ```
 
 ## Architecture
@@ -146,15 +192,18 @@ The highest-level module that integrates all components for microservice initial
 
 ```go
 servicex.Run(ctx,
-    servicex.WithConfig(cfg),
-    servicex.WithDatabase(dbConfig),
-    servicex.WithTracing(true),
+    servicex.WithService("my-service", "1.0.0"),
+    servicex.WithLogger(logger),
+    servicex.WithAppConfig(cfg), // Auto-detects database from BaseConfig
+    servicex.WithAutoMigrate(&model.User{}),
     servicex.WithRegister(register),
 )
 ```
 
 **Key Features:**
 - Integrated configuration, logging, database, tracing
+- Automatic database configuration from `BaseConfig`
+- Environment-based log level control (`LOG_LEVEL`)
 - Connect RPC interceptor stack
 - Graceful shutdown with hooks
 - Dependency injection container
@@ -342,11 +391,35 @@ All modules use functional options for configuration:
 
 ```go
 servicex.Run(ctx,
-    servicex.WithConfig(cfg),
-    servicex.WithDatabase(dbCfg),
-    servicex.WithTracing(true),
+    servicex.WithService("my-service", "1.0.0"),
+    servicex.WithLogger(logger),
+    servicex.WithAppConfig(cfg), // Auto-detects database
+    servicex.WithAutoMigrate(&model.User{}),
     servicex.WithRegister(register),
 )
+```
+
+**Configuration via Environment:**
+```bash
+# Service configuration
+SERVICE_NAME=my-service
+SERVICE_VERSION=1.0.0
+ENV=production
+
+# Log level control
+LOG_LEVEL=info  # debug, info, warn, error
+
+# Database (auto-detected from BaseConfig)
+DB_DRIVER=mysql
+DB_DSN=user:pass@tcp(localhost:3306)/mydb
+DB_MAX_IDLE=10
+DB_MAX_OPEN=100
+DB_MAX_LIFETIME=1h
+
+# Ports
+HTTP_PORT=8080
+HEALTH_PORT=8081
+METRICS_PORT=9091
 ```
 
 ## Complete Example

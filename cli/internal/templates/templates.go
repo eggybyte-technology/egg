@@ -21,7 +21,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/eggybyte-technology/egg/cli/internal/ui"
+	"go.eggybyte.com/egg/cli/internal/ui"
 )
 
 //go:embed templates/*
@@ -104,7 +104,14 @@ func (l *Loader) LoadTemplate(templatePath string) (string, error) {
 // Performance:
 //   - Template parsing and rendering
 func (l *Loader) RenderTemplate(templateContent string, data interface{}) (string, error) {
-	tmpl, err := template.New("template").Parse(templateContent)
+	// Create custom template functions
+	funcMap := template.FuncMap{
+		"ToUpper": strings.ToUpper,
+		"ToLower": strings.ToLower,
+		"Title":   strings.Title,
+	}
+
+	tmpl, err := template.New("template").Funcs(funcMap).Parse(templateContent)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)
 	}

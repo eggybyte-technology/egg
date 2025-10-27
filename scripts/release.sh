@@ -62,7 +62,7 @@ ALL_MODULES=(
 )
 
 # GitHub repository base path
-REPO_BASE="github.com/eggybyte-technology/egg"
+REPO_BASE="go.eggybyte.com/egg"
 
 # Track released modules (used during release process)
 RELEASED_MODULES=()

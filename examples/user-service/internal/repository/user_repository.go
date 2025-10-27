@@ -16,8 +16,8 @@ package repository
 import (
 	"context"
 
-	"github.com/eggybyte-technology/egg/core/errors"
-	"github.com/eggybyte-technology/egg/examples/user-service/internal/model"
+	"go.eggybyte.com/egg/core/errors"
+	"go.eggybyte.com/egg/examples/user-service/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -78,7 +78,28 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 	return &userRepository{db: db}
 }
 
-// Create creates a new user in the database.
+// Create creates a new user in the database with validation and duplicate checking.
+//
+// This method performs the following operations:
+//  1. Validates the user model using user.Validate()
+//  2. Checks for duplicate email addresses
+//  3. Generates UUID and timestamps via GORM hooks
+//  4. Inserts the record into the database
+//
+// Parameters:
+//   - ctx: request context for cancellation and deadlines
+//   - user: user model to create (ID will be auto-generated if empty)
+//
+// Returns:
+//   - *model.User: created user with generated ID and timestamps
+//   - error: nil on success; wrapped error on failure
+//   - CodeInvalidArgument: validation failed
+//   - CodeAlreadyExists: email already registered
+//   - CodeInternal: database operation failed
+//
+// Concurrency:
+//
+//	Safe for concurrent use. Database handles constraint violations atomically.
 func (r *userRepository) Create(ctx context.Context, user *model.User) (*model.User, error) {
 	if err := user.Validate(); err != nil {
 		return nil, errors.Wrap(errors.CodeInvalidArgument, "user validation", err)
@@ -99,7 +120,21 @@ func (r *userRepository) Create(ctx context.Context, user *model.User) (*model.U
 	return user, nil
 }
 
-// GetByID retrieves a user by their ID.
+// GetByID retrieves a user by their unique ID.
+//
+// Parameters:
+//   - ctx: request context for cancellation and deadlines
+//   - id: user UUID to lookup
+//
+// Returns:
+//   - *model.User: found user instance
+//   - error: nil on success; wrapped error on failure
+//   - CodeNotFound: user does not exist
+//   - CodeInternal: database query failed
+//
+// Concurrency:
+//
+//	Safe for concurrent use. Read-only operation with context support.
 func (r *userRepository) GetByID(ctx context.Context, id string) (*model.User, error) {
 	var user model.User
 	if err := r.db.WithContext(ctx).First(&user, "id = ?", id).Error; err != nil {
@@ -171,7 +206,37 @@ func (r *userRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// List retrieves users with pagination.
+// List retrieves users with pagination and automatic parameter normalization.
+//
+// This method performs efficient paginated retrieval with:
+//  1. Parameter validation and normalization
+//  2. Total count query (for pagination metadata)
+//  3. Paginated data query with ordering
+//
+// Parameters:
+//   - ctx: request context for cancellation and deadlines
+//   - page: page number (1-indexed); auto-corrected to 1 if < 1
+//   - pageSize: items per page; auto-corrected to [1, 100] range
+//
+// Returns:
+//   - []*model.User: slice of users for the requested page (may be empty)
+//   - int64: total count of users in database
+//   - error: nil on success; wrapped error with CodeInternal on database failure
+//
+// Behavior:
+//   - Default page size: 10
+//   - Maximum page size: 100 (prevents excessive memory usage)
+//   - Ordering: created_at DESC (newest first)
+//   - Empty result: returns empty slice (not nil) with total count
+//
+// Performance:
+//   - Two queries: COUNT(*) + SELECT with LIMIT/OFFSET
+//   - Index hint: Uses primary key and created_at index
+//   - Memory: O(pageSize) per call
+//
+// Concurrency:
+//
+//	Safe for concurrent use. Read-only operations with context support.
 func (r *userRepository) List(ctx context.Context, page, pageSize int) ([]*model.User, int64, error) {
 	if page < 1 {
 		page = 1

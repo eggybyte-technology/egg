@@ -143,7 +143,7 @@ go work edit -json
 
 ```bash
 cd pkg/hash
-go mod init github.com/eggybyte-technology/egg/pkg/hash
+go mod init go.eggybyte.com/egg/pkg/hash
 go mod tidy
 ```
 
@@ -310,7 +310,7 @@ GOFLAGS=-mod=mod go work init ./cmd/proxy ./cmd/node ./cmd/admin ./pkg/connectx 
 
 # 2) Create a new module (example)
 mkdir -p pkg/connectx && cd pkg/connectx
-go mod init github.com/eggybyte-technology/egg/pkg/connectx
+go mod init go.eggybyte.com/egg/pkg/connectx
 
 # 3) Add tools
 go install google.golang.org/protobuf/cmd/protoc-gen-go@latest

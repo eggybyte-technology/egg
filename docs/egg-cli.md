@@ -9,7 +9,7 @@
 ### 1.1 仓库（egg monorepo）结构（含 CLI 与通用库）
 
 ```
-egg/                           # Git 仓库根（模块名：github.com/eggybyte-technology/egg）
+egg/                           # Git 仓库根（模块名：go.eggybyte.com/egg）
 ├─ go.work                     # 仅仓库内部模块聚合（不向生成项目泄露）
 ├─ core/                       # 通用库（示例：基础工具与接口）
 ├─ runtimex/                   # 统一进程生命周期、HTTP/H2C、健康/指标
@@ -75,7 +75,7 @@ my-platform/                   # 用户项目根（由 `egg init` 生成）
 config_version: "1.0"
 project_name: "my-platform"
 version: "v1.0.0"
-module_prefix: "github.com/eggybyte-technology/my-platform"
+module_prefix: "go.eggybyte.com/my-platform"
 docker_registry: "ghcr.io/eggybyte-technology"
 
 build:
@@ -241,7 +241,7 @@ egg
 // internal/config/app_config.go
 package config
 
-import "github.com/eggybyte-technology/egg/configx"
+import "go.eggybyte.com/egg/configx"
 
 type AppConfig struct {
   configx.BaseConfig             // 含 HTTP/Health/Metrics/APP_CONFIGMAP_NAME 等基线键
@@ -258,9 +258,9 @@ import (
   "time"
   "context"
 
-  "github.com/eggybyte-technology/egg/runtimex"
-  "github.com/eggybyte-technology/egg/connectx"
-  "github.com/eggybyte-technology/egg/configx"
+  "go.eggybyte.com/egg/runtimex"
+  "go.eggybyte.com/egg/connectx"
+  "go.eggybyte.com/egg/configx"
 )
 
 func main() {

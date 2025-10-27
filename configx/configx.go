@@ -27,8 +27,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/eggybyte-technology/egg/configx/internal"
-	"github.com/eggybyte-technology/egg/core/log"
+	"go.eggybyte.com/egg/configx/internal"
+	"go.eggybyte.com/egg/core/log"
 )
 
 // Source describes a configuration source that can load and watch for updates.
@@ -96,6 +96,7 @@ type BaseConfig struct {
 	ServiceName    string `env:"SERVICE_NAME" default:"app"`
 	ServiceVersion string `env:"SERVICE_VERSION" default:"0.0.0"`
 	Env            string `env:"ENV" default:"dev"`
+	LogLevel       string `env:"LOG_LEVEL" default:"info"` // Log level: debug, info, warn, error
 
 	// Single port strategy: HTTP/Connect/gRPC-Web on one port
 	HTTPPort    string `env:"HTTP_PORT" default:":8080"`

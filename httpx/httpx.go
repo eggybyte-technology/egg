@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/eggybyte-technology/egg/httpx/internal"
 	"github.com/go-playground/validator/v10"
+	"go.eggybyte.com/egg/httpx/internal"
 )
 
 // ErrorResponse represents a standard JSON error response.

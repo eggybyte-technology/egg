@@ -101,7 +101,6 @@ type KubernetesResourcesConfig struct {
 
 // BackendService defines a backend service configuration.
 type BackendService struct {
-	ImageName  string                  `yaml:"image_name"`
 	Ports      *PortConfig             `yaml:"ports,omitempty"`
 	Kubernetes BackendKubernetesConfig `yaml:"kubernetes"`
 	Env        BackendEnvConfig        `yaml:"env"`
@@ -134,7 +133,6 @@ type BackendEnvConfig struct {
 // FrontendService defines a frontend service configuration.
 type FrontendService struct {
 	Platforms []string `yaml:"platforms"`
-	ImageName string   `yaml:"image_name"`
 }
 
 // DatabaseConfig defines database settings.
@@ -334,6 +332,85 @@ func (d *Diagnostics) Items() []Diagnostic {
 	return result
 }
 
+// ComputeImageName computes the standard image name for a service.
+// Image name follows the pattern: <project_name>-<service_name>
+// All characters are converted to lowercase, slashes to hyphens, and consecutive hyphens are collapsed.
+//
+// Parameters:
+//   - projectName: Project name from configuration
+//   - serviceName: Service name
+//
+// Returns:
+//   - string: Computed image name
+//
+// Concurrency:
+//   - Thread-safe (pure function)
+//
+// Performance:
+//   - O(n) string processing
+func ComputeImageName(projectName, serviceName string) string {
+	// Concatenate with hyphen
+	name := projectName + "-" + serviceName
+
+	// Convert to lowercase
+	name = strings.ToLower(name)
+
+	// Replace slashes with hyphens
+	name = strings.ReplaceAll(name, "/", "-")
+
+	// Replace spaces with hyphens
+	name = strings.ReplaceAll(name, " ", "-")
+
+	// Collapse consecutive hyphens
+	for strings.Contains(name, "--") {
+		name = strings.ReplaceAll(name, "--", "-")
+	}
+
+	// Trim leading/trailing hyphens
+	name = strings.Trim(name, "-")
+
+	return name
+}
+
+// GetImageName returns the computed image name for a service.
+//
+// Parameters:
+//   - serviceName: Service name
+//
+// Returns:
+//   - string: Computed image name
+//
+// Concurrency:
+//   - Thread-safe
+//
+// Performance:
+//   - O(n) string processing
+func (c *Config) GetImageName(serviceName string) string {
+	return ComputeImageName(c.ProjectName, serviceName)
+}
+
+// ValidateServiceName validates a service name according to naming rules.
+// Service names must not end with "-service" suffix.
+//
+// Parameters:
+//   - name: Service name to validate
+//
+// Returns:
+//   - error: Validation error with suggestion if invalid, nil if valid
+//
+// Concurrency:
+//   - Thread-safe (pure function)
+//
+// Performance:
+//   - O(1) string check
+func ValidateServiceName(name string) error {
+	if strings.HasSuffix(name, "-service") {
+		suggestedName := strings.TrimSuffix(name, "-service")
+		return fmt.Errorf("service name must not end with '-service' suffix: got '%s', use '%s' instead", name, suggestedName)
+	}
+	return nil
+}
+
 // Load reads and parses an egg.yaml configuration file.
 //
 // Parameters:
@@ -413,7 +490,7 @@ func applyDefaults(config *Config) {
 
 	// Set default module prefix
 	if config.ModulePrefix == "" {
-		config.ModulePrefix = fmt.Sprintf("github.com/eggybyte-technology/%s", config.ProjectName)
+		config.ModulePrefix = fmt.Sprintf("go.eggybyte.com/%s", config.ProjectName)
 	}
 
 	// Set default docker registry
@@ -546,11 +623,9 @@ func validateBackendService(name string, service BackendService, config *Config,
 		diags.AddError("Invalid service name", fmt.Sprintf("backend.%s", name), "Use lowercase letters, numbers, hyphens, and underscores only")
 	}
 
-	// Validate image name
-	if service.ImageName == "" {
-		diags.AddError("image_name is required", fmt.Sprintf("backend.%s.image_name", name), "Set a valid image name")
-	} else if !isValidImageName(service.ImageName) {
-		diags.AddError("Invalid image name format", fmt.Sprintf("backend.%s.image_name", name), "Use lowercase letters, numbers, and hyphens only")
+	// Validate service name does not end with -service
+	if err := ValidateServiceName(name); err != nil {
+		diags.AddWarning("Service naming convention violation", fmt.Sprintf("backend.%s", name), err.Error())
 	}
 
 	// Validate ports
@@ -606,11 +681,9 @@ func validateFrontendService(name string, service FrontendService, diags *Diagno
 		diags.AddError("Invalid service name", fmt.Sprintf("frontend.%s", name), "Use lowercase letters, numbers, hyphens, and underscores only")
 	}
 
-	// Validate image name
-	if service.ImageName == "" {
-		diags.AddError("image_name is required", fmt.Sprintf("frontend.%s.image_name", name), "Set a valid image name")
-	} else if !isValidImageName(service.ImageName) {
-		diags.AddError("Invalid image name format", fmt.Sprintf("frontend.%s.image_name", name), "Use lowercase letters, numbers, and hyphens only")
+	// Validate service name does not end with -service
+	if err := ValidateServiceName(name); err != nil {
+		diags.AddWarning("Service naming convention violation", fmt.Sprintf("frontend.%s", name), err.Error())
 	}
 
 	// Validate platforms
@@ -733,11 +806,6 @@ func isValidServiceName(name string) bool {
 		}
 	}
 	return true
-}
-
-func isValidImageName(name string) bool {
-	// Image names follow the same rules as service names
-	return isValidServiceName(name)
 }
 
 func isValidResourceName(name string) bool {

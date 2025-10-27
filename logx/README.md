@@ -24,7 +24,7 @@ Depends on: `core/log`, `core/identity`, `log/slog` (stdlib)
 ## Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/logx@latest
+go get go.eggybyte.com/egg/logx@latest
 ```
 
 ## Basic Usage
@@ -32,7 +32,7 @@ go get github.com/eggybyte-technology/egg/logx@latest
 ```go
 import (
     "log/slog"
-    "github.com/eggybyte-technology/egg/logx"
+    "go.eggybyte.com/egg/logx"
 )
 
 func main() {
@@ -88,6 +88,85 @@ The console format provides:
 - Indented key-value pairs
 - No quotes around strings
 - Natural duration formatting (e.g., "100ms" instead of "100")
+
+## Log Level Configuration
+
+### Using Environment Variable (Recommended)
+
+When using `servicex`, log level is automatically configured from the `LOG_LEVEL` environment variable:
+
+```bash
+# Debug - Shows all logs including request/response bodies
+LOG_LEVEL=debug go run main.go
+
+# Info - Standard operational logs (default)
+LOG_LEVEL=info go run main.go
+
+# Warn - Only warnings and errors
+LOG_LEVEL=warn go run main.go
+
+# Error - Only errors
+LOG_LEVEL=error go run main.go
+```
+
+**In Docker Compose:**
+
+```yaml
+environment:
+  LOG_LEVEL: debug  # debug, info, warn, error
+```
+
+### Programmatic Configuration
+
+You can also set the log level programmatically:
+
+```go
+import (
+    "log/slog"
+    "go.eggybyte.com/egg/logx"
+)
+
+// Create logger with specific level
+logger := logx.New(
+    logx.WithFormat(logx.FormatConsole),
+    logx.WithLevel(slog.LevelDebug),
+    logx.WithColor(true),
+)
+```
+
+### Integration with servicex
+
+When using `servicex`, you have two options:
+
+**Option 1: Let servicex create the logger (recommended)**
+
+```go
+servicex.Run(ctx,
+    servicex.WithService("my-service", "1.0.0"),
+    servicex.WithAppConfig(cfg),
+    // servicex creates logger based on LOG_LEVEL environment variable
+)
+```
+
+**Option 2: Provide custom logger**
+
+```go
+logger := logx.New(
+    logx.WithFormat(logx.FormatConsole),
+    logx.WithLevel(slog.LevelDebug),
+    logx.WithColor(true),
+)
+
+servicex.Run(ctx,
+    servicex.WithLogger(logger), // Custom logger takes precedence
+    servicex.WithAppConfig(cfg),
+)
+```
+
+**Priority:**
+1. Custom logger via `WithLogger()` → uses its configured level
+2. `LOG_LEVEL` environment variable → parsed and applied
+3. Default → `info` level
 
 ## Configuration Options
 
@@ -169,7 +248,7 @@ package main
 
 import (
     "log/slog"
-    "github.com/eggybyte-technology/egg/logx"
+    "go.eggybyte.com/egg/logx"
 )
 
 func main() {
@@ -195,8 +274,8 @@ func main() {
 ```go
 import (
     "context"
-    "github.com/eggybyte-technology/egg/core/identity"
-    "github.com/eggybyte-technology/egg/logx"
+    "go.eggybyte.com/egg/core/identity"
+    "go.eggybyte.com/egg/logx"
 )
 
 func handleRequest(ctx context.Context, baseLogger log.Logger) {
@@ -386,7 +465,7 @@ logger.Error(err, "error message")  // Red
 logx is automatically used by servicex:
 
 ```go
-import "github.com/eggybyte-technology/egg/servicex"
+import "go.eggybyte.com/egg/servicex"
 
 func main() {
     err := servicex.Run(ctx,

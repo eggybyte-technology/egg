@@ -24,7 +24,7 @@ Depends on: `core`, `logx`, `configx`, `obsx`
 ## Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/connectx@latest
+go get go.eggybyte.com/egg/connectx@latest
 ````
 
 ## Basic Usage
@@ -32,7 +32,7 @@ go get github.com/eggybyte-technology/egg/connectx@latest
 ```go
 import (
     "github.com/bufbuild/connect-go"
-    "github.com/eggybyte-technology/egg/connectx"
+    "go.eggybyte.com/egg/connectx"
     "net/http"
 )
 

@@ -4,8 +4,8 @@ package connectx
 import (
 	"testing"
 
-	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/obsx"
+	"go.eggybyte.com/egg/core/log"
+	"go.eggybyte.com/egg/obsx"
 )
 
 // testLogger is a test logger implementation.

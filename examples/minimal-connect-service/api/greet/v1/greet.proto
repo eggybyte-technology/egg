@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package greet.v1;
 
-option go_package = "github.com/eggybyte-technology/egg/examples/minimal-connect-service/gen/go/greet/v1;greetv1";
+option go_package = "go.eggybyte.com/egg/examples/minimal-connect-service/gen/go/greet/v1;greetv1";
 
 // GreeterService provides greeting operations.
 service GreeterService {

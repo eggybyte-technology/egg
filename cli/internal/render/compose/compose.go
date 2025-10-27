@@ -18,10 +18,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eggybyte-technology/egg/cli/internal/configschema"
-	"github.com/eggybyte-technology/egg/cli/internal/projectfs"
-	"github.com/eggybyte-technology/egg/cli/internal/ref"
-	"github.com/eggybyte-technology/egg/cli/internal/ui"
+	"go.eggybyte.com/egg/cli/internal/configschema"
+	"go.eggybyte.com/egg/cli/internal/projectfs"
+	"go.eggybyte.com/egg/cli/internal/ref"
+	"go.eggybyte.com/egg/cli/internal/ui"
 )
 
 // Renderer provides Docker Compose rendering functionality.

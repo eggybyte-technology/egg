@@ -22,7 +22,7 @@ Depends on: `core/log`, `k8s.io/client-go`
 ## Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/k8sx@latest
+go get go.eggybyte.com/egg/k8sx@latest
 ```
 
 ## Basic Usage
@@ -32,7 +32,7 @@ go get github.com/eggybyte-technology/egg/k8sx@latest
 ```go
 import (
     "context"
-    "github.com/eggybyte-technology/egg/k8sx"
+    "go.eggybyte.com/egg/k8sx"
 )
 
 func main() {
@@ -142,7 +142,7 @@ import (
     "context"
     "sync"
     
-    "github.com/eggybyte-technology/egg/k8sx"
+    "go.eggybyte.com/egg/k8sx"
 )
 
 type AppConfig struct {
@@ -203,7 +203,7 @@ import (
     "context"
     "fmt"
     
-    "github.com/eggybyte-technology/egg/k8sx"
+    "go.eggybyte.com/egg/k8sx"
 )
 
 func main() {
@@ -237,8 +237,8 @@ func main() {
 
 ```go
 import (
-    "github.com/eggybyte-technology/egg/configx"
-    "github.com/eggybyte-technology/egg/k8sx"
+    "go.eggybyte.com/egg/configx"
+    "go.eggybyte.com/egg/k8sx"
 )
 
 func main() {

@@ -3,7 +3,7 @@
 
 ## Decisions
 
-- Repo/module root: `github.com/eggybyte-technology/egg`
+- Repo/module root: `go.eggybyte.com/egg`
 - Go version: use local toolchain; generate `go` directive via go CLI
 - Create `go.work` and all `go.mod` via go CLI only
 - k8sx: integrate `k8s.io/client-go` now (ConfigMap watch + discovery)
@@ -24,7 +24,7 @@
 1) Initialize workspace modules
 
 - From repo root: create `go.work` with `core/`, `runtimex/`, `connectx/`, `obsx/`, `k8sx/`, `storex/`
-- For each module: `go mod init github.com/eggybyte-technology/egg/<module>`
+- For each module: `go mod init go.eggybyte.com/egg/<module>`
 
 2) `core` public API (stable)
 
@@ -126,7 +126,7 @@ func DefaultInterceptors(o Options) []connect.Interceptor {
 - From repo root `/Users/fengguangyao/eggybyte/projects/go/egg`:
   - `go work init ./core ./runtimex ./connectx ./obsx ./k8sx ./storex`
 - For each module:
-  - `cd <module> && go mod init github.com/eggybyte-technology/egg/<module>`
+  - `cd <module> && go mod init go.eggybyte.com/egg/<module>`
 - Add deps (examples):
   - `cd connectx && go get connectrpc.com/connect connectrpc.com/otelconnect`
   - `cd obsx && go get go.opentelemetry.io/otel/... google.golang.org/grpc`

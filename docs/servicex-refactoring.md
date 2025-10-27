@@ -172,8 +172,8 @@ package main
 
 import (
     "context"
-    "github.com/eggybyte-technology/egg/configx"
-    "github.com/eggybyte-technology/egg/servicex"
+    "go.eggybyte.com/egg/configx"
+    "go.eggybyte.com/egg/servicex"
 )
 
 type AppConfig struct {

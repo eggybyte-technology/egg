@@ -10,6 +10,7 @@
 //
 //   - Tests multiple service types: minimal-service (greet) and user-service (CRUD)
 //   - Comprehensive test coverage: unary, streaming, CRUD operations
+//   - Metrics endpoint validation: Prometheus /metrics endpoint testing
 //   - Colored output: green for success, red for failure, yellow for warnings
 //   - Detailed metrics: request timing, success rates, error diagnostics
 //   - Uses egg framework libraries: logx for logging, clientx for resilient clients
@@ -23,12 +24,26 @@
 //	# Test user CRUD service (full test suite)
 //	./connect-tester http://localhost:8082 user-service
 //
+//	# Test with custom metrics endpoint
+//	METRICS_URL=http://localhost:9091/metrics ./connect-tester http://localhost:8080 minimal-service
+//
 //	# Test user service with specific operation
 //	./connect-tester http://localhost:8082 user-service create email@test.com "Test User"
 //	./connect-tester http://localhost:8082 user-service get <user-id>
 //	./connect-tester http://localhost:8082 user-service update <user-id> email@test.com "Updated Name"
 //	./connect-tester http://localhost:8082 user-service delete <user-id>
 //	./connect-tester http://localhost:8082 user-service list <page> <page-size>
+//
+// Metrics Endpoint:
+//
+//	The tester automatically derives the metrics endpoint URL from the service base URL.
+//	It uses a port mapping table for known docker-compose configurations:
+//	  - http://localhost:8080 → http://localhost:9091/metrics (minimal-service)
+//	  - http://localhost:8082 → http://localhost:9092/metrics (user-service)
+//	  - For unknown ports: HTTP port + 1011 (egg framework's internal convention)
+//
+//	You can override this by setting the METRICS_URL environment variable:
+//	  METRICS_URL=http://custom-host:9091/metrics ./connect-tester http://localhost:8080 minimal-service
 //
 // Output:
 //
@@ -46,19 +61,23 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/eggybyte-technology/egg/clientx"
-	"github.com/eggybyte-technology/egg/core/log"
-	greetv1 "github.com/eggybyte-technology/egg/examples/minimal-connect-service/gen/go/greet/v1"
-	greetv1connect "github.com/eggybyte-technology/egg/examples/minimal-connect-service/gen/go/greet/v1/greetv1connect"
-	userv1 "github.com/eggybyte-technology/egg/examples/user-service/gen/go/user/v1"
-	userv1connect "github.com/eggybyte-technology/egg/examples/user-service/gen/go/user/v1/userv1connect"
-	"github.com/eggybyte-technology/egg/logx"
+	"go.eggybyte.com/egg/clientx"
+	"go.eggybyte.com/egg/core/log"
+	greetv1 "go.eggybyte.com/egg/examples/minimal-connect-service/gen/go/greet/v1"
+	greetv1connect "go.eggybyte.com/egg/examples/minimal-connect-service/gen/go/greet/v1/greetv1connect"
+	userv1 "go.eggybyte.com/egg/examples/user-service/gen/go/user/v1"
+	userv1connect "go.eggybyte.com/egg/examples/user-service/gen/go/user/v1/userv1connect"
+	"go.eggybyte.com/egg/logx"
 )
 
 // TestResult represents the outcome of a single test case.
@@ -147,6 +166,73 @@ func main() {
 	}
 
 	logger.Info("All tests passed")
+}
+
+// deriveMetricsURL derives the metrics endpoint URL from the service base URL.
+// It uses a port mapping table for known docker-compose configurations,
+// then falls back to the egg framework's default convention.
+//
+// Known mappings (docker-compose port mappings):
+//   - HTTP port 8080 -> Metrics port 9091 (minimal-service)
+//   - HTTP port 8082 -> Metrics port 9092 (user-service)
+//   - Default: HTTP port + 1011 (e.g., 8080 -> 9091)
+//
+// The metrics URL can be overridden by setting the METRICS_URL environment variable.
+//
+// Parameters:
+//   - baseURL: service base URL (e.g., http://localhost:8080)
+//
+// Returns:
+//   - string: metrics endpoint URL (e.g., http://localhost:9091/metrics)
+func deriveMetricsURL(baseURL string) string {
+	// Check for environment variable override
+	if metricsURL := os.Getenv("METRICS_URL"); metricsURL != "" {
+		return metricsURL
+	}
+
+	// Parse the base URL
+	parsedURL, err := url.Parse(baseURL)
+	if err != nil {
+		// Fallback to default
+		return "http://localhost:9091/metrics"
+	}
+
+	host := parsedURL.Hostname()
+	port := parsedURL.Port()
+
+	// Default port if not specified
+	if port == "" {
+		port = "80"
+		if parsedURL.Scheme == "https" {
+			port = "443"
+		}
+	}
+
+	// Parse port number
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		return "http://localhost:9091/metrics"
+	}
+
+	// Known port mappings for docker-compose services
+	// These mappings reflect the actual port configuration in docker-compose.services.yaml
+	portMappings := map[int]int{
+		8080: 9091, // minimal-service
+		8082: 9092, // user-service
+	}
+
+	// Check if we have a known mapping
+	var metricsPort int
+	if mappedPort, ok := portMappings[portNum]; ok {
+		metricsPort = mappedPort
+	} else {
+		// Default: metrics port = HTTP port + 1011
+		// This is the egg framework's internal convention (8080 -> 9091)
+		metricsPort = portNum + 1011
+	}
+
+	// Build metrics URL
+	return fmt.Sprintf("%s://%s:%d/metrics", parsedURL.Scheme, host, metricsPort)
 }
 
 // runTests routes to the appropriate test suite based on service type.
@@ -278,6 +364,14 @@ func testMinimalService(ctx context.Context, logger log.Logger, baseURL string) 
 				log.Str("duration", fmt.Sprintf("%dms", duration.Milliseconds())))
 		}
 	}
+
+	// Test metrics endpoint
+	// Derive metrics URL from base URL
+	// Calculate expected call count: 5 SayHello + 1 EmptyName = 6
+	// Note: Streaming calls (SayHelloStream) are not counted as they require StreamingInterceptor
+	expectedCallCount := 6
+	metricsURL := deriveMetricsURL(baseURL)
+	testMetricsEndpoint(ctx, logger, metricsURL, suite, "greet-service", expectedCallCount)
 
 	suite.summary(logger)
 	return nil
@@ -419,6 +513,16 @@ func testUserService(ctx context.Context, logger log.Logger, baseURL string, tes
 	logger.Info("Testing error scenarios")
 	testErrorScenarios(ctx, logger, client, suite)
 
+	// Test metrics endpoint
+	// Derive metrics URL from base URL
+	// Calculate expected call count:
+	// - Success: 3 Create + 1 Get + 1 Update + 1 List + 1 Delete = 7
+	// - Errors: 3 error scenarios = 3
+	// - Total: 10
+	expectedCallCount := 10
+	metricsURL := deriveMetricsURL(baseURL)
+	testMetricsEndpoint(ctx, logger, metricsURL, suite, "user-service", expectedCallCount)
+
 	suite.summary(logger)
 	return nil
 }
@@ -523,6 +627,124 @@ func testUserServiceOperation(ctx context.Context, logger log.Logger, client use
 	return nil
 }
 
+// MetricSample represents a single Prometheus metric sample.
+type MetricSample struct {
+	Name   string
+	Labels map[string]string
+	Value  float64
+}
+
+// parsePrometheusMetrics parses Prometheus text format and extracts metric samples.
+// Returns a map of metric name to list of samples with labels and values.
+//
+// Parameters:
+//   - body: Prometheus text format response body
+//
+// Returns:
+//   - map[string][]MetricSample: parsed metrics grouped by name
+func parsePrometheusMetrics(body string) map[string][]MetricSample {
+	metrics := make(map[string][]MetricSample)
+	lines := strings.Split(body, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Skip comments and empty lines
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse metric line: metric_name{label1="value1",label2="value2"} value
+		// Or: metric_name value
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		metricPart := parts[0]
+		valuePart := parts[1]
+
+		// Parse value
+		value, err := strconv.ParseFloat(valuePart, 64)
+		if err != nil {
+			continue
+		}
+
+		// Extract metric name and labels
+		var metricName string
+		labels := make(map[string]string)
+
+		if idx := strings.Index(metricPart, "{"); idx > 0 {
+			// Has labels
+			metricName = metricPart[:idx]
+			labelsPart := metricPart[idx+1 : len(metricPart)-1] // Remove { and }
+
+			// Parse labels
+			labelPairs := strings.Split(labelsPart, ",")
+			for _, pair := range labelPairs {
+				pair = strings.TrimSpace(pair)
+				kv := strings.SplitN(pair, "=", 2)
+				if len(kv) == 2 {
+					key := strings.TrimSpace(kv[0])
+					value := strings.Trim(strings.TrimSpace(kv[1]), `"`)
+					labels[key] = value
+				}
+			}
+		} else {
+			// No labels
+			metricName = metricPart
+		}
+
+		sample := MetricSample{
+			Name:   metricName,
+			Labels: labels,
+			Value:  value,
+		}
+
+		metrics[metricName] = append(metrics[metricName], sample)
+	}
+
+	return metrics
+}
+
+// findMetricValue finds a metric value by name and optional label filters.
+// Returns the sum of all matching metric samples.
+//
+// Parameters:
+//   - metrics: parsed metrics map
+//   - name: metric name to search for
+//   - labelFilters: optional label filters (all must match)
+//
+// Returns:
+//   - float64: sum of matching metric values
+//   - bool: true if at least one metric was found
+func findMetricValue(metrics map[string][]MetricSample, name string, labelFilters map[string]string) (float64, bool) {
+	samples, exists := metrics[name]
+	if !exists {
+		return 0, false
+	}
+
+	var total float64
+	found := false
+
+	for _, sample := range samples {
+		// Check if all label filters match
+		allMatch := true
+		for filterKey, filterValue := range labelFilters {
+			if labelValue, ok := sample.Labels[filterKey]; !ok || labelValue != filterValue {
+				allMatch = false
+				break
+			}
+		}
+
+		if allMatch {
+			total += sample.Value
+			found = true
+		}
+	}
+
+	return total, found
+}
+
 // testErrorScenarios tests error handling for common edge cases.
 func testErrorScenarios(ctx context.Context, logger log.Logger, client userv1connect.UserServiceClient, suite *TestSuite) {
 	// Test GetUser with non-existent ID
@@ -572,4 +794,196 @@ func testErrorScenarios(ctx context.Context, logger log.Logger, client userv1con
 		suite.add("CreateUser_EmptyName", duration, fmt.Errorf("expected error but got success"), "")
 		logger.Error(nil, "✗ FAIL CreateUser_EmptyName - should return error")
 	}
+}
+
+// testMetricsEndpoint tests the Prometheus metrics endpoint.
+// It verifies that the /metrics endpoint is accessible and returns valid Prometheus format data.
+//
+// Parameters:
+//   - ctx: context for the test
+//   - logger: logger for test output
+//   - metricsURL: full URL to the metrics endpoint (e.g., http://localhost:9091/metrics)
+//   - suite: test suite to record results
+//   - serviceName: expected service name in target_info metric
+//   - expectedCallCount: minimum expected RPC call count for validation
+//
+// The test checks:
+//   - HTTP 200 response
+//   - Content-Type header contains "text/plain" or "application/openmetrics-text"
+//   - Response body contains Prometheus format metrics
+//   - Response contains target_info with expected service name
+//   - RPC metrics (rpc.requests.total, rpc.request.duration) exist
+//   - RPC request count meets minimum expected value
+func testMetricsEndpoint(ctx context.Context, logger log.Logger, metricsURL string, suite *TestSuite, serviceName string, expectedCallCount int) {
+	logger.Info("Testing metrics endpoint", log.Str("url", metricsURL), log.Int("expected_calls", expectedCallCount))
+
+	start := time.Now()
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "GET", metricsURL, nil)
+	if err != nil {
+		duration := time.Since(start)
+		suite.add("Metrics_Endpoint", duration, fmt.Errorf("failed to create request: %w", err), "")
+		logger.Error(err, "✗ FAIL Metrics_Endpoint - request creation failed")
+		return
+	}
+
+	// Make the request
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		duration := time.Since(start)
+		suite.add("Metrics_Endpoint", duration, fmt.Errorf("failed to fetch metrics: %w", err), "")
+		logger.Error(err, "✗ FAIL Metrics_Endpoint - request failed")
+		return
+	}
+	defer resp.Body.Close()
+
+	duration := time.Since(start)
+
+	// Check HTTP status
+	if resp.StatusCode != http.StatusOK {
+		suite.add("Metrics_Endpoint", duration, fmt.Errorf("expected status 200, got %d", resp.StatusCode), "")
+		logger.Error(nil, "✗ FAIL Metrics_Endpoint - wrong status code",
+			log.Int("expected", 200),
+			log.Int("actual", resp.StatusCode))
+		return
+	}
+
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		suite.add("Metrics_Endpoint", duration, fmt.Errorf("failed to read response: %w", err), "")
+		logger.Error(err, "✗ FAIL Metrics_Endpoint - failed to read body")
+		return
+	}
+
+	bodyStr := string(body)
+
+	// Validate response is not empty
+	if len(bodyStr) == 0 {
+		suite.add("Metrics_Endpoint", duration, fmt.Errorf("empty metrics response"), "")
+		logger.Error(nil, "✗ FAIL Metrics_Endpoint - empty response")
+		return
+	}
+
+	// Check for Prometheus format indicators
+	hasHelp := strings.Contains(bodyStr, "# HELP")
+	hasType := strings.Contains(bodyStr, "# TYPE")
+	hasTargetInfo := strings.Contains(bodyStr, "target_info")
+
+	if !hasHelp && !hasType {
+		suite.add("Metrics_Endpoint", duration, fmt.Errorf("response does not contain Prometheus format markers"), "")
+		logger.Error(nil, "✗ FAIL Metrics_Endpoint - invalid format")
+		return
+	}
+
+	if !hasTargetInfo {
+		suite.add("Metrics_Endpoint", duration, fmt.Errorf("response does not contain target_info metric"), "")
+		logger.Error(nil, "✗ FAIL Metrics_Endpoint - missing target_info")
+		return
+	}
+
+	// Check if service name is in target_info (if provided)
+	if serviceName != "" && !strings.Contains(bodyStr, fmt.Sprintf(`service_name="%s"`, serviceName)) {
+		suite.add("Metrics_Endpoint", duration, fmt.Errorf("target_info does not contain expected service_name=%s", serviceName), "")
+		logger.Error(nil, "✗ FAIL Metrics_Endpoint - wrong service name",
+			log.Str("expected", serviceName))
+		return
+	}
+
+	// Parse Prometheus metrics
+	metrics := parsePrometheusMetrics(bodyStr)
+
+	// Verify RPC metrics exist
+	// For histograms, check for the _bucket suffix as that's what's actually exported
+	rpcMetricsChecks := map[string]string{
+		"rpc_requests_total":           "rpc_requests_total",
+		"rpc_request_duration_seconds": "rpc_request_duration_seconds_bucket",
+		"rpc_request_size_bytes":       "rpc_request_size_bytes_bucket",
+		"rpc_response_size_bytes":      "rpc_response_size_bytes_bucket",
+	}
+
+	for displayName, actualMetricName := range rpcMetricsChecks {
+		if _, exists := metrics[actualMetricName]; !exists {
+			suite.add("Metrics_RPC_"+displayName, duration, fmt.Errorf("metric %s not found", displayName), "")
+			logger.Error(nil, fmt.Sprintf("✗ FAIL Metrics_RPC_%s - metric not found", displayName))
+		} else {
+			suite.add("Metrics_RPC_"+displayName, duration, nil, "metric exists")
+			logger.Info(fmt.Sprintf("✓ PASS Metrics_RPC_%s - metric exists", displayName))
+		}
+	}
+
+	// Verify RPC request count
+	// Sum all requests across all services/methods (both success and errors)
+	totalRequests, found := findMetricValue(metrics, "rpc_requests_total", map[string]string{})
+	if !found {
+		suite.add("Metrics_RPC_Count", duration, fmt.Errorf("rpc_requests_total not found"), "")
+		logger.Error(nil, "✗ FAIL Metrics_RPC_Count - no requests recorded")
+	} else {
+		if int(totalRequests) >= expectedCallCount {
+			suite.add("Metrics_RPC_Count", duration, nil, fmt.Sprintf("requests=%d (expected>=%d)", int(totalRequests), expectedCallCount))
+			logger.Info("✓ PASS Metrics_RPC_Count",
+				log.Int("actual", int(totalRequests)),
+				log.Int("expected_min", expectedCallCount))
+		} else {
+			suite.add("Metrics_RPC_Count", duration,
+				fmt.Errorf("expected at least %d requests, got %d", expectedCallCount, int(totalRequests)), "")
+			logger.Error(nil, "✗ FAIL Metrics_RPC_Count - insufficient requests",
+				log.Int("actual", int(totalRequests)),
+				log.Int("expected_min", expectedCallCount))
+		}
+	}
+
+	// Verify Runtime metrics (if enabled)
+	runtimeMetricsChecks := []string{
+		"process_runtime_go_goroutines",
+		"process_runtime_go_gc_count_total",
+		"process_runtime_go_memory_heap_bytes",
+		"process_runtime_go_memory_stack_bytes",
+	}
+	for _, metricName := range runtimeMetricsChecks {
+		if _, exists := metrics[metricName]; exists {
+			suite.add("Metrics_Runtime_"+metricName, duration, nil, "metric exists")
+			logger.Info(fmt.Sprintf("✓ PASS Metrics_Runtime_%s - metric exists", metricName))
+		} else {
+			// Runtime metrics are optional, so we just log without failing
+			logger.Info(fmt.Sprintf("⚠ SKIP Metrics_Runtime_%s - metric not enabled", metricName))
+		}
+	}
+
+	// Verify Process metrics (if enabled)
+	processMetricsChecks := []string{
+		"process_start_time_seconds",
+		"process_uptime_seconds",
+		"process_memory_rss_bytes",
+		"process_cpu_seconds_total",
+	}
+	for _, metricName := range processMetricsChecks {
+		if _, exists := metrics[metricName]; exists {
+			suite.add("Metrics_Process_"+metricName, duration, nil, "metric exists")
+			logger.Info(fmt.Sprintf("✓ PASS Metrics_Process_%s - metric exists", metricName))
+		} else {
+			// Process metrics are optional, so we just log without failing
+			logger.Info(fmt.Sprintf("⚠ SKIP Metrics_Process_%s - metric not enabled", metricName))
+		}
+	}
+
+	// Count number of metrics (lines that don't start with #)
+	lines := strings.Split(bodyStr, "\n")
+	metricCount := 0
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			metricCount++
+		}
+	}
+
+	details := fmt.Sprintf("status=200, metrics=%d, format=valid, rpc_requests=%d", metricCount, int(totalRequests))
+	suite.add("Metrics_Endpoint", duration, nil, details)
+	logger.Info("✓ PASS Metrics_Endpoint",
+		log.Str("duration", fmt.Sprintf("%dms", duration.Milliseconds())),
+		log.Int("metrics", metricCount),
+		log.Str("service", serviceName),
+		log.Int("rpc_requests", int(totalRequests)))
 }

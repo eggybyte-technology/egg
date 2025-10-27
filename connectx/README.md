@@ -25,15 +25,40 @@ Depends on: `core/log`, `core/identity`, `core/errors`, `logx`, `obsx`
 ## Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/connectx@latest
+go get go.eggybyte.com/egg/connectx@latest
 ```
 
 ## Basic Usage
 
+### With servicex (Recommended)
+
+When using `servicex`, interceptors are automatically configured:
+
 ```go
 import (
     "connectrpc.com/connect"
-    "github.com/eggybyte-technology/egg/connectx"
+    "go.eggybyte.com/egg/servicex"
+    userv1connect "myapp/gen/go/user/v1/userv1connect"
+)
+
+func register(app *servicex.App) error {
+    // Get pre-configured interceptors from servicex
+    path, handler := userv1connect.NewUserServiceHandler(
+        service,
+        connect.WithInterceptors(app.Interceptors()...),
+    )
+    
+    app.Mux().Handle(path, handler)
+    return nil
+}
+```
+
+### Standalone Usage
+
+```go
+import (
+    "connectrpc.com/connect"
+    "go.eggybyte.com/egg/connectx"
     userv1connect "myapp/gen/go/user/v1/userv1connect"
 )
 
@@ -126,8 +151,96 @@ connectx/
 1. **Recovery** - Panic handling
 2. **Timeout** - Deadline enforcement
 3. **Identity** - Header extraction
-4. **Error Mapping** - Error code translation
-5. **Logging** - Request/response logging
+4. **Metrics** - RPC metrics collection (if OpenTelemetry enabled)
+5. **Error Mapping** - Error code translation
+6. **Logging** - Request/response logging
+
+## Metrics Interceptor
+
+The metrics interceptor automatically collects OpenTelemetry metrics for all RPC calls when an `obsx.Provider` is configured. Metrics are exposed via the Prometheus `/metrics` endpoint.
+
+### Collected Metrics
+
+| Metric Name                      | Type      | Description                       | Unit | Labels                                |
+| -------------------------------- | --------- | --------------------------------- | ---- | ------------------------------------- |
+| `rpc_requests_total`             | Counter   | Total number of RPC requests      | `{request}` | `rpc_service`, `rpc_method`, `rpc_code` |
+| `rpc_request_duration_seconds`   | Histogram | RPC request duration              | `s`  | `rpc_service`, `rpc_method`, `rpc_code` |
+| `rpc_request_size_bytes`         | Histogram | RPC request payload size          | `By` | `rpc_service`, `rpc_method`           |
+| `rpc_response_size_bytes`        | Histogram | RPC response payload size         | `By` | `rpc_service`, `rpc_method`           |
+
+### Label Dimensions
+
+- **rpc_service**: Service name (e.g., `"greet.v1.GreeterService"`, `"user.v1.UserService"`)
+- **rpc_method**: Method name (e.g., `"SayHello"`, `"CreateUser"`)
+- **rpc_code**: Connect error code - `"ok"`, `"not_found"`, `"invalid_argument"`, `"internal"`, etc.
+
+### Histogram Buckets
+
+**Duration buckets (seconds)**: `[0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 10, +Inf]`
+
+**Size buckets (bytes)**: `[64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, +Inf]`
+
+### Example Metrics Output
+
+```prometheus
+# HELP rpc_requests_total Total number of RPC requests
+# TYPE rpc_requests_total counter
+rpc_requests_total{rpc_code="ok",rpc_method="SayHello",rpc_service="greet.v1.GreeterService"} 142
+
+# HELP rpc_request_duration_seconds RPC request duration in seconds
+# TYPE rpc_request_duration_seconds histogram
+rpc_request_duration_seconds_bucket{rpc_code="ok",rpc_method="SayHello",rpc_service="greet.v1.GreeterService",le="0.005"} 89
+rpc_request_duration_seconds_bucket{rpc_code="ok",rpc_method="SayHello",rpc_service="greet.v1.GreeterService",le="0.01"} 125
+rpc_request_duration_seconds_bucket{rpc_code="ok",rpc_method="SayHello",rpc_service="greet.v1.GreeterService",le="0.025"} 138
+rpc_request_duration_seconds_bucket{rpc_code="ok",rpc_method="SayHello",rpc_service="greet.v1.GreeterService",le="+Inf"} 142
+rpc_request_duration_seconds_sum{rpc_code="ok",rpc_method="SayHello",rpc_service="greet.v1.GreeterService"} 1.234
+rpc_request_duration_seconds_count{rpc_code="ok",rpc_method="SayHello",rpc_service="greet.v1.GreeterService"} 142
+```
+
+### Enabling/Disabling Metrics
+
+Metrics collection is **automatically enabled** when an `obsx.Provider` is provided:
+
+```go
+// Metrics enabled
+interceptors := connectx.DefaultInterceptors(connectx.Options{
+    Logger: logger,
+    Otel:   otelProvider,  // Metrics enabled when this is non-nil
+})
+
+// Metrics disabled
+interceptors := connectx.DefaultInterceptors(connectx.Options{
+    Logger: logger,
+    Otel:   nil,  // Metrics disabled when this is nil
+})
+```
+
+### Querying Metrics
+
+Example Prometheus queries:
+
+```promql
+# Request rate by service and method
+rate(rpc_requests_total[5m])
+
+# Error rate (non-ok codes)
+sum(rate(rpc_requests_total{rpc_code!="ok"}[5m])) / sum(rate(rpc_requests_total[5m]))
+
+# P95 latency by service
+histogram_quantile(0.95, sum(rate(rpc_request_duration_seconds_bucket[5m])) by (rpc_service, le))
+
+# P99 latency by service and method
+histogram_quantile(0.99, sum(rate(rpc_request_duration_seconds_bucket[5m])) by (rpc_service, rpc_method, le))
+
+# Requests per second by service
+sum(rate(rpc_requests_total[1m])) by (rpc_service)
+
+# Top 5 slowest methods (average latency)
+topk(5, sum(rate(rpc_request_duration_seconds_sum[5m])) by (rpc_method) / sum(rate(rpc_request_duration_seconds_count[5m])) by (rpc_method))
+
+# Error count by code
+sum(rate(rpc_requests_total{rpc_code!="ok"}[5m])) by (rpc_code)
+```
 
 ## Example: Complete Service Setup
 
@@ -139,9 +252,9 @@ import (
     "net/http"
     
     "connectrpc.com/connect"
-    "github.com/eggybyte-technology/egg/connectx"
-    "github.com/eggybyte-technology/egg/logx"
-    "github.com/eggybyte-technology/egg/obsx"
+    "go.eggybyte.com/egg/connectx"
+    "go.eggybyte.com/egg/logx"
+    "go.eggybyte.com/egg/obsx"
     userv1connect "myapp/gen/go/user/v1/userv1connect"
 )
 
@@ -265,7 +378,7 @@ func MyHandler(ctx context.Context, req *connect.Request[Msg]) (*connect.Respons
 Maps `core/errors` to Connect codes:
 
 ```go
-import "github.com/eggybyte-technology/egg/core/errors"
+import "go.eggybyte.com/egg/core/errors"
 
 func MyHandler(ctx context.Context, req *connect.Request[Msg]) (*connect.Response[Msg], error) {
     // Return domain error
@@ -299,7 +412,7 @@ Logs requests and responses with structured fields:
 connectx interceptors are automatically configured by servicex:
 
 ```go
-import "github.com/eggybyte-technology/egg/servicex"
+import "go.eggybyte.com/egg/servicex"
 
 func register(app *servicex.App) error {
     // Get pre-configured interceptors

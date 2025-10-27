@@ -23,8 +23,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/k8sx/internal"
+	"go.eggybyte.com/egg/core/log"
+	"go.eggybyte.com/egg/k8sx/internal"
 )
 
 // WatchOptions holds configuration for ConfigMap watching.

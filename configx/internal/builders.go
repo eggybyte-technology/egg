@@ -21,7 +21,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/eggybyte-technology/egg/core/log"
+	"go.eggybyte.com/egg/core/log"
 )
 
 // BuildSources builds configuration sources based on environment variables.

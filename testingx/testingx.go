@@ -19,9 +19,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/eggybyte-technology/egg/core/errors"
-	"github.com/eggybyte-technology/egg/core/identity"
-	"github.com/eggybyte-technology/egg/core/log"
+	"go.eggybyte.com/egg/core/errors"
+	"go.eggybyte.com/egg/core/identity"
+	"go.eggybyte.com/egg/core/log"
 )
 
 // MockLogger is a mock logger for testing.

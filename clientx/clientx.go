@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/eggybyte-technology/egg/clientx/internal"
 	"github.com/sony/gobreaker"
+	"go.eggybyte.com/egg/clientx/internal"
 )
 
 // Options configures the HTTP client behavior.

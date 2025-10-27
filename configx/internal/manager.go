@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eggybyte-technology/egg/core/log"
+	"go.eggybyte.com/egg/core/log"
 )
 
 // ManagerImpl implements the manager for configuration sources.
@@ -237,4 +237,3 @@ func (m *ManagerImpl) OnUpdate(fn func(snapshot map[string]string)) func() {
 		delete(m.updateSubs, subID)
 	}
 }
-

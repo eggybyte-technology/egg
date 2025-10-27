@@ -17,10 +17,10 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"github.com/eggybyte-technology/egg/core/log"
-	userv1 "github.com/eggybyte-technology/egg/examples/user-service/gen/go/user/v1"
-	userv1connect "github.com/eggybyte-technology/egg/examples/user-service/gen/go/user/v1/userv1connect"
-	"github.com/eggybyte-technology/egg/examples/user-service/internal/service"
+	"go.eggybyte.com/egg/core/log"
+	userv1 "go.eggybyte.com/egg/examples/user-service/gen/go/user/v1"
+	userv1connect "go.eggybyte.com/egg/examples/user-service/gen/go/user/v1/userv1connect"
+	"go.eggybyte.com/egg/examples/user-service/internal/service"
 )
 
 // UserHandler implements the Connect protocol for the user service.

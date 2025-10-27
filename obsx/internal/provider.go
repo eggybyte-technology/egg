@@ -4,12 +4,16 @@ package internal
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
+	promclient "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -27,8 +31,9 @@ type ProviderOptions struct {
 
 // Provider manages OpenTelemetry tracing and metrics providers.
 type Provider struct {
-	TracerProvider *sdktrace.TracerProvider
-	MeterProvider  *metric.MeterProvider
+	TracerProvider     *sdktrace.TracerProvider
+	MeterProvider      *metric.MeterProvider
+	prometheusRegistry *promclient.Registry
 }
 
 // NewProvider creates a new observability provider with the given options.
@@ -55,8 +60,8 @@ func NewProvider(ctx context.Context, opts ProviderOptions) (*Provider, error) {
 		return nil, err
 	}
 
-	// Create meter provider
-	mp, err := createMeterProvider(ctx, res, opts.OTLPEndpoint)
+	// Create meter provider with Prometheus support
+	mp, promRegistry, err := createMeterProvider(ctx, res, opts.OTLPEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -66,8 +71,9 @@ func NewProvider(ctx context.Context, opts ProviderOptions) (*Provider, error) {
 	otel.SetMeterProvider(mp)
 
 	return &Provider{
-		TracerProvider: tp,
-		MeterProvider:  mp,
+		TracerProvider:     tp,
+		MeterProvider:      mp,
+		prometheusRegistry: promRegistry,
 	}, nil
 }
 
@@ -131,35 +137,65 @@ func createTracerProvider(ctx context.Context, res *resource.Resource, otlpEndpo
 	return tp, nil
 }
 
-// createMeterProvider creates a meter provider with optional OTLP export.
-func createMeterProvider(ctx context.Context, res *resource.Resource, otlpEndpoint string) (*metric.MeterProvider, error) {
-	// Create metric exporter if OTLP endpoint is provided
-	var metricExporter metric.Exporter
+// createMeterProvider creates a meter provider with Prometheus and optional OTLP export.
+// It returns the meter provider and a Prometheus registry for HTTP handler.
+func createMeterProvider(ctx context.Context, res *resource.Resource, otlpEndpoint string) (*metric.MeterProvider, *promclient.Registry, error) {
+	// Create Prometheus registry and exporter
+	promRegistry := promclient.NewRegistry()
+	promExporter, err := prometheus.New(
+		prometheus.WithRegisterer(promRegistry),
+		prometheus.WithoutUnits(),           // Prometheus prefers base units without suffix
+		prometheus.WithoutScopeInfo(),       // Remove otel_scope_* labels to reduce cardinality
+		prometheus.WithoutCounterSuffixes(), // Remove _total suffix duplication
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create prometheus exporter: %w", err)
+	}
+
+	// Build meter provider options
+	meterOpts := []metric.Option{
+		metric.WithResource(res),
+		metric.WithReader(promExporter),
+	}
+
+	// Create OTLP metric exporter if endpoint is provided
 	if otlpEndpoint != "" {
-		var err error
-		metricExporter, err = otlpmetricgrpc.New(ctx,
+		otlpExporter, err := otlpmetricgrpc.New(ctx,
 			otlpmetricgrpc.WithEndpoint(otlpEndpoint),
 			otlpmetricgrpc.WithInsecure(), // In production, use proper TLS
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create metric exporter: %w", err)
+			return nil, nil, fmt.Errorf("failed to create otlp metric exporter: %w", err)
 		}
+		meterOpts = append(meterOpts, metric.WithReader(metric.NewPeriodicReader(otlpExporter)))
 	}
 
-	// Create meter provider
-	var mp *metric.MeterProvider
-	if metricExporter != nil {
-		mp = metric.NewMeterProvider(
-			metric.WithResource(res),
-			metric.WithReader(metric.NewPeriodicReader(metricExporter)),
-		)
-	} else {
-		mp = metric.NewMeterProvider(
-			metric.WithResource(res),
-		)
+	// Create meter provider with all readers
+	mp := metric.NewMeterProvider(meterOpts...)
+
+	return mp, promRegistry, nil
+}
+
+// GetPrometheusHandler returns an HTTP handler for the Prometheus metrics endpoint.
+// This handler exposes metrics in Prometheus text format at the /metrics path.
+//
+// Returns:
+//   - http.Handler: Prometheus metrics handler
+//
+// Concurrency:
+//   - Safe for concurrent use
+func (p *Provider) GetPrometheusHandler() http.Handler {
+	if p.prometheusRegistry == nil {
+		// Return a no-op handler if Prometheus is not initialized
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("# Prometheus metrics not available\n"))
+		})
 	}
 
-	return mp, nil
+	return promhttp.HandlerFor(p.prometheusRegistry, promhttp.HandlerOpts{
+		EnableOpenMetrics: true,
+	})
 }
 
 // Shutdown gracefully shuts down the provider.
@@ -190,4 +226,3 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 
 	return nil
 }
-

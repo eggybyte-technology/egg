@@ -17,7 +17,7 @@ This package extends Go's standard error handling with structured error codes, m
 ## Quick Start
 
 ```go
-import "github.com/eggybyte-technology/egg/core/errors"
+import "go.eggybyte.com/egg/core/errors"
 
 // Create structured errors
 err := errors.New("VALIDATION_ERROR", "invalid email format")

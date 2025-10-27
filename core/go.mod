@@ -1,3 +1,3 @@
-module github.com/eggybyte-technology/egg/core
+module go.eggybyte.com/egg/core
 
 go 1.25.1

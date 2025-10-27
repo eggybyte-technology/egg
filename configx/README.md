@@ -25,7 +25,7 @@ Depends on: `core/log`, optionally `k8s.io/client-go` for ConfigMap watching
 ## Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/configx@latest
+go get go.eggybyte.com/egg/configx@latest
 ```
 
 ## Basic Usage
@@ -33,7 +33,7 @@ go get github.com/eggybyte-technology/egg/configx@latest
 ```go
 import (
     "context"
-    "github.com/eggybyte-technology/egg/configx"
+    "go.eggybyte.com/egg/configx"
 )
 
 type AppConfig struct {
@@ -118,6 +118,8 @@ type Source interface {
 
 ### BaseConfig
 
+`BaseConfig` provides standard configuration fields for egg services. It's designed to be embedded in your application configuration struct.
+
 ```go
 type BaseConfig struct {
     ServiceName    string `env:"SERVICE_NAME" default:"app"`
@@ -132,7 +134,7 @@ type BaseConfig struct {
     ConfigMapName  string `env:"APP_CONFIGMAP_NAME" default:""`
     DebounceMillis int    `env:"CONFIG_DEBOUNCE_MS" default:"200"`
     
-    Database DatabaseConfig
+    Database DatabaseConfig  // Auto-detected by servicex.WithAppConfig()
 }
 
 type DatabaseConfig struct {
@@ -142,6 +144,100 @@ type DatabaseConfig struct {
     MaxOpen     int           `env:"DB_MAX_OPEN" default:"100"`
     MaxLifetime time.Duration `env:"DB_MAX_LIFETIME" default:"1h"`
 }
+```
+
+## Integration with servicex
+
+When using `BaseConfig` with `servicex`, database configuration is automatically detected and used to initialize the database connection.
+
+### Recommended Pattern
+
+```go
+import (
+    "context"
+    "go.eggybyte.com/egg/configx"
+    "go.eggybyte.com/egg/servicex"
+)
+
+type AppConfig struct {
+    configx.BaseConfig  // Includes Database, HTTP/Health/Metrics ports
+    
+    // Application-specific settings
+    DefaultPageSize int `env:"DEFAULT_PAGE_SIZE" default:"10"`
+    MaxPageSize     int `env:"MAX_PAGE_SIZE" default:"100"`
+}
+
+func main() {
+    ctx := context.Background()
+    cfg := &AppConfig{}
+    
+    // servicex automatically:
+    // 1. Creates configx.Manager
+    // 2. Binds environment variables to cfg
+    // 3. Extracts Database config from BaseConfig
+    // 4. Initializes database connection
+    servicex.Run(ctx,
+        servicex.WithService("my-service", "1.0.0"),
+        servicex.WithAppConfig(cfg), // Auto-detects database from BaseConfig
+        servicex.WithAutoMigrate(&model.User{}),
+        servicex.WithRegister(registerServices),
+    )
+}
+```
+
+### How Auto-Detection Works
+
+1. **Configuration Binding**: `servicex` creates a `configx.Manager` and calls `Bind(cfg)`
+2. **Environment Loading**: All environment variables are loaded into `cfg.BaseConfig.Database`
+3. **Database Extraction**: After binding, `servicex` extracts the `Database` field from `BaseConfig`
+4. **Connection Initialization**: If `DB_DSN` is set, database connection is established
+
+### Environment Variables
+
+```bash
+# Service configuration (from BaseConfig)
+SERVICE_NAME=user-service
+SERVICE_VERSION=1.0.0
+ENV=production
+HTTP_PORT=8080
+HEALTH_PORT=8081
+METRICS_PORT=9091
+
+# Database configuration (from BaseConfig.Database)
+DB_DRIVER=mysql
+DB_DSN=user:password@tcp(mysql:3306)/mydb?charset=utf8mb4&parseTime=True
+DB_MAX_IDLE=10
+DB_MAX_OPEN=100
+DB_MAX_LIFETIME=1h
+
+# OpenTelemetry (from BaseConfig)
+OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+```
+
+### Benefits
+
+- **Zero boilerplate**: No manual database configuration code
+- **Type-safe**: Configuration validated at startup
+- **Hot-reloadable**: ConfigMap changes automatically applied
+- **Consistent**: Same pattern across all services
+
+### Migration from Manual Configuration
+
+```go
+// Old pattern (verbose)
+manager, _ := configx.DefaultManager(ctx, logger)
+manager.Bind(&cfg)
+servicex.Run(ctx,
+    servicex.WithConfig(cfg),
+    servicex.WithDatabase(servicex.FromBaseConfig(&cfg.Database)),
+    // ...
+)
+
+// New pattern (recommended)
+servicex.Run(ctx,
+    servicex.WithAppConfig(cfg), // Handles everything
+    // ...
+)
 ```
 
 ## Architecture
@@ -401,8 +497,8 @@ If `DATABASE_URL` is set in all three sources, the ConfigMap value wins.
 
 ```go
 import (
-    "github.com/eggybyte-technology/egg/servicex"
-    "github.com/eggybyte-technology/egg/configx"
+    "go.eggybyte.com/egg/servicex"
+    "go.eggybyte.com/egg/configx"
 )
 
 type AppConfig struct {

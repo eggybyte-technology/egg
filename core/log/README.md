@@ -17,7 +17,7 @@ This package defines a minimal, structured logging interface that can be impleme
 ## Quick Start
 
 ```go
-import "github.com/eggybyte-technology/egg/core/log"
+import "go.eggybyte.com/egg/core/log"
 
 // Create a logger instance
 logger := &SimpleLogger{}
@@ -60,8 +60,20 @@ type Logger interface {
 // String key-value pair
 func Str(key, value string) any
 
+// String is an alias for Str (for consistency with other helpers)
+func String(key, value string) any
+
 // Int key-value pair
 func Int(key string, value int) any
+
+// Int32 key-value pair
+func Int32(key string, value int32) any
+
+// Int64 key-value pair
+func Int64(key string, value int64) any
+
+// Float64 key-value pair
+func Float64(key string, value float64) any
 
 // Bool key-value pair
 func Bool(key string, value bool) any
@@ -96,6 +108,8 @@ func main() {
 
 ```go
 func handleRequest(logger log.Logger, req *http.Request) {
+    start := time.Now()
+    
     logger.Info("Request received",
         log.Str("method", req.Method),
         log.Str("path", req.URL.Path),
@@ -108,8 +122,38 @@ func handleRequest(logger log.Logger, req *http.Request) {
         logger.Error(err, "Request processing failed",
             log.Str("method", req.Method),
             log.Str("path", req.URL.Path),
+            log.Int64("duration_ms", time.Since(start).Milliseconds()),
+        )
+    } else {
+        logger.Info("Request completed",
+            log.Str("method", req.Method),
+            log.Int("status", 200),
+            log.Float64("duration_sec", time.Since(start).Seconds()),
         )
     }
+}
+```
+
+### Using New Helper Functions
+
+```go
+func logMetrics(logger log.Logger, metrics *ServiceMetrics) {
+    logger.Info("Service metrics",
+        log.Int32("active_connections", metrics.ActiveConns),
+        log.Int64("total_requests", metrics.TotalRequests),
+        log.Float64("avg_latency_ms", metrics.AvgLatencyMs),
+        log.String("version", metrics.Version), // Alias for Str
+    )
+}
+
+func logDatabaseStats(logger log.Logger, stats sql.DBStats) {
+    logger.Info("Database connection pool stats",
+        log.Int32("open_connections", int32(stats.OpenConnections)),
+        log.Int32("in_use", int32(stats.InUse)),
+        log.Int32("idle", int32(stats.Idle)),
+        log.Int64("wait_count", stats.WaitCount),
+        log.Float64("wait_duration_sec", stats.WaitDuration.Seconds()),
+    )
 }
 ```
 

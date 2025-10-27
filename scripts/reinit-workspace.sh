@@ -43,7 +43,7 @@ cd "$REPO_ROOT"
 log_info "Repository root: $REPO_ROOT"
 
 # Module base path
-MODULE_BASE="github.com/eggybyte-technology/egg"
+MODULE_BASE="go.eggybyte.com/egg"
 
 # Define all modules with their paths
 declare -a MODULES=(

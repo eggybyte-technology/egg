@@ -6,9 +6,29 @@
 egg microservices. It offers a simple, production-ready way to instrument services
 with distributed tracing and metrics collection using OpenTelemetry.
 
+## Module Structure
+
+Following egg's module organization standards:
+
+```
+obsx/
+├── obsx.go              # Public API (types, constructors, exported methods)
+├── doc.go               # Package documentation
+├── obsx_test.go         # Public API tests
+└── internal/            # Internal implementation
+    ├── provider.go      # Provider lifecycle management
+    ├── runtime_metrics.go   # Go runtime metrics
+    ├── process_metrics.go   # Process-level metrics
+    └── db_metrics.go    # Database pool metrics
+```
+
+**Key principle**: All implementation logic resides in `internal/`, while `obsx.go` only exports the public API.
+
 ## Key Features
 
 - Simplified OpenTelemetry provider initialization
+- **Dual metrics export**: Local Prometheus endpoint + OTLP export
+- **Production-grade metrics**: Runtime, process, and database pool metrics
 - Support for OTLP trace and metric export
 - Configurable sampling strategies
 - Custom resource attributes
@@ -23,15 +43,54 @@ Depends on: None (zero dependencies outside OpenTelemetry SDK)
 ## Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/obsx@latest
+go get go.eggybyte.com/egg/obsx@latest
 ```
 
 ## Basic Usage
 
+### With servicex (Recommended)
+
+When using `servicex`, OpenTelemetry is automatically configured:
+
+```go
+import (
+    "go.eggybyte.com/egg/configx"
+    "go.eggybyte.com/egg/servicex"
+)
+
+type AppConfig struct {
+    configx.BaseConfig  // Includes OTEL_EXPORTER_OTLP_ENDPOINT
+}
+
+func register(app *servicex.App) error {
+    // Get OpenTelemetry provider (nil if not configured)
+    provider := app.OtelProvider()
+    if provider != nil {
+        tracer := provider.TracerProvider().Tracer("my-service")
+        // Use tracer...
+    }
+    return nil
+}
+
+func main() {
+    ctx := context.Background()
+    cfg := &AppConfig{}
+    
+    servicex.Run(ctx,
+        servicex.WithAppConfig(cfg),
+        servicex.WithRegister(register),
+    )
+}
+```
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable to enable tracing.
+
+### Standalone Usage
+
 ```go
 import (
     "context"
-    "github.com/eggybyte-technology/egg/obsx"
+    "go.eggybyte.com/egg/obsx"
 )
 
 func main() {
@@ -55,6 +114,10 @@ func main() {
     // Use providers with OpenTelemetry SDK
     tracer := tracerProvider.Tracer("user-service")
     meter := meterProvider.Meter("user-service")
+    
+    // Expose Prometheus metrics endpoint
+    http.Handle("/metrics", provider.PrometheusHandler())
+    go http.ListenAndServe(":9091", nil)
 }
 ```
 
@@ -68,6 +131,144 @@ func main() {
 | `EnableRuntimeMetrics`| `bool`            | Enable Go runtime metrics (future)             |
 | `ResourceAttrs`       | `map[string]string`| Additional resource attributes                |
 | `TraceSamplerRatio`   | `float64`         | Trace sampling ratio (0.0-1.0, default: 0.1)  |
+
+## Metrics Export
+
+obsx provides **dual metrics export** - metrics are simultaneously available via:
+
+1. **Local Prometheus Endpoint**: Pull-based metrics via HTTP `/metrics` endpoint
+2. **OTLP Export**: Push-based metrics to OpenTelemetry Collector (if configured)
+
+### Prometheus Endpoint
+
+The Prometheus endpoint is always available through `PrometheusHandler()`:
+
+```go
+provider, _ := obsx.NewProvider(ctx, obsx.Options{
+    ServiceName: "my-service",
+    ServiceVersion: "1.0.0",
+})
+
+// Get Prometheus HTTP handler
+metricsHandler := provider.PrometheusHandler()
+
+// Mount on HTTP server
+mux := http.NewServeMux()
+mux.Handle("/metrics", metricsHandler)
+
+// Access metrics
+// curl http://localhost:9091/metrics
+```
+
+**When using servicex**, the metrics endpoint is automatically started on port 9091 (configurable via `METRICS_PORT`).
+
+### Custom Metrics
+
+The `Meter()` method provides access to OpenTelemetry's Meter API for creating custom business metrics:
+
+```go
+provider, _ := obsx.NewProvider(ctx, obsx.Options{
+    ServiceName: "user-service",
+})
+
+// Get a meter for your service
+meter := provider.Meter("user-service")
+
+// Create a counter for tracking registrations
+registrationCounter, _ := meter.Int64Counter(
+    "user.registrations.total",
+    metric.WithDescription("Total user registrations"),
+    metric.WithUnit("{registration}"),
+)
+
+// Increment counter
+registrationCounter.Add(ctx, 1, 
+    metric.WithAttributes(
+        attribute.String("source", "web"),
+        attribute.String("country", "US"),
+    ),
+)
+
+// Create a histogram for tracking request durations
+durationHistogram, _ := meter.Float64Histogram(
+    "payment.process.duration",
+    metric.WithDescription("Payment processing duration in seconds"),
+    metric.WithUnit("s"),
+)
+
+// Record duration
+durationHistogram.Record(ctx, 0.125, 
+    metric.WithAttributes(
+        attribute.String("payment_method", "credit_card"),
+        attribute.String("status", "success"),
+    ),
+)
+
+// Create an async gauge for tracking queue depth
+queueDepthGauge, _ := meter.Int64ObservableGauge(
+    "queue.depth",
+    metric.WithDescription("Current queue depth"),
+    metric.WithUnit("{item}"),
+)
+meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+    depth := getQueueDepth() // Your function to get queue depth
+    o.ObserveInt64(queueDepthGauge, depth)
+    return nil
+}, queueDepthGauge)
+```
+
+**All custom metrics are automatically:**
+
+- Exposed via the `/metrics` Prometheus endpoint
+- Exported to OTLP collector (if configured)
+- Available for querying and alerting
+
+**Best practices for custom metrics:**
+
+- Use descriptive metric names following OpenTelemetry conventions (e.g., `service.operation.metric_type`)
+- Add relevant attributes (labels) for filtering and grouping
+- Choose appropriate metric types:
+  - **Counter**: Monotonically increasing values (requests, errors, bytes)
+  - **Histogram**: Distribution of values (durations, sizes)
+  - **Gauge**: Current value that can go up or down (queue depth, active connections)
+
+### OTLP Export
+
+If `OTLPEndpoint` is configured, metrics are also sent to the OpenTelemetry Collector:
+
+```go
+provider, _ := obsx.NewProvider(ctx, obsx.Options{
+    ServiceName:    "my-service",
+    ServiceVersion: "1.0.0",
+    OTLPEndpoint:   "otel-collector:4317",  // Enables OTLP export
+})
+// Metrics are now sent to both Prometheus endpoint AND OTLP collector
+```
+
+**Benefits of dual export:**
+- **Development**: Direct Prometheus endpoint for local testing and debugging
+- **Production**: OTLP export for centralized collection and aggregation
+- **Flexibility**: Choose based on infrastructure (Prometheus scrape vs. OTLP push)
+
+### Metrics Format
+
+Metrics are exported in Prometheus text exposition format:
+
+```
+# HELP target_info Target metadata
+# TYPE target_info gauge
+target_info{service_name="my-service",service_version="1.0.0"} 1
+```
+
+Custom metrics can be added using the OpenTelemetry Meter API:
+
+```go
+meter := provider.MeterProvider().Meter("my-service")
+counter, _ := meter.Int64Counter("requests_total")
+counter.Add(ctx, 1, metric.WithAttributes(
+    attribute.String("method", "GET"),
+))
+```
 
 ## API Reference
 
@@ -85,6 +286,9 @@ func (p *Provider) TracerProvider() *sdktrace.TracerProvider
 
 // MeterProvider returns the OpenTelemetry meter provider
 func (p *Provider) MeterProvider() *metric.MeterProvider
+
+// PrometheusHandler returns an HTTP handler for Prometheus metrics endpoint
+func (p *Provider) PrometheusHandler() http.Handler
 
 // Shutdown gracefully shuts down the provider
 func (p *Provider) Shutdown(ctx context.Context) error
@@ -139,8 +343,8 @@ The obsx provider integrates seamlessly with servicex:
 
 ```go
 import (
-    "github.com/eggybyte-technology/egg/servicex"
-    "github.com/eggybyte-technology/egg/obsx"
+    "go.eggybyte.com/egg/servicex"
+    "go.eggybyte.com/egg/obsx"
 )
 
 func main() {

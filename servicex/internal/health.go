@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/runtimex"
+	"go.eggybyte.com/egg/core/log"
+	"go.eggybyte.com/egg/runtimex"
 )
 
 // SetupHealthEndpoints registers health check endpoints on the given mux.
@@ -56,6 +56,3 @@ func SetupHealthEndpoints(mux *http.ServeMux, logger log.Logger) {
 		fmt.Fprint(w, `{"status":"alive"}`)
 	})
 }
-
-
-

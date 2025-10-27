@@ -48,7 +48,7 @@ L4  servicex     // 集成器：单函数启动 + 函数式选项，轻量 DI，
 ## 3. 仓库与工作区结构（Monorepo + 多模块）
 
 ```
-github.com/eggybyte-technology/egg
+go.eggybyte.com/egg
 ├─ go.work
 ├─ docs/
 │  ├─ ARCHITECTURE.md

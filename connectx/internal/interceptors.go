@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/eggybyte-technology/egg/core/errors"
-	"github.com/eggybyte-technology/egg/core/identity"
-	"github.com/eggybyte-technology/egg/core/log"
+	"go.eggybyte.com/egg/core/errors"
+	"go.eggybyte.com/egg/core/identity"
+	"go.eggybyte.com/egg/core/log"
 	"gorm.io/gorm"
 )
 
@@ -23,7 +23,12 @@ func RecoveryInterceptor(logger log.Logger) connect.UnaryInterceptorFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (resp connect.AnyResponse, err error) {
 			defer func() {
 				if r := recover(); r != nil {
-					logger.Error(nil, "panic recovered", "panic", fmt.Sprintf("%v", r), "procedure", req.Spec().Procedure)
+					// Log panic with procedure for debugging
+					logger.Error(nil, "panic recovered",
+						"panic", fmt.Sprintf("%v", r),
+						"procedure", req.Spec().Procedure)
+
+					// Return internal server error
 					err = connect.NewError(connect.CodeInternal, fmt.Errorf("internal server error: panic recovered"))
 					resp = nil
 				}

@@ -4,19 +4,17 @@ package internal
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/eggybyte-technology/egg/configx"
-	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/logx"
-	"github.com/eggybyte-technology/egg/obsx"
-	"github.com/eggybyte-technology/egg/storex"
+	"go.eggybyte.com/egg/configx"
+	"go.eggybyte.com/egg/core/log"
+	"go.eggybyte.com/egg/logx"
+	"go.eggybyte.com/egg/obsx"
+	"go.eggybyte.com/egg/storex"
 	"gorm.io/gorm"
 )
 
@@ -30,6 +28,7 @@ type ServiceRuntime struct {
 	store         storex.GORMStore
 	httpServer    *http.Server
 	healthServer  *http.Server
+	metricsServer *http.Server
 	shutdownHooks []func(context.Context) error
 }
 
@@ -43,7 +42,13 @@ func NewServiceRuntime(config *ServiceConfig) (*ServiceRuntime, error) {
 
 // Run starts the service with all components.
 func (r *ServiceRuntime) Run(ctx context.Context) error {
-	// Initialize logger first
+	// Pre-bind basic configuration to get log level before logger initialization
+	// This ensures logger uses the correct level from BaseConfig.LogLevel (via configx)
+	if err := r.preBindBaseConfig(ctx); err != nil {
+		return err
+	}
+
+	// Initialize logger with log level from BaseConfig
 	if err := r.initializeLogger(); err != nil {
 		return err
 	}
@@ -53,7 +58,7 @@ func (r *ServiceRuntime) Run(ctx context.Context) error {
 		"version", r.config.ServiceVersion,
 	)
 
-	// Initialize configuration
+	// Initialize full configuration with manager
 	if err := r.initializeConfig(ctx); err != nil {
 		return err
 	}
@@ -94,27 +99,77 @@ func (r *ServiceRuntime) Run(ctx context.Context) error {
 	return r.gracefulShutdown(app)
 }
 
+// preBindBaseConfig performs lightweight pre-binding of critical BaseConfig fields.
+//
+// This method extracts and populates BaseConfig.LogLevel from environment before logger
+// initialization, ensuring the logger uses the correct level. Uses a minimal approach
+// that reads only what's needed, avoiding full config manager overhead.
+//
+// Design principles:
+//   - Simple and focused: only handles LogLevel for logger initialization
+//   - Type-safe: uses interface-based extraction (no reflection)
+//   - Fail-safe: continues with defaults if environment read fails
+func (r *ServiceRuntime) preBindBaseConfig(ctx context.Context) error {
+	if r.config.Config == nil {
+		return nil
+	}
+
+	// Extract BaseConfig using type-safe interface
+	baseCfg, ok := ExtractBaseConfig(r.config.Config)
+	if !ok {
+		return nil // No BaseConfig available, skip pre-binding
+	}
+
+	// Load environment variables through configx (unified configuration source)
+	envSource := configx.NewEnvSource(configx.EnvOptions{})
+	snapshot, err := envSource.Load(ctx)
+	if err != nil {
+		// Fail-safe: use default log level if env loading fails
+		baseCfg.LogLevel = "info"
+		return nil
+	}
+
+	// Populate LogLevel from environment with fallback to default
+	if logLevel, exists := snapshot["LOG_LEVEL"]; exists && logLevel != "" {
+		baseCfg.LogLevel = logLevel
+	} else {
+		baseCfg.LogLevel = "info"
+	}
+
+	return nil
+}
+
 // initializeLogger creates or uses the provided logger.
+//
+// If no logger is provided via WithLogger(), creates a default logger with:
+//   - Console format (human-readable, colored output for development)
+//   - Log level from BaseConfig.LogLevel (populated via configx)
+//   - Color enabled for better readability
+//
+// This ensures all configuration is unified through configx, not direct environment reads.
 func (r *ServiceRuntime) initializeLogger() error {
 	if r.config.Logger == nil {
-		level := slog.LevelInfo
+		logLevelStr := "info" // default
 
-		// Determine log level from EnableDebug flag or LOG_LEVEL environment variable
-		if r.config.EnableDebug {
-			level = slog.LevelDebug
-		} else if logLevel := os.Getenv("LOG_LEVEL"); logLevel != "" {
-			// Parse LOG_LEVEL environment variable
-			if parsedLevel, err := ParseLogLevel(logLevel); err == nil {
-				level = parsedLevel
+		// Extract log level from BaseConfig (populated by preBindBaseConfig via configx)
+		if r.config.Config != nil {
+			if baseCfg, ok := ExtractBaseConfig(r.config.Config); ok {
+				if baseCfg.LogLevel != "" {
+					logLevelStr = baseCfg.LogLevel
+				}
 			}
 		}
 
+		// Parse and create logger with configured level
+		logLevel := logx.ParseLevel(logLevelStr)
 		r.logger = logx.New(
-			logx.WithFormat(logx.FormatLogfmt),
-			logx.WithLevel(level),
-			logx.WithColor(false),
+			logx.WithFormat(logx.FormatConsole),
+			logx.WithLevel(logLevel),
+			logx.WithColor(true),
 		)
 		r.config.Logger = r.logger
+
+		r.logger.Info("logger initialized", "log_level", logLevelStr, "source", "configx")
 	} else {
 		r.logger = r.config.Logger
 	}
@@ -228,7 +283,8 @@ func (r *ServiceRuntime) initializeDatabase(ctx context.Context) error {
 
 // initializeObservability initializes OpenTelemetry providers.
 func (r *ServiceRuntime) initializeObservability(ctx context.Context) error {
-	if !r.config.EnableTracing {
+	// Initialize OTEL provider if either tracing or metrics is enabled
+	if !r.config.EnableTracing && !r.config.EnableMetrics {
 		return nil
 	}
 
@@ -237,11 +293,42 @@ func (r *ServiceRuntime) initializeObservability(ctx context.Context) error {
 		ServiceVersion: r.config.ServiceVersion,
 	})
 	if err != nil {
-		r.logger.Error(err, "otel init failed, continuing without tracing")
+		r.logger.Error(err, "otel init failed, continuing without observability")
 		return nil // Non-fatal
 	}
 
 	r.otelProvider = otelProvider
+
+	// Enable additional metrics based on MetricsConfig
+	if r.config.EnableMetrics && r.config.MetricsConfig != nil {
+		if r.config.MetricsConfig.EnableRuntime {
+			if err := otelProvider.EnableRuntimeMetrics(ctx); err != nil {
+				r.logger.Error(err, "failed to enable runtime metrics")
+			} else {
+				r.logger.Info("runtime metrics enabled")
+			}
+		}
+
+		if r.config.MetricsConfig.EnableProcess {
+			if err := otelProvider.EnableProcessMetrics(ctx); err != nil {
+				r.logger.Error(err, "failed to enable process metrics")
+			} else {
+				r.logger.Info("process metrics enabled")
+			}
+		}
+
+		if r.config.MetricsConfig.EnableDB && r.db != nil {
+			sqlDB, err := r.db.DB()
+			if err == nil {
+				if err := otelProvider.RegisterDBMetrics(r.config.ServiceName, sqlDB); err != nil {
+					r.logger.Error(err, "failed to register database metrics")
+				} else {
+					r.logger.Info("database metrics enabled")
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -297,6 +384,22 @@ func (r *ServiceRuntime) startServers(ctx context.Context, app *App) error {
 		}
 	}()
 
+	// Start metrics server if enabled and observability is initialized
+	if r.config.EnableMetrics && r.otelProvider != nil {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("/metrics", r.otelProvider.PrometheusHandler())
+
+		metricsAddr := fmt.Sprintf(":%d", r.config.MetricsPort)
+		r.metricsServer = &http.Server{Addr: metricsAddr, Handler: metricsMux}
+
+		go func() {
+			r.logger.Info("metrics server listening", "port", r.config.MetricsPort)
+			if err := r.metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				r.logger.Error(err, "metrics server error")
+			}
+		}()
+	}
+
 	return nil
 }
 
@@ -343,6 +446,12 @@ func (r *ServiceRuntime) gracefulShutdown(app *App) error {
 	}
 
 	// Shutdown servers
+	if r.metricsServer != nil {
+		if err := r.metricsServer.Shutdown(shutdownCtx); err != nil {
+			r.logger.Error(err, "metrics server shutdown failed")
+		}
+	}
+
 	if r.healthServer != nil {
 		if err := r.healthServer.Shutdown(shutdownCtx); err != nil {
 			r.logger.Error(err, "health server shutdown failed")

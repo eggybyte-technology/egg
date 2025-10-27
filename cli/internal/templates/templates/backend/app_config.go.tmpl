@@ -1,94 +1,58 @@
 // Package config provides configuration management for the {{.ServiceName}} service.
 //
 // Overview:
-//   - Responsibility: Application configuration and environment management
-//   - Key Types: AppConfig struct with validation and defaults
-//   - Concurrency Model: Thread-safe configuration access
-//   - Error Semantics: Configuration errors are wrapped and returned
-//   - Performance Notes: Optimized for hot reload and validation
+//   - Responsibility: Configuration loading and validation
+//   - Key Types: AppConfig struct extending BaseConfig
+//   - Concurrency Model: Immutable configuration after initialization
+//   - Error Semantics: Configuration errors reported at startup
+//   - Performance Notes: Single load operation at service startup
 //
 // Usage:
 //
-//	var cfg AppConfig
-//	mgr.Bind(&cfg)
-//	dbURL := cfg.Database.DSN
+//	cfg := &config.AppConfig{}
+//	servicex.Run(ctx, servicex.WithAppConfig(cfg))
 package config
 
-import (
-	"fmt"
-	"time"
+import "go.eggybyte.com/egg/configx"
 
-	"github.com/eggybyte-technology/egg/configx"
-)
-
-// AppConfig extends BaseConfig with application-specific settings.
-// It includes database configuration, business settings, and feature flags.
+// AppConfig represents the application configuration for the {{.ServiceName}} service.
+//
+// This configuration extends BaseConfig which provides:
+//   - HTTP/Health/Metrics port configuration
+//   - Database connection settings (DB_DSN)
+//   - ConfigMap name for Kubernetes dynamic configuration (APP_CONFIGMAP_NAME)
+//   - Logging configuration (LOG_LEVEL)
+//
+// Environment Variables:
+//   - HTTP_PORT: HTTP server port (default: 8080)
+//   - HEALTH_PORT: Health check endpoint port (default: 8081)
+//   - METRICS_PORT: Metrics endpoint port (default: 9091)
+//   - DB_DSN: Database connection string (required for database operations)
+//   - APP_CONFIGMAP_NAME: Kubernetes ConfigMap name for dynamic config (K8s only)
+//   - LOG_LEVEL: Logging level (debug, info, warn, error)
+//
+// Service-Specific Configuration:
+//   Add your service-specific configuration fields below.
+//   Use struct tags for environment variable mapping and defaults.
+//
+// Example:
+//
+//	type AppConfig struct {
+//	    configx.BaseConfig
+//	    RateLimitQPS int `env:"RATE_LIMIT_QPS" default:"200"`
+//	    MaxRetries   int `env:"MAX_RETRIES" default:"3"`
+//	}
+//
+// Concurrency:
+//
+//	Safe for concurrent read access after initialization.
+//	Do not modify configuration after service startup.
 type AppConfig struct {
+	// BaseConfig provides standard egg framework configuration fields.
+	// See configx.BaseConfig for details on available fields.
 	configx.BaseConfig
 
-	// Database configuration
-	Database DatabaseConfig
-
-	// Business configuration
-	Business BusinessConfig
-
-	// Feature flags
-	Features FeatureConfig
-}
-
-// DatabaseConfig contains database connection settings.
-type DatabaseConfig struct {
-	Driver      string        `env:"DB_DRIVER" default:"mysql"`
-	DSN         string        `env:"DB_DSN" default:""`
-	MaxIdle     int           `env:"DB_MAX_IDLE" default:"10"`
-	MaxOpen     int           `env:"DB_MAX_OPEN" default:"100"`
-	MaxLifetime time.Duration `env:"DB_MAX_LIFETIME" default:"1h"`
-}
-
-// BusinessConfig contains business logic settings.
-type BusinessConfig struct {
-	DefaultPageSize int   `env:"DEFAULT_PAGE_SIZE" default:"10"`
-	MaxPageSize     int   `env:"MAX_PAGE_SIZE" default:"100"`
-	SlowQueryMillis int64 `env:"SLOW_QUERY_MILLIS" default:"1000"`
-}
-
-// FeatureConfig contains feature flag settings.
-type FeatureConfig struct {
-	EnableDebugLogs   bool `env:"ENABLE_DEBUG_LOGS" default:"false"`
-	EnableMetrics     bool `env:"ENABLE_METRICS" default:"true"`
-	EnableTracing     bool `env:"ENABLE_TRACING" default:"true"`
-	EnableHealthCheck bool `env:"ENABLE_HEALTH_CHECK" default:"true"`
-}
-
-// Validate performs configuration validation.
-// Returns an error if validation fails.
-func (c *AppConfig) Validate() error {
-	// Database DSN is now optional - if not provided, database features will be disabled
-	if c.Database.DSN != "" {
-		if c.Business.DefaultPageSize < 1 {
-			return fmt.Errorf("default page size must be positive")
-		}
-
-		if c.Business.MaxPageSize < c.Business.DefaultPageSize {
-			return fmt.Errorf("max page size must be >= default page size")
-		}
-	}
-
-	return nil
-}
-
-// GetDatabaseDSN returns the database DSN for the current environment.
-// It applies environment-specific transformations if needed.
-func (c *AppConfig) GetDatabaseDSN() string {
-	return c.Database.DSN
-}
-
-// IsDevelopment returns true if the service is running in development mode.
-func (c *AppConfig) IsDevelopment() bool {
-	return c.BaseConfig.Env == "development"
-}
-
-// IsProduction returns true if the service is running in production mode.
-func (c *AppConfig) IsProduction() bool {
-	return c.BaseConfig.Env == "production"
+	// Add service-specific configuration fields below
+	// Example:
+	// RateLimitQPS int `env:"RATE_LIMIT_QPS" default:"200"`
 }

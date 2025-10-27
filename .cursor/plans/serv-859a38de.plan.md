@@ -9,7 +9,7 @@
 
 ### 关键设计
 
-- 包路径：`github.com/eggybyte-technology/egg/servicex`
+- 包路径：`go.eggybyte.com/egg/servicex`
 - 核心类型：
   - `type Options struct { ServiceName string; Config any; Logger log.Logger; EnableTracing bool; EnableHealthCheck bool; EnableMetrics bool; EnableDebugLogs bool; SlowRequestMillis int64; PayloadAccounting bool; ShutdownTimeout time.Duration; Database *DatabaseConfig; Migrate func(db *gorm.DB) error; Register func(app *App) error }`
   - `type App struct { ... }`（只暴露最小访问器）
@@ -77,7 +77,7 @@ err := servicex.Run(ctx, servicex.Options{
   - `servicex/run.go`（Run 实现，映射到 bootstrap）
   - `servicex/README.md`（快速上手与进阶）
   - `servicex/servicex_test.go`（核心单测：选项映射、拦截器、无 DB/有 DB）
-- 初始化模块：通过 `go mod init github.com/eggybyte-technology/egg/servicex`，并 `go work use ./servicex`。
+- 初始化模块：通过 `go mod init go.eggybyte.com/egg/servicex`，并 `go work use ./servicex`。
 - 改造两个示例的 `main.go` 以使用 `servicex`。
 - 更新 `docs/guide.md` 一章，推荐新入口；保留 bootstrap 文档作为高级用法。
 

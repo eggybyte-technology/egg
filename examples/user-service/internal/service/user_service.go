@@ -16,11 +16,11 @@ package service
 import (
 	"context"
 
-	"github.com/eggybyte-technology/egg/core/errors"
-	"github.com/eggybyte-technology/egg/core/log"
-	userv1 "github.com/eggybyte-technology/egg/examples/user-service/gen/go/user/v1"
-	"github.com/eggybyte-technology/egg/examples/user-service/internal/model"
-	"github.com/eggybyte-technology/egg/examples/user-service/internal/repository"
+	"go.eggybyte.com/egg/core/errors"
+	"go.eggybyte.com/egg/core/log"
+	userv1 "go.eggybyte.com/egg/examples/user-service/gen/go/user/v1"
+	"go.eggybyte.com/egg/examples/user-service/internal/model"
+	"go.eggybyte.com/egg/examples/user-service/internal/repository"
 )
 
 // UserService defines the interface for user business operations.
@@ -48,10 +48,31 @@ type userService struct {
 	logger log.Logger
 }
 
-// NewUserService creates a new UserService instance.
-// The returned service is safe for concurrent use.
+// NewUserService creates a new UserService instance with dependency injection.
 //
-// Panics if repo or logger is nil (fail-fast at startup).
+// This constructor demonstrates the egg framework's dependency injection pattern:
+// accepting interfaces (not concrete types) to enable testability and flexibility.
+//
+// Parameters:
+//   - repo: UserRepository implementation for data access (must not be nil)
+//   - logger: Logger implementation for structured logging (must not be nil)
+//
+// Returns:
+//   - UserService: service instance ready for use
+//
+// Panics:
+//   - If repo is nil (fail-fast at startup)
+//   - If logger is nil (fail-fast at startup)
+//
+// Rationale:
+//
+// This function panics on nil dependencies rather than returning an error because
+// these are startup-time configuration issues that should never occur in production.
+// Panicking during initialization is preferable to runtime nil pointer dereferences.
+//
+// Concurrency:
+//
+//	Returned service is safe for concurrent use across multiple goroutines.
 func NewUserService(repo repository.UserRepository, logger log.Logger) UserService {
 	if repo == nil {
 		panic("NewUserService: repository cannot be nil")
@@ -66,7 +87,32 @@ func NewUserService(repo repository.UserRepository, logger log.Logger) UserServi
 	}
 }
 
-// CreateUser creates a new user with business validation.
+// CreateUser creates a new user with comprehensive business validation.
+//
+// This method implements multi-layer validation:
+//  1. Request field validation (required fields)
+//  2. Domain model validation (format, constraints)
+//  3. Business rule validation (uniqueness via repository)
+//
+// Parameters:
+//   - ctx: request context for cancellation and deadlines
+//   - req: protobuf request containing email and name
+//
+// Returns:
+//   - *userv1.CreateUserResponse: response with created user details
+//   - error: nil on success; structured error on failure
+//   - CodeInvalidArgument: validation failed (empty/invalid fields)
+//   - CodeAlreadyExists: email already registered
+//   - CodeInternal: database operation failed
+//
+// Behavior:
+//   - Generates UUID for new user automatically
+//   - Sets created_at and updated_at timestamps
+//   - Logs validation and operation steps at DEBUG level
+//
+// Concurrency:
+//
+//	Safe for concurrent use. Database handles race conditions with unique constraints.
 func (s *userService) CreateUser(ctx context.Context, req *userv1.CreateUserRequest) (*userv1.CreateUserResponse, error) {
 	s.logger.Debug("CreateUser started", log.Str("email", req.Email), log.Str("name", req.Name))
 
@@ -264,7 +310,24 @@ func (s *userService) ListUsers(ctx context.Context, req *userv1.ListUsersReques
 }
 
 // toProtoUser converts a domain User model to protobuf User message.
-// This helper function eliminates code duplication across service methods.
+//
+// This helper function eliminates code duplication across service methods and
+// centralizes the mapping logic between domain and API layers.
+//
+// Parameters:
+//   - user: domain user model (must not be nil)
+//
+// Returns:
+//   - *userv1.User: protobuf user message with Unix timestamps
+//
+// Behavior:
+//   - Timestamps are converted from time.Time to Unix epoch seconds
+//   - All string fields are copied directly
+//   - No validation is performed (assumes valid domain model)
+//
+// Concurrency:
+//
+//	Safe for concurrent use (pure function, no shared state).
 func toProtoUser(user *model.User) *userv1.User {
 	return &userv1.User{
 		Id:        user.ID,
@@ -275,7 +338,17 @@ func toProtoUser(user *model.User) *userv1.User {
 	}
 }
 
-// normalizePage ensures page number is at least 1.
+// normalizePage ensures page number is at least 1 for safe pagination.
+//
+// Parameters:
+//   - page: requested page number (may be negative or zero)
+//
+// Returns:
+//   - int: normalized page number (minimum 1)
+//
+// Concurrency:
+//
+//	Safe for concurrent use (pure function).
 func normalizePage(page int) int {
 	if page < 1 {
 		return 1
@@ -284,6 +357,23 @@ func normalizePage(page int) int {
 }
 
 // normalizePageSize ensures page size is within valid range [1, 100].
+//
+// This function prevents:
+//   - Excessive memory usage from large page sizes
+//   - Invalid queries from zero or negative page sizes
+//
+// Parameters:
+//   - pageSize: requested page size (may be any integer)
+//
+// Returns:
+//   - int: normalized page size
+//   - Returns 10 if pageSize < 1 (default)
+//   - Returns 100 if pageSize > 100 (max)
+//   - Returns pageSize otherwise
+//
+// Concurrency:
+//
+//	Safe for concurrent use (pure function).
 func normalizePageSize(pageSize int) int {
 	if pageSize < 1 {
 		return 10 // default

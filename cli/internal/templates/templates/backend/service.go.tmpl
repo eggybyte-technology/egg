@@ -9,63 +9,70 @@
 //
 // Usage:
 //
-//	service := New{{.ServiceNameCamel}}Service(repo)
-//	{{.ServiceNameVar}}, err := service.Create{{.ServiceNameCamel}}(ctx, &Create{{.ServiceNameCamel}}Request{Name: "example"})
+//	service := New{{.ServiceNameCamel}}Service(repo, logger)
+//	{{.ServiceNameVar}}, err := service.Create{{.ServiceNameCamel}}(ctx, &Create{{.ServiceNameCamel}}Request{Email: "{{.ServiceNameVar}}@example.com"})
 package service
 
 import (
 	"context"
 
-	"github.com/eggybyte-technology/egg/core/errors"
-	"github.com/eggybyte-technology/egg/core/log"
-	{{.ServiceNameCamel}}v1 "{{.ModulePrefix}}/backend/{{.ServiceName}}/gen/go/{{.ServiceName}}/v1"
-	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/model"
-	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/repository"
+	"go.eggybyte.com/egg/core/errors"
+	"go.eggybyte.com/egg/core/log"
+	{{.ServiceNameVar}}v1 "{{.ModulePrefix}}/gen/go/{{.ServiceNameVar}}/v1"
+	"{{.ModulePrefix}}/internal/model"
+	"{{.ModulePrefix}}/internal/repository"
 )
 
 // {{.ServiceNameCamel}}Service defines the interface for {{.ServiceName}} business operations.
 // All methods are context-aware and return structured errors.
 type {{.ServiceNameCamel}}Service interface {
 	// Create{{.ServiceNameCamel}} creates a new {{.ServiceName}} with business validation.
-	Create{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameCamel}}v1.Create{{.ServiceNameCamel}}Request) (*{{.ServiceNameCamel}}v1.Create{{.ServiceNameCamel}}Response, error)
+	Create{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Response, error)
 
 	// Get{{.ServiceNameCamel}} retrieves a {{.ServiceName}} by ID with proper error handling.
-	Get{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameCamel}}v1.Get{{.ServiceNameCamel}}Request) (*{{.ServiceNameCamel}}v1.Get{{.ServiceNameCamel}}Response, error)
+	Get{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Get{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Get{{.ServiceNameCamel}}Response, error)
 
 	// Update{{.ServiceNameCamel}} updates an existing {{.ServiceName}} with validation.
-	Update{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameCamel}}v1.Update{{.ServiceNameCamel}}Request) (*{{.ServiceNameCamel}}v1.Update{{.ServiceNameCamel}}Response, error)
+	Update{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Update{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Update{{.ServiceNameCamel}}Response, error)
 
 	// Delete{{.ServiceNameCamel}} removes a {{.ServiceName}} by ID.
-	Delete{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameCamel}}v1.Delete{{.ServiceNameCamel}}Request) (*{{.ServiceNameCamel}}v1.Delete{{.ServiceNameCamel}}Response, error)
+	Delete{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Delete{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Delete{{.ServiceNameCamel}}Response, error)
 
 	// List{{.ServiceNameCamel}}s retrieves {{.ServiceName}}s with pagination.
-	List{{.ServiceNameCamel}}s(ctx context.Context, req *{{.ServiceNameCamel}}v1.List{{.ServiceNameCamel}}sRequest) (*{{.ServiceNameCamel}}v1.List{{.ServiceNameCamel}}sResponse, error)
+	List{{.ServiceNameCamel}}s(ctx context.Context, req *{{.ServiceNameVar}}v1.List{{.ServiceNameCamel}}sRequest) (*{{.ServiceNameVar}}v1.List{{.ServiceNameCamel}}sResponse, error)
 }
 
-// {{.ServiceNameCamel}}Service implements the {{.ServiceNameCamel}}Service interface.
-type {{.ServiceNameCamel}}Service struct {
+// {{.ServiceNameVar}}Service implements the {{.ServiceNameCamel}}Service interface.
+type {{.ServiceNameVar}}Service struct {
 	repo   repository.{{.ServiceNameCamel}}Repository
 	logger log.Logger
 }
 
-// New{{.ServiceNameCamel}}Service creates a new {{.ServiceNameCamel}}Service instance.
-// The returned service is safe for concurrent use.
+// New{{.ServiceNameCamel}}Service creates a new {{.ServiceNameCamel}}Service instance with dependency injection.
+//
+// This constructor demonstrates the egg framework's dependency injection pattern:
+// accepting interfaces (not concrete types) to enable testability and flexibility.
 //
 // Parameters:
-//   - repo: {{.ServiceNameCamel}}Repository implementation (must not be nil)
-//   - logger: Logger instance (must not be nil)
+//   - repo: {{.ServiceNameCamel}}Repository implementation for data access (must not be nil)
+//   - logger: Logger implementation for structured logging (must not be nil)
 //
 // Returns:
-//   - {{.ServiceNameCamel}}Service: The created service instance
+//   - {{.ServiceNameCamel}}Service: service instance ready for use
 //
 // Panics:
 //   - If repo is nil (fail-fast at startup)
 //   - If logger is nil (fail-fast at startup)
 //
 // Rationale:
-// This function panics on nil dependencies rather than returning an error
-// because these are startup-time issues that should never occur in production.
-// If dependencies are nil, the service cannot function and should not start.
+//
+// This function panics on nil dependencies rather than returning an error because
+// these are startup-time configuration issues that should never occur in production.
+// Panicking during initialization is preferable to runtime nil pointer dereferences.
+//
+// Concurrency:
+//
+//	Returned service is safe for concurrent use across multiple goroutines.
 func New{{.ServiceNameCamel}}Service(repo repository.{{.ServiceNameCamel}}Repository, logger log.Logger) {{.ServiceNameCamel}}Service {
 	if repo == nil {
 		panic("New{{.ServiceNameCamel}}Service: repository cannot be nil")
@@ -73,198 +80,306 @@ func New{{.ServiceNameCamel}}Service(repo repository.{{.ServiceNameCamel}}Reposi
 	if logger == nil {
 		panic("New{{.ServiceNameCamel}}Service: logger cannot be nil")
 	}
-	
-	return &{{.ServiceNameCamel}}Service{
+
+	return &{{.ServiceNameVar}}Service{
 		repo:   repo,
 		logger: logger,
 	}
 }
 
-// Create{{.ServiceNameCamel}} creates a new {{.ServiceName}} with business validation.
-func (s *{{.ServiceNameCamel}}Service) Create{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameCamel}}v1.Create{{.ServiceNameCamel}}Request) (*{{.ServiceNameCamel}}v1.Create{{.ServiceNameCamel}}Response, error) {
-	// Validate request
+// Create{{.ServiceNameCamel}} creates a new {{.ServiceName}} with comprehensive business validation.
+//
+// This method implements multi-layer validation:
+//  1. Request field validation (required fields)
+//  2. Domain model validation (format, constraints)
+//  3. Business rule validation (uniqueness via repository)
+//
+// Parameters:
+//   - ctx: request context for cancellation and deadlines
+//   - req: protobuf request containing email and name
+//
+// Returns:
+//   - *{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Response: response with created {{.ServiceName}} details
+//   - error: nil on success; structured error on failure
+//   - CodeInvalidArgument: validation failed (empty/invalid fields)
+//   - CodeAlreadyExists: email already registered
+//   - CodeInternal: database operation failed
+//
+// Behavior:
+//   - Generates UUID for new {{.ServiceName}} automatically
+//   - Sets created_at and updated_at timestamps
+//   - Logs validation and operation steps at DEBUG level
+//
+// Concurrency:
+//
+//	Safe for concurrent use. Database handles race conditions with unique constraints.
+func (s *{{.ServiceNameVar}}Service) Create{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Response, error) {
+	s.logger.Debug("Create{{.ServiceNameCamel}} started", log.Str("email", req.Email), log.Str("name", req.Name))
+
+	// Validate request fields
+	if req.Email == "" {
+		s.logger.Debug("Create{{.ServiceNameCamel}} validation failed: empty email")
+		return nil, errors.New(errors.CodeInvalidArgument, "email is required")
+	}
 	if req.Name == "" {
+		s.logger.Debug("Create{{.ServiceNameCamel}} validation failed: empty name")
 		return nil, errors.New(errors.CodeInvalidArgument, "name is required")
 	}
 
-	// Create {{.ServiceName}} model
+	// Create and validate {{.ServiceName}} model
 	{{.ServiceNameVar}} := &model.{{.ServiceNameCamel}}{
-		Name: req.Name,
+		Email: req.Email,
+		Name:  req.Name,
 	}
+
+	if err := {{.ServiceNameVar}}.Validate(); err != nil {
+		s.logger.Debug("Create{{.ServiceNameCamel}} model validation failed", log.Str("email", req.Email), log.Str("error", err.Error()))
+		return nil, err
+	}
+
+	s.logger.Debug("Create{{.ServiceNameCamel}} calling repository", log.Str("email", req.Email))
 
 	// Create {{.ServiceName}} in repository
 	created{{.ServiceNameCamel}}, err := s.repo.Create(ctx, {{.ServiceNameVar}})
 	if err != nil {
-		// Error logging is handled by Connect interceptor with proper error classification
-		// Only log at DEBUG level here for debugging purposes
-		s.logger.Debug("Create {{.ServiceName}} failed", log.Str("name", req.Name), log.Str("error", err.Error()))
+		s.logger.Debug("Create{{.ServiceNameCamel}} repository failed", log.Str("email", req.Email), log.Str("error", err.Error()))
 		return nil, err
 	}
 
-	// Success logging is handled by Connect interceptor - no need to log here
-	s.logger.Debug("{{.ServiceNameCamel}} created in repository",
-		log.Str("{{.ServiceName}}_id", created{{.ServiceNameCamel}}.ID),
-		log.Str("name", created{{.ServiceNameCamel}}.Name))
+	s.logger.Debug("Create{{.ServiceNameCamel}} completed successfully",
+		log.Str("{{.ServiceNameVar}}_id", created{{.ServiceNameCamel}}.ID),
+		log.Str("email", created{{.ServiceNameCamel}}.Email))
 
-	// Convert to response
-	response := &{{.ServiceNameCamel}}v1.Create{{.ServiceNameCamel}}Response{
-		{{.ServiceNameCamel}}: &{{.ServiceNameCamel}}v1.{{.ServiceNameCamel}}{
-			Id:        created{{.ServiceNameCamel}}.ID,
-			Name:      created{{.ServiceNameCamel}}.Name,
-			CreatedAt: created{{.ServiceNameCamel}}.CreatedAt.Unix(),
-			UpdatedAt: created{{.ServiceNameCamel}}.UpdatedAt.Unix(),
-		},
-	}
-
-	return response, nil
+	return &{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Response{
+		{{.ServiceNameCamel}}: toProto{{.ServiceNameCamel}}(created{{.ServiceNameCamel}}),
+	}, nil
 }
 
 // Get{{.ServiceNameCamel}} retrieves a {{.ServiceName}} by ID with proper error handling.
-func (s *{{.ServiceNameCamel}}Service) Get{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameCamel}}v1.Get{{.ServiceNameCamel}}Request) (*{{.ServiceNameCamel}}v1.Get{{.ServiceNameCamel}}Response, error) {
-	// Validate request
+func (s *{{.ServiceNameVar}}Service) Get{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Get{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Get{{.ServiceNameCamel}}Response, error) {
+	s.logger.Debug("Get{{.ServiceNameCamel}} started", log.Str("{{.ServiceNameVar}}_id", req.Id))
+
 	if req.Id == "" {
+		s.logger.Debug("Get{{.ServiceNameCamel}} validation failed: empty ID")
 		return nil, errors.New(errors.CodeInvalidArgument, "{{.ServiceName}} ID is required")
 	}
 
-	// Get {{.ServiceName}} from repository
+	s.logger.Debug("Get{{.ServiceNameCamel}} calling repository", log.Str("{{.ServiceNameVar}}_id", req.Id))
+
 	{{.ServiceNameVar}}, err := s.repo.GetByID(ctx, req.Id)
 	if err != nil {
-		// Error logging is handled by Connect interceptor with proper error classification
-		s.logger.Debug("Get {{.ServiceName}} failed", log.Str("{{.ServiceName}}_id", req.Id), log.Str("error", err.Error()))
+		s.logger.Debug("Get{{.ServiceNameCamel}} repository failed", log.Str("{{.ServiceNameVar}}_id", req.Id), log.Str("error", err.Error()))
 		return nil, err
 	}
 
-	// Success logging is handled by Connect interceptor - no need to log here
-	s.logger.Debug("{{.ServiceNameCamel}} retrieved from repository", log.Str("{{.ServiceName}}_id", {{.ServiceNameVar}}.ID))
+	s.logger.Debug("Get{{.ServiceNameCamel}} completed successfully",
+		log.Str("{{.ServiceNameVar}}_id", {{.ServiceNameVar}}.ID),
+		log.Str("email", {{.ServiceNameVar}}.Email))
 
-	// Convert to response
-	response := &{{.ServiceNameCamel}}v1.Get{{.ServiceNameCamel}}Response{
-		{{.ServiceNameCamel}}: &{{.ServiceNameCamel}}v1.{{.ServiceNameCamel}}{
-			Id:        {{.ServiceNameVar}}.ID,
-			Name:      {{.ServiceNameVar}}.Name,
-			CreatedAt: {{.ServiceNameVar}}.CreatedAt.Unix(),
-			UpdatedAt: {{.ServiceNameVar}}.UpdatedAt.Unix(),
-		},
-	}
-
-	return response, nil
+	return &{{.ServiceNameVar}}v1.Get{{.ServiceNameCamel}}Response{
+		{{.ServiceNameCamel}}: toProto{{.ServiceNameCamel}}({{.ServiceNameVar}}),
+	}, nil
 }
 
 // Update{{.ServiceNameCamel}} updates an existing {{.ServiceName}} with validation.
-func (s *{{.ServiceNameCamel}}Service) Update{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameCamel}}v1.Update{{.ServiceNameCamel}}Request) (*{{.ServiceNameCamel}}v1.Update{{.ServiceNameCamel}}Response, error) {
-	// Validate request
+func (s *{{.ServiceNameVar}}Service) Update{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Update{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Update{{.ServiceNameCamel}}Response, error) {
+	s.logger.Debug("Update{{.ServiceNameCamel}} started",
+		log.Str("{{.ServiceNameVar}}_id", req.Id),
+		log.Str("email", req.Email),
+		log.Str("name", req.Name))
+
+	// Validate request fields
 	if req.Id == "" {
+		s.logger.Debug("Update{{.ServiceNameCamel}} validation failed: empty ID")
 		return nil, errors.New(errors.CodeInvalidArgument, "{{.ServiceName}} ID is required")
 	}
+	if req.Email == "" {
+		s.logger.Debug("Update{{.ServiceNameCamel}} validation failed: empty email")
+		return nil, errors.New(errors.CodeInvalidArgument, "email is required")
+	}
 	if req.Name == "" {
+		s.logger.Debug("Update{{.ServiceNameCamel}} validation failed: empty name")
 		return nil, errors.New(errors.CodeInvalidArgument, "name is required")
 	}
 
-	// Create {{.ServiceName}} model
-	{{.ServiceNameVar}} := &model.{{.ServiceNameCamel}}{
-		ID:   req.Id,
-		Name: req.Name,
-	}
+	s.logger.Debug("Update{{.ServiceNameCamel}} fetching existing {{.ServiceName}}", log.Str("{{.ServiceNameVar}}_id", req.Id))
 
-	// Update {{.ServiceName}} in repository
-	updated{{.ServiceNameCamel}}, err := s.repo.Update(ctx, {{.ServiceNameVar}})
+	// Get existing {{.ServiceName}} to preserve timestamps
+	existing{{.ServiceNameCamel}}, err := s.repo.GetByID(ctx, req.Id)
 	if err != nil {
-		// Error logging is handled by Connect interceptor with proper error classification
-		s.logger.Debug("Update {{.ServiceName}} failed", log.Str("{{.ServiceName}}_id", req.Id), log.Str("error", err.Error()))
+		s.logger.Debug("Update{{.ServiceNameCamel}} get existing {{.ServiceName}} failed", log.Str("{{.ServiceNameVar}}_id", req.Id), log.Str("error", err.Error()))
 		return nil, err
 	}
 
-	// Success logging is handled by Connect interceptor - no need to log here
-	s.logger.Debug("{{.ServiceNameCamel}} updated in repository",
-		log.Str("{{.ServiceName}}_id", updated{{.ServiceNameCamel}}.ID),
-		log.Str("name", updated{{.ServiceNameCamel}}.Name))
-
-	// Convert to response
-	response := &{{.ServiceNameCamel}}v1.Update{{.ServiceNameCamel}}Response{
-		{{.ServiceNameCamel}}: &{{.ServiceNameCamel}}v1.{{.ServiceNameCamel}}{
-			Id:        updated{{.ServiceNameCamel}}.ID,
-			Name:      updated{{.ServiceNameCamel}}.Name,
-			CreatedAt: updated{{.ServiceNameCamel}}.CreatedAt.Unix(),
-			UpdatedAt: updated{{.ServiceNameCamel}}.UpdatedAt.Unix(),
-		},
+	// Build updated {{.ServiceName}} model
+	{{.ServiceNameVar}} := &model.{{.ServiceNameCamel}}{
+		ID:        req.Id,
+		Email:     req.Email,
+		Name:      req.Name,
+		CreatedAt: existing{{.ServiceNameCamel}}.CreatedAt,
 	}
 
-	return response, nil
+	if err := {{.ServiceNameVar}}.Validate(); err != nil {
+		s.logger.Debug("Update{{.ServiceNameCamel}} model validation failed", log.Str("{{.ServiceNameVar}}_id", req.Id), log.Str("error", err.Error()))
+		return nil, err
+	}
+
+	s.logger.Debug("Update{{.ServiceNameCamel}} calling repository", log.Str("{{.ServiceNameVar}}_id", req.Id))
+
+	updated{{.ServiceNameCamel}}, err := s.repo.Update(ctx, {{.ServiceNameVar}})
+	if err != nil {
+		s.logger.Debug("Update{{.ServiceNameCamel}} repository failed", log.Str("{{.ServiceNameVar}}_id", req.Id), log.Str("error", err.Error()))
+		return nil, err
+	}
+
+	s.logger.Debug("Update{{.ServiceNameCamel}} completed successfully",
+		log.Str("{{.ServiceNameVar}}_id", updated{{.ServiceNameCamel}}.ID),
+		log.Str("email", updated{{.ServiceNameCamel}}.Email))
+
+	return &{{.ServiceNameVar}}v1.Update{{.ServiceNameCamel}}Response{
+		{{.ServiceNameCamel}}: toProto{{.ServiceNameCamel}}(updated{{.ServiceNameCamel}}),
+	}, nil
 }
 
 // Delete{{.ServiceNameCamel}} removes a {{.ServiceName}} by ID.
-func (s *{{.ServiceNameCamel}}Service) Delete{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameCamel}}v1.Delete{{.ServiceNameCamel}}Request) (*{{.ServiceNameCamel}}v1.Delete{{.ServiceNameCamel}}Response, error) {
-	// Validate request
+func (s *{{.ServiceNameVar}}Service) Delete{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Delete{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Delete{{.ServiceNameCamel}}Response, error) {
+	s.logger.Debug("Delete{{.ServiceNameCamel}} started", log.Str("{{.ServiceNameVar}}_id", req.Id))
+
 	if req.Id == "" {
+		s.logger.Debug("Delete{{.ServiceNameCamel}} validation failed: empty ID")
 		return nil, errors.New(errors.CodeInvalidArgument, "{{.ServiceName}} ID is required")
 	}
 
-	// Delete {{.ServiceName}} from repository
-	err := s.repo.Delete(ctx, req.Id)
-	if err != nil {
-		// Error logging is handled by Connect interceptor with proper error classification
-		s.logger.Debug("Delete {{.ServiceName}} failed", log.Str("{{.ServiceName}}_id", req.Id), log.Str("error", err.Error()))
+	s.logger.Debug("Delete{{.ServiceNameCamel}} calling repository", log.Str("{{.ServiceNameVar}}_id", req.Id))
+
+	if err := s.repo.Delete(ctx, req.Id); err != nil {
+		s.logger.Debug("Delete{{.ServiceNameCamel}} repository failed", log.Str("{{.ServiceNameVar}}_id", req.Id), log.Str("error", err.Error()))
 		return nil, err
 	}
 
-	// Success logging is handled by Connect interceptor - no need to log here
-	s.logger.Debug("{{.ServiceNameCamel}} deleted from repository", log.Str("{{.ServiceName}}_id", req.Id))
+	s.logger.Debug("Delete{{.ServiceNameCamel}} completed successfully", log.Str("{{.ServiceNameVar}}_id", req.Id))
 
-	// Convert to response
-	response := &{{.ServiceNameCamel}}v1.Delete{{.ServiceNameCamel}}Response{
+	return &{{.ServiceNameVar}}v1.Delete{{.ServiceNameCamel}}Response{
 		Success: true,
-	}
-
-	return response, nil
+	}, nil
 }
 
 // List{{.ServiceNameCamel}}s retrieves {{.ServiceName}}s with pagination.
-func (s *{{.ServiceNameCamel}}Service) List{{.ServiceNameCamel}}s(ctx context.Context, req *{{.ServiceNameCamel}}v1.List{{.ServiceNameCamel}}sRequest) (*{{.ServiceNameCamel}}v1.List{{.ServiceNameCamel}}sResponse, error) {
-	// Set default pagination
-	page := int(req.Page)
-	if page < 1 {
-		page = 1
-	}
+func (s *{{.ServiceNameVar}}Service) List{{.ServiceNameCamel}}s(ctx context.Context, req *{{.ServiceNameVar}}v1.List{{.ServiceNameCamel}}sRequest) (*{{.ServiceNameVar}}v1.List{{.ServiceNameCamel}}sResponse, error) {
+	// Normalize pagination parameters
+	page := normalizePage(int(req.Page))
+	pageSize := normalizePageSize(int(req.PageSize))
 
-	pageSize := int(req.PageSize)
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 10
-	}
+	s.logger.Debug("List{{.ServiceNameCamel}}s started",
+		log.Int("requested_page", int(req.Page)),
+		log.Int("requested_page_size", int(req.PageSize)),
+		log.Int("normalized_page", page),
+		log.Int("normalized_page_size", pageSize))
 
-	// Get {{.ServiceName}}s from repository
+	s.logger.Debug("List{{.ServiceNameCamel}}s calling repository",
+		log.Int("page", page),
+		log.Int("page_size", pageSize))
+
 	{{.ServiceNameVar}}s, total, err := s.repo.List(ctx, page, pageSize)
 	if err != nil {
-		// Error logging is handled by Connect interceptor with proper error classification
-		s.logger.Debug("List {{.ServiceName}}s failed",
+		s.logger.Debug("List{{.ServiceNameCamel}}s repository failed",
 			log.Int("page", page),
 			log.Int("page_size", pageSize),
 			log.Str("error", err.Error()))
 		return nil, err
 	}
 
-	// Success logging is handled by Connect interceptor - no need to log here
-	s.logger.Debug("{{.ServiceNameCamel}}s listed from repository",
-		log.Int("count", len({{.ServiceNameVar}}s)),
+	s.logger.Debug("List{{.ServiceNameCamel}}s completed successfully",
+		log.Int("returned_count", len({{.ServiceNameVar}}s)),
 		log.Int("total", int(total)),
-		log.Int("page", page))
+		log.Int("page", page),
+		log.Int("page_size", pageSize))
 
-	// Convert to response
-	response{{.ServiceNameCamel}}s := make([]*{{.ServiceNameCamel}}v1.{{.ServiceNameCamel}}, len({{.ServiceNameVar}}s))
+	// Convert {{.ServiceName}}s to proto
+	proto{{.ServiceNameCamel}}s := make([]*{{.ServiceNameVar}}v1.{{.ServiceNameCamel}}, len({{.ServiceNameVar}}s))
 	for i, {{.ServiceNameVar}} := range {{.ServiceNameVar}}s {
-		response{{.ServiceNameCamel}}s[i] = &{{.ServiceNameCamel}}v1.{{.ServiceNameCamel}}{
-			Id:        {{.ServiceNameVar}}.ID,
-			Name:      {{.ServiceNameVar}}.Name,
-			CreatedAt: {{.ServiceNameVar}}.CreatedAt.Unix(),
-			UpdatedAt: {{.ServiceNameVar}}.UpdatedAt.Unix(),
-		}
+		proto{{.ServiceNameCamel}}s[i] = toProto{{.ServiceNameCamel}}({{.ServiceNameVar}})
 	}
 
-	response := &{{.ServiceNameCamel}}v1.List{{.ServiceNameCamel}}sResponse{
-		{{.ServiceNameCamel}}s: response{{.ServiceNameCamel}}s,
-		Total:    int32(total),
-		Page:     int32(page),
-		PageSize: int32(pageSize),
-	}
+	return &{{.ServiceNameVar}}v1.List{{.ServiceNameCamel}}sResponse{
+		{{.ServiceNameCamel}}s: proto{{.ServiceNameCamel}}s,
+		Total:                   int32(total),
+		Page:                    int32(page),
+		PageSize:                int32(pageSize),
+	}, nil
+}
 
-	return response, nil
+// toProto{{.ServiceNameCamel}} converts a domain {{.ServiceNameCamel}} model to protobuf {{.ServiceNameCamel}} message.
+//
+// This helper function eliminates code duplication across service methods and
+// centralizes the mapping logic between domain and API layers.
+//
+// Parameters:
+//   - {{.ServiceNameVar}}: domain {{.ServiceName}} model (must not be nil)
+//
+// Returns:
+//   - *{{.ServiceNameVar}}v1.{{.ServiceNameCamel}}: protobuf {{.ServiceName}} message with Unix timestamps
+//
+// Behavior:
+//   - Timestamps are converted from time.Time to Unix epoch seconds
+//   - All string fields are copied directly
+//   - No validation is performed (assumes valid domain model)
+//
+// Concurrency:
+//
+//	Safe for concurrent use (pure function, no shared state).
+func toProto{{.ServiceNameCamel}}({{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) *{{.ServiceNameVar}}v1.{{.ServiceNameCamel}} {
+	return &{{.ServiceNameVar}}v1.{{.ServiceNameCamel}}{
+		Id:        {{.ServiceNameVar}}.ID,
+		Email:     {{.ServiceNameVar}}.Email,
+		Name:      {{.ServiceNameVar}}.Name,
+		CreatedAt: {{.ServiceNameVar}}.CreatedAt.Unix(),
+		UpdatedAt: {{.ServiceNameVar}}.UpdatedAt.Unix(),
+	}
+}
+
+// normalizePage ensures page number is at least 1 for safe pagination.
+//
+// Parameters:
+//   - page: requested page number (may be negative or zero)
+//
+// Returns:
+//   - int: normalized page number (minimum 1)
+//
+// Concurrency:
+//
+//	Safe for concurrent use (pure function).
+func normalizePage(page int) int {
+	if page < 1 {
+		return 1
+	}
+	return page
+}
+
+// normalizePageSize ensures page size is within valid range [1, 100].
+//
+// This function prevents:
+//   - Excessive memory usage from large page sizes
+//   - Invalid queries from zero or negative page sizes
+//
+// Parameters:
+//   - pageSize: requested page size (may be any integer)
+//
+// Returns:
+//   - int: normalized page size
+//   - Returns 10 if pageSize < 1 (default)
+//   - Returns 100 if pageSize > 100 (max)
+//   - Returns pageSize otherwise
+//
+// Concurrency:
+//
+//	Safe for concurrent use (pure function).
+func normalizePageSize(pageSize int) int {
+	if pageSize < 1 {
+		return 10 // default
+	}
+	if pageSize > 100 {
+		return 100 // max
+	}
+	return pageSize
 }

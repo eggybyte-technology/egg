@@ -17,7 +17,7 @@ This package contains reusable utility functions that are commonly needed across
 ## Quick Start
 
 ```go
-import "github.com/eggybyte-technology/egg/core/utils"
+import "go.eggybyte.com/egg/core/utils"
 
 // String utilities
 isEmpty := utils.IsEmpty("")

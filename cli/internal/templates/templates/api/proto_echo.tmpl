@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package {{.ProtoPackage}}.{{.ServiceNameVar}}.v1;
+
+option go_package = "{{.ModulePrefix}}/gen/go/{{.ServiceNameVar}}/v1;{{.ServiceNameVar}}v1";
+
+// {{.ServiceNameCamel}}Service provides {{.ServiceName}} operations.
+service {{.ServiceNameCamel}}Service {
+  // Ping tests the service health and connectivity.
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+// PingRequest is the request to ping the service.
+message PingRequest {
+  string message = 1;
+}
+
+// PingResponse is the response from a ping request.
+message PingResponse {
+  string message = 1;
+  string service = 2;
+  int64 ts_unix = 3;
+}
+

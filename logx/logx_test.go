@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eggybyte-technology/egg/core/identity"
+	"go.eggybyte.com/egg/core/identity"
 )
 
 func TestNew(t *testing.T) {

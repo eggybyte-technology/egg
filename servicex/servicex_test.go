@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/servicex/internal"
+	"go.eggybyte.com/egg/core/log"
+	"go.eggybyte.com/egg/servicex/internal"
 	"gorm.io/gorm"
 )
 

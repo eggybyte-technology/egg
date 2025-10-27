@@ -3,9 +3,9 @@ package internal
 
 import (
 	"connectrpc.com/connect"
-	"github.com/eggybyte-technology/egg/connectx"
-	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/obsx"
+	"go.eggybyte.com/egg/connectx"
+	"go.eggybyte.com/egg/core/log"
+	"go.eggybyte.com/egg/obsx"
 )
 
 // BuildInterceptors creates the default Connect interceptors based on options.

@@ -22,7 +22,7 @@ Depends on: `github.com/go-playground/validator/v10`
 ## Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/httpx@latest
+go get go.eggybyte.com/egg/httpx@latest
 ```
 
 ## Basic Usage
@@ -30,7 +30,7 @@ go get github.com/eggybyte-technology/egg/httpx@latest
 ```go
 import (
     "net/http"
-    "github.com/eggybyte-technology/egg/httpx"
+    "go.eggybyte.com/egg/httpx"
 )
 
 type CreateUserRequest struct {
@@ -161,7 +161,7 @@ package main
 
 import (
     "net/http"
-    "github.com/eggybyte-technology/egg/httpx"
+    "go.eggybyte.com/egg/httpx"
 )
 
 type CreateUserRequest struct {

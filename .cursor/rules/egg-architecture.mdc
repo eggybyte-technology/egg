@@ -21,7 +21,7 @@ description: egg 仓库目录结构与分层规则（L0–L4），依赖约束�
 ### 仓库目录总览（示例）
 
 ```text
-github.com/eggybyte-technology/egg/
+go.eggybyte.com/egg/
 ├── go.work
 ├── docs/
 ├── core/            # L0：零依赖核心

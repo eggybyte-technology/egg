@@ -24,15 +24,56 @@ Depends on: `core/log`, `gorm.io/gorm`, database drivers
 ## Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/storex@latest
+go get go.eggybyte.com/egg/storex@latest
 ```
 
 ## Basic Usage
 
+### With servicex (Recommended)
+
+When using `servicex.WithAppConfig()`, database is automatically initialized:
+
+```go
+import (
+    "go.eggybyte.com/egg/configx"
+    "go.eggybyte.com/egg/servicex"
+)
+
+type AppConfig struct {
+    configx.BaseConfig  // Includes Database configuration
+}
+
+func register(app *servicex.App) error {
+    // Get database instance (nil if not configured)
+    db := app.DB()
+    if db == nil {
+        return fmt.Errorf("database not configured")
+    }
+    
+    // Use GORM normally
+    var users []User
+    db.Find(&users)
+    return nil
+}
+
+func main() {
+    ctx := context.Background()
+    cfg := &AppConfig{}
+    
+    servicex.Run(ctx,
+        servicex.WithAppConfig(cfg), // Auto-detects database
+        servicex.WithAutoMigrate(&User{}),
+        servicex.WithRegister(register),
+    )
+}
+```
+
+### Standalone Usage
+
 ```go
 import (
     "context"
-    "github.com/eggybyte-technology/egg/storex"
+    "go.eggybyte.com/egg/storex"
 )
 
 func main() {
@@ -173,7 +214,7 @@ package main
 
 import (
     "context"
-    "github.com/eggybyte-technology/egg/storex"
+    "go.eggybyte.com/egg/storex"
     "gorm.io/gorm"
 )
 
@@ -278,7 +319,7 @@ func main() {
 ## Example: Health Checks
 
 ```go
-import "github.com/eggybyte-technology/egg/runtimex"
+import "go.eggybyte.com/egg/runtimex"
 
 type DatabaseHealthChecker struct {
     store storex.Store
@@ -345,7 +386,7 @@ func main() {
 storex is automatically integrated in servicex:
 
 ```go
-import "github.com/eggybyte-technology/egg/servicex"
+import "go.eggybyte.com/egg/servicex"
 
 type User struct {
     ID    uint   `gorm:"primarykey"`

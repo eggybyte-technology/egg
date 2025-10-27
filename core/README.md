@@ -38,7 +38,7 @@ Provides a structured logging interface compatible with Go's `slog` philosophy.
 **Example Usage:**
 
 ```go
-import "github.com/eggybyte-technology/egg/core/log"
+import "go.eggybyte.com/egg/core/log"
 
 type Logger struct {
     // Your implementation
@@ -66,7 +66,7 @@ Layered error handling with error codes and wrapping support.
 **Example Usage:**
 
 ```go
-import "github.com/eggybyte-technology/egg/core/errors"
+import "go.eggybyte.com/egg/core/errors"
 
 // Define error codes
 const (
@@ -97,7 +97,7 @@ User identity and request metadata container for authentication and authorizatio
 **Example Usage:**
 
 ```go
-import "github.com/eggybyte-technology/egg/core/identity"
+import "go.eggybyte.com/egg/core/identity"
 
 // Extract identity from context
 userID, ok := identity.UserIDFromContext(ctx)
@@ -123,7 +123,7 @@ Common utilities for retry logic, time operations, and slice manipulations.
 **Example Usage:**
 
 ```go
-import "github.com/eggybyte-technology/egg/core/utils"
+import "go.eggybyte.com/egg/core/utils"
 
 // Retry with exponential backoff
 err := utils.Retry(ctx, 3, time.Second, func() error {
@@ -141,7 +141,7 @@ filtered := utils.Filter(slice, func(item string) bool {
 ### Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/core@latest
+go get go.eggybyte.com/egg/core@latest
 ```
 
 ### Basic Usage
@@ -153,10 +153,10 @@ import (
     "context"
     "log/slog"
     
-    "github.com/eggybyte-technology/egg/core/log"
-    "github.com/eggybyte-technology/egg/core/errors"
-    "github.com/eggybyte-technology/egg/core/identity"
-    "github.com/eggybyte-technology/egg/core/utils"
+    "go.eggybyte.com/egg/core/log"
+    "go.eggybyte.com/egg/core/errors"
+    "go.eggybyte.com/egg/core/identity"
+    "go.eggybyte.com/egg/core/utils"
 )
 
 func main() {

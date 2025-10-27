@@ -18,10 +18,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/eggybyte-technology/egg/cli/internal/configschema"
-	"github.com/eggybyte-technology/egg/cli/internal/projectfs"
-	"github.com/eggybyte-technology/egg/cli/internal/ref"
-	"github.com/eggybyte-technology/egg/cli/internal/ui"
+	"go.eggybyte.com/egg/cli/internal/configschema"
+	"go.eggybyte.com/egg/cli/internal/projectfs"
+	"go.eggybyte.com/egg/cli/internal/ref"
+	"go.eggybyte.com/egg/cli/internal/ui"
 )
 
 // Linter provides project linting functionality.
@@ -329,16 +329,8 @@ func (l *Linter) checkBackendServices(config *configschema.Config, fs *projectfs
 			})
 		}
 
-		// Check image name
-		if service.ImageName == "" {
-			results.Results = append(results.Results, LintResult{
-				Rule:       "backend-service",
-				Level:      "error",
-				Message:    "Image name is required",
-				Path:       fmt.Sprintf("backend.%s.image_name", name),
-				Suggestion: "Set a valid image name",
-			})
-		}
+		// Image name is now auto-calculated from project_name and service_name
+		// No validation needed
 
 		// Check port inheritance
 		if service.Ports != nil {
@@ -473,16 +465,8 @@ func (l *Linter) checkFrontendServices(config *configschema.Config, fs *projectf
 			})
 		}
 
-		// Check image name
-		if service.ImageName == "" {
-			results.Results = append(results.Results, LintResult{
-				Rule:       "frontend-service",
-				Level:      "error",
-				Message:    "Image name is required",
-				Path:       fmt.Sprintf("frontend.%s.image_name", name),
-				Suggestion: "Set a valid image name",
-			})
-		}
+		// Image name is now auto-calculated from project_name and service_name
+		// No validation needed
 
 		// Check platforms
 		if len(service.Platforms) == 0 {

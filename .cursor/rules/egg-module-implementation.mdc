@@ -22,9 +22,33 @@ globs: "*.go"
 
 ### 目录与文件组织
 
-- 按行为拆分文件：`service_*.go`, `repository_*.go`, `handler_*.go`, `http_*.go`, `grpc_*.go`
+**模块根目录规范**：
+- 模块根目录下仅保留**一个导出文件**（如 `storex/storex.go`、`obsx/obsx.go`）
+- 导出文件负责：导出类型、公共 API、选项函数、构造函数
+- 所有内部实现逻辑必须放在 `internal/` 目录中
+- `internal/` 内按职责拆分文件（如 `internal/provider.go`、`internal/metrics.go`）
+
+**文件拆分原则**：
+- 按行为拆分文件（如 `store_*.go`、`handler_*.go`、`metrics_*.go`）
 - 每个导出类型尽量单文件，构造函数紧邻类型
 - `_test.go` 镜像被测文件结构；测试工具放入 `testingx`
+
+**标准模块结构示例**：
+```
+modulex/
+├── go.mod
+├── README.md
+├── doc.go              # 包级文档
+├── modulex.go          # 唯一导出文件（公共 API）
+├── modulex_test.go     # 导出 API 测试
+├── internal/
+│   ├── impl.go         # 核心实现
+│   ├── metrics.go      # 指标收集
+│   ├── config.go       # 配置处理
+│   └── helpers.go      # 内部辅助函数
+└── test/               # 可选：集成测试
+    └── integration_test.go
+```
 
 ### 文档与注释（强制）
 

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eggybyte-technology/egg/cli/internal/ui"
+	"go.eggybyte.com/egg/cli/internal/ui"
 )
 
 // Runner provides execution of external tools.

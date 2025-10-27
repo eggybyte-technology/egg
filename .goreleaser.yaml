@@ -124,7 +124,7 @@ release:
 
     ### Go Install
     ```bash
-    go install github.com/eggybyte-technology/egg/cli/cmd@{{.Tag}}
+    go install go.eggybyte.com/egg/cli/cmd@{{.Tag}}
     ```
 
     ## 📚 Go Modules
@@ -133,26 +133,26 @@ release:
 
     ```bash
     # Core modules
-    go get github.com/eggybyte-technology/egg/core@{{.Tag}}
-    go get github.com/eggybyte-technology/egg/runtimex@{{.Tag}}
+    go get go.eggybyte.com/egg/core@{{.Tag}}
+    go get go.eggybyte.com/egg/runtimex@{{.Tag}}
     
     # Infrastructure modules
-    go get github.com/eggybyte-technology/egg/connectx@{{.Tag}}
-    go get github.com/eggybyte-technology/egg/configx@{{.Tag}}
-    go get github.com/eggybyte-technology/egg/obsx@{{.Tag}}
-    go get github.com/eggybyte-technology/egg/k8sx@{{.Tag}}
-    go get github.com/eggybyte-technology/egg/storex@{{.Tag}}
+    go get go.eggybyte.com/egg/connectx@{{.Tag}}
+    go get go.eggybyte.com/egg/configx@{{.Tag}}
+    go get go.eggybyte.com/egg/obsx@{{.Tag}}
+    go get go.eggybyte.com/egg/k8sx@{{.Tag}}
+    go get go.eggybyte.com/egg/storex@{{.Tag}}
     ```
 
     ## 📝 Documentation
 
-    - [Quick Start Guide](https://github.com/eggybyte-technology/egg/blob/main/README.md)
-    - [CLI Documentation](https://github.com/eggybyte-technology/egg/blob/main/docs/egg-cli.md)
-    - [Framework Guide](https://github.com/eggybyte-technology/egg/blob/main/docs/guide.md)
-    - [API Documentation](https://pkg.go.dev/github.com/eggybyte-technology/egg)
+    - [Quick Start Guide](https://go.eggybyte.com/egg/blob/main/README.md)
+    - [CLI Documentation](https://go.eggybyte.com/egg/blob/main/docs/egg-cli.md)
+    - [Framework Guide](https://go.eggybyte.com/egg/blob/main/docs/guide.md)
+    - [API Documentation](https://pkg.go.dev/go.eggybyte.com/egg)
 
     ---
-    **Full Changelog**: https://github.com/eggybyte-technology/egg/compare/{{.PreviousTag}}...{{.Tag}}
+    **Full Changelog**: https://go.eggybyte.com/egg/compare/{{.PreviousTag}}...{{.Tag}}
 
 # Announce configuration (optional)
 # announce:
@@ -168,7 +168,7 @@ release:
 #       owner: eggybyte-technology
 #       name: homebrew-tap
 #     folder: Formula
-#     homepage: https://github.com/eggybyte-technology/egg
+#     homepage: https://go.eggybyte.com/egg
 #     description: "A modern, modular Go microservices framework for Cloud Native environments"
 #     license: "Apache-2.0"
 #     install: |

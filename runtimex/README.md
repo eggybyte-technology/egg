@@ -24,7 +24,7 @@ Depends on: `core/log`
 ## Installation
 
 ```bash
-go get github.com/eggybyte-technology/egg/runtimex@latest
+go get go.eggybyte.com/egg/runtimex@latest
 ```
 
 ## Basic Usage
@@ -32,7 +32,7 @@ go get github.com/eggybyte-technology/egg/runtimex@latest
 ```go
 import (
     "context"
-    "github.com/eggybyte-technology/egg/runtimex"
+    "go.eggybyte.com/egg/runtimex"
 )
 
 func main() {
@@ -163,8 +163,8 @@ import (
     "os/signal"
     "syscall"
     
-    "github.com/eggybyte-technology/egg/logx"
-    "github.com/eggybyte-technology/egg/runtimex"
+    "go.eggybyte.com/egg/logx"
+    "go.eggybyte.com/egg/runtimex"
 )
 
 func main() {

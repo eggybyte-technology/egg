@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eggybyte-technology/egg/core/log"
+	"go.eggybyte.com/egg/core/log"
 )
 
 // EnvOptions configures environment variable source behavior.

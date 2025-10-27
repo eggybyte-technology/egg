@@ -3,7 +3,7 @@
 ## 1️⃣ 总体结构
 
 ```
-github.com/eggybyte-technology/egg/
+go.eggybyte.com/egg/
 ├── go.work
 ├── Makefile
 ├── docs/

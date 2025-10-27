@@ -134,7 +134,7 @@ build_all() {
     
     # Build minimal-connect-service
     print_info "Step 2: Building minimal-connect-service..."
-    build_service "examples/minimal-connect-service" "minimal-connect-service"
+    build_service "examples/minimal-connect-service" "minimal-connect-service" "cmd/server"
     
     # Build user-service
     print_info "Step 3: Building user-service..."

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eggybyte-technology/egg/core/log"
+	"go.eggybyte.com/egg/core/log"
 )
 
 // Runtime manages the lifecycle of services and servers.

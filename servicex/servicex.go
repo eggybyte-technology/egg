@@ -41,10 +41,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/eggybyte-technology/egg/configx"
-	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/obsx"
-	"github.com/eggybyte-technology/egg/servicex/internal"
+	"go.eggybyte.com/egg/configx"
+	"go.eggybyte.com/egg/core/log"
+	"go.eggybyte.com/egg/obsx"
+	"go.eggybyte.com/egg/servicex/internal"
 	"gorm.io/gorm"
 )
 
@@ -157,6 +157,23 @@ func WithTracing(enabled bool) Option {
 func WithMetrics(enabled bool) Option {
 	return func(c *internal.ServiceConfig) {
 		c.EnableMetrics = enabled
+	}
+}
+
+// WithMetricsConfig enables fine-grained metrics configuration.
+// It automatically enables EnableMetrics if any metric type is enabled.
+func WithMetricsConfig(runtime, process, db, client bool) Option {
+	return func(c *internal.ServiceConfig) {
+		c.MetricsConfig = &internal.MetricsConfig{
+			EnableRuntime: runtime,
+			EnableProcess: process,
+			EnableDB:      db,
+			EnableClient:  client,
+		}
+		// Auto-enable metrics if any metric type is enabled
+		if runtime || process || db || client {
+			c.EnableMetrics = true
+		}
 	}
 }
 

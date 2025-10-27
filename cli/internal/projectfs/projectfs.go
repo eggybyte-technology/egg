@@ -22,7 +22,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/eggybyte-technology/egg/cli/internal/ui"
+	"go.eggybyte.com/egg/cli/internal/ui"
 )
 
 // ProjectFS provides file system operations for project scaffolding.

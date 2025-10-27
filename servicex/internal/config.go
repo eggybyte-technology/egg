@@ -4,11 +4,10 @@ package internal
 import (
 	"fmt"
 	"log/slog"
-	"reflect"
 	"time"
 
-	"github.com/eggybyte-technology/egg/configx"
-	"github.com/eggybyte-technology/egg/core/log"
+	"go.eggybyte.com/egg/configx"
+	"go.eggybyte.com/egg/core/log"
 	"gorm.io/gorm"
 )
 
@@ -20,6 +19,7 @@ type ServiceConfig struct {
 	Logger         log.Logger
 	EnableTracing  bool
 	EnableMetrics  bool
+	MetricsConfig  *MetricsConfig // Fine-grained metrics configuration
 	EnableDebug    bool
 	RegisterFn     func(interface{}) error // Takes *App interface
 
@@ -41,6 +41,14 @@ type ServiceConfig struct {
 	ShutdownHooks   []func(interface{}) error
 }
 
+// MetricsConfig holds fine-grained metrics configuration.
+type MetricsConfig struct {
+	EnableRuntime bool // Enable Go runtime metrics (goroutines, GC, memory)
+	EnableProcess bool // Enable process metrics (CPU, RSS, uptime)
+	EnableDB      bool // Enable database connection pool metrics
+	EnableClient  bool // Enable client-side RPC metrics
+}
+
 // DatabaseConfig holds database connection configuration.
 type DatabaseConfig struct {
 	Driver          string
@@ -58,6 +66,7 @@ func NewServiceConfig() *ServiceConfig {
 		ServiceVersion:    "0.0.0",
 		EnableTracing:     true,
 		EnableMetrics:     true,
+		MetricsConfig:     nil, // Will be set by WithMetricsConfig if needed
 		HTTPPort:          8080,
 		HealthPort:        8081,
 		MetricsPort:       9091,
@@ -83,32 +92,47 @@ func ParseLogLevel(levelStr string) (slog.Level, error) {
 	}
 }
 
-// ExtractBaseConfig tries to extract BaseConfig from a config struct.
+// BaseConfigProvider is an interface for config structs that provide BaseConfig.
+//
+// Types implementing this interface can return their BaseConfig for framework use.
+// This is the modern, idiomatic Go way to handle configuration polymorphism.
+//
+// Example:
+//
+//	type AppConfig struct {
+//	    BaseConfig configx.BaseConfig
+//	    // ... app-specific fields
+//	}
+//
+//	func (c *AppConfig) GetBaseConfig() *configx.BaseConfig {
+//	    return &c.BaseConfig
+//	}
+type BaseConfigProvider interface {
+	GetBaseConfig() *configx.BaseConfig
+}
+
+// ExtractBaseConfig extracts BaseConfig from a config struct in a type-safe way.
+//
+// Supports two patterns:
+//  1. Direct *BaseConfig: cfg is *configx.BaseConfig itself
+//  2. BaseConfigProvider: cfg implements GetBaseConfig() method
+//
+// This modern approach avoids reflection and is compile-time safe.
 func ExtractBaseConfig(cfg any) (*configx.BaseConfig, bool) {
-	val := reflect.ValueOf(cfg)
-	if val.Kind() == reflect.Ptr {
-		val = val.Elem()
-	}
-	if val.Kind() != reflect.Struct {
+	if cfg == nil {
 		return nil, false
 	}
-	for i := 0; i < val.NumField(); i++ {
-		field := val.Field(i)
-		fieldType := val.Type().Field(i)
-		if fieldType.Type == reflect.TypeOf(configx.BaseConfig{}) {
-			if bc, ok := field.Interface().(configx.BaseConfig); ok {
-				return &bc, true
-			}
-		}
-		if fieldType.Type == reflect.TypeOf(&configx.BaseConfig{}) {
-			if field.IsNil() {
-				continue
-			}
-			if bc, ok := field.Interface().(*configx.BaseConfig); ok {
-				return bc, true
-			}
-		}
+
+	// Pattern 1: Direct BaseConfig pointer (e.g., &configx.BaseConfig{})
+	if bc, ok := cfg.(*configx.BaseConfig); ok {
+		return bc, true
 	}
+
+	// Pattern 2: Implements BaseConfigProvider interface (recommended for custom configs)
+	if provider, ok := cfg.(BaseConfigProvider); ok {
+		return provider.GetBaseConfig(), true
+	}
+
 	return nil, false
 }
 

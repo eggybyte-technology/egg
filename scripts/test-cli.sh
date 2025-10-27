@@ -231,7 +231,17 @@ check_file_content "egg.yaml" "version: \"v1.0.0\"" "Version"
 # Test 2: Backend Service Creation (with local modules)
 # ==============================================================================
 
-# Run egg create backend with --local-modules flag
+# Test 2.0: Service name validation (reject -service suffix)
+print_cli_section "Test 2.0: Service Name Validation"
+print_info "Testing service name validation (should reject -service suffix)"
+if $EGG_CLI create backend invalid-service --local-modules 2>&1 | grep -q "must not end with '-service'"; then
+    print_success "Service name validation works correctly"
+else
+    print_error "Service name validation failed"
+    exit 1
+fi
+
+# Run egg create backend with --local-modules flag (default --proto echo)
 run_egg_command "Backend Service Creation (egg create backend --local-modules)" \
     create backend "$BACKEND_SERVICE" --local-modules
 
@@ -251,18 +261,40 @@ check_file "backend/$BACKEND_SERVICE/cmd/server/main.go"
 check_file "backend/$BACKEND_SERVICE/internal/config/app_config.go"
 check_file "backend/$BACKEND_SERVICE/internal/handler/handler.go"
 check_file "backend/$BACKEND_SERVICE/internal/service/service.go"
+check_file "backend/$BACKEND_SERVICE/internal/repository/repository.go"
+check_file "backend/$BACKEND_SERVICE/internal/model/model.go"
+check_file "backend/$BACKEND_SERVICE/internal/model/errors.go"
+
+# Validate complete layered structure (7 core files)
+print_section "Validating complete layered structure (7 files)"
+check_file_content "backend/$BACKEND_SERVICE/internal/service/service.go" "type.*Service interface" "Service interface"
+check_file_content "backend/$BACKEND_SERVICE/internal/repository/repository.go" "type.*Repository interface" "Repository interface"
+check_file_content "backend/$BACKEND_SERVICE/internal/model/model.go" "type.*struct" "Model struct"
+check_file_content "backend/$BACKEND_SERVICE/internal/model/errors.go" "var Err" "Error definitions"
+
+# Validate Makefile generation
+print_section "Validating Makefile generation"
+check_file "backend/$BACKEND_SERVICE/Makefile"
+check_file_content "backend/$BACKEND_SERVICE/Makefile" "build:" "Build target"
+check_file_content "backend/$BACKEND_SERVICE/Makefile" "test:" "Test target"
+check_file_content "backend/$BACKEND_SERVICE/Makefile" "run:" "Run target"
+
+# Validate proto file generation (default is echo)
+print_section "Validating proto file generation (default echo)"
+check_file "api/$BACKEND_SERVICE/v1/$BACKEND_SERVICE.proto"
+check_file_content "api/$BACKEND_SERVICE/v1/$BACKEND_SERVICE.proto" "rpc Ping" "Echo proto RPC"
 
 # Validate go.mod contains local replace directives
 print_section "Validating go.mod has local replace directives"
-check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace github.com/eggybyte-technology/egg/bootstrap" "Bootstrap replace directive"
-check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace github.com/eggybyte-technology/egg/runtimex" "Runtimex replace directive"
-check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace github.com/eggybyte-technology/egg/connectx" "Connectx replace directive"
-check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace github.com/eggybyte-technology/egg/configx" "Configx replace directive"
-check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace github.com/eggybyte-technology/egg/obsx" "Obsx replace directive"
+check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace go.eggybyte.com/egg/bootstrap" "Bootstrap replace directive"
+check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace go.eggybyte.com/egg/runtimex" "Runtimex replace directive"
+check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace go.eggybyte.com/egg/connectx" "Connectx replace directive"
+check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace go.eggybyte.com/egg/configx" "Configx replace directive"
+check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace go.eggybyte.com/egg/obsx" "Obsx replace directive"
 
 # Validate main.go imports egg packages
 print_section "Validating main.go imports"
-check_file_content "backend/$BACKEND_SERVICE/cmd/server/main.go" "github.com/eggybyte-technology/egg/bootstrap" "Bootstrap import"
+check_file_content "backend/$BACKEND_SERVICE/cmd/server/main.go" "go.eggybyte.com/egg/bootstrap" "Bootstrap import"
 
 # Validate workspace was updated
 print_section "Validating backend workspace"
@@ -273,6 +305,50 @@ check_file_content "backend/go.work" "use ./$BACKEND_SERVICE" "Workspace use dir
 print_section "Validating service registration"
 check_file_content "egg.yaml" "backend:" "Backend section"
 check_file_content "egg.yaml" "$BACKEND_SERVICE:" "Service entry"
+
+# ==============================================================================
+# Test 2.1: Test --proto crud flag
+# ==============================================================================
+
+run_egg_command "Backend with CRUD proto (--proto crud)" \
+    create backend crud-test --proto crud --local-modules
+
+# Validate CRUD proto file
+print_section "Validating CRUD proto generation"
+check_file "api/crud-test/v1/crud-test.proto"
+check_file_content "api/crud-test/v1/crud-test.proto" "rpc Create" "CRUD create RPC"
+check_file_content "api/crud-test/v1/crud-test.proto" "rpc Get" "CRUD get RPC"
+check_file_content "api/crud-test/v1/crud-test.proto" "rpc Update" "CRUD update RPC"
+check_file_content "api/crud-test/v1/crud-test.proto" "rpc Delete" "CRUD delete RPC"
+check_file_content "api/crud-test/v1/crud-test.proto" "rpc List" "CRUD list RPC"
+
+# ==============================================================================
+# Test 2.2: Test --proto none flag
+# ==============================================================================
+
+run_egg_command "Backend without proto (--proto none)" \
+    create backend no-proto-test --proto none --local-modules
+
+# Validate proto file does NOT exist
+print_section "Validating proto file not generated with --proto none"
+if [ -f "api/no-proto-test/v1/no-proto-test.proto" ]; then
+    print_error "Proto file should not exist with --proto none"
+    exit 1
+else
+    print_success "Proto file correctly not generated"
+fi
+
+# ==============================================================================
+# Test 2.3: Validate image_name field removed from config
+# ==============================================================================
+
+print_section "Validating image_name auto-calculation"
+if grep -q "image_name:" egg.yaml; then
+    print_error "egg.yaml should not contain image_name field (should be auto-calculated)"
+    exit 1
+else
+    print_success "image_name field correctly removed from config"
+fi
 
 # ==============================================================================
 # Test 3: Frontend Service Creation
@@ -375,15 +451,15 @@ fi
 # Generate docker-compose.yaml
 run_egg_command "Docker Compose Generation (egg compose generate)" compose generate
 
-# Validate docker-compose.yaml exists
-print_section "Validating docker-compose.yaml"
-check_file "docker-compose.yaml"
+# Validate compose configuration exists
+print_section "Validating Docker Compose configuration"
+check_file "deploy/compose/compose.yaml"
+check_file "deploy/compose/.env"
 
-# Validate docker-compose.yaml content
-print_section "Validating docker-compose.yaml content"
-check_file_content "docker-compose.yaml" "postgres:" "PostgreSQL service"
-check_file_content "docker-compose.yaml" "$BACKEND_SERVICE:" "Backend service"
-check_file_content "docker-compose.yaml" "DATABASE_DSN:" "Database DSN configuration"
+# Validate compose.yaml content
+print_section "Validating compose.yaml content"
+check_file_content "deploy/compose/compose.yaml" "mysql:" "MySQL service"
+check_file_content "deploy/compose/compose.yaml" "$BACKEND_SERVICE:" "Backend service"
 
 # ==============================================================================
 # Test 7: Runtime image check (no longer built locally)
@@ -477,6 +553,9 @@ print_section "Commands Tested"
 echo "  [✓] egg doctor          - Environment diagnostic check"
 echo "  [✓] egg init            - Project initialization"
 echo "  [✓] egg create backend  - Backend service with local modules"
+echo "  [✓] egg create backend --proto echo  - Backend with echo proto"
+echo "  [✓] egg create backend --proto crud  - Backend with CRUD proto"
+echo "  [✓] egg create backend --proto none  - Backend without proto"
 echo "  [✓] egg create frontend - Frontend service (Flutter with Dart naming)"
 echo "  [✓] egg api init        - API definition initialization"
 echo "  [✓] egg api generate    - Code generation from protobuf"
@@ -486,17 +565,22 @@ echo "  [✓] egg check           - Configuration validation"
 print_section "Features Validated"
 echo "  [✓] Project initialization with custom configuration"
 echo "  [✓] Backend service generation with local module dependencies"
+echo "  [✓] Proto template generation (echo, crud, none)"
+echo "  [✓] Service name validation (reject -service suffix)"
+echo "  [✓] Complete layered structure (7 core files)"
+echo "  [✓] Makefile generation for local builds"
+echo "  [✓] Image name auto-calculation (no image_name in config)"
 echo "  [✓] Go workspace management (go.work)"
 echo "  [✓] Frontend service generation (Flutter)"
 echo "  [✓] Service registration in egg.yaml"
 echo "  [✓] API configuration setup"
 echo "  [✓] Directory structure generation"
-echo "  [✓] Template rendering"
+echo "  [✓] Template rendering with all variables"
 echo "  [✓] Configuration validation"
 echo "  [✓] .gitignore generation"
 echo "  [✓] Connect service implementation"
 echo "  [✓] Database configuration integration"
-echo "  [✓] Docker Compose configuration"
+echo "  [✓] Docker Compose configuration (deploy/compose/)"
 echo "  [✓] Runtime image checking (eggybyte-go-alpine)"
 echo "  [✓] Backend service compilation"
 echo "  [✓] Docker image building"
@@ -508,9 +592,15 @@ echo "  [✓] All required directories and files generated"
 echo "  [✓] Configuration files contain correct values"
 echo "  [✓] Service templates include proper imports"
 echo "  [✓] Generated files follow project standards"
+echo "  [✓] Complete layered structure (handler/service/repository/model)"
+echo "  [✓] Proto templates correctly generated (echo, crud, none)"
+echo "  [✓] Makefile targets (build, test, run) properly configured"
+echo "  [✓] Service name validation prevents -service suffix"
+echo "  [✓] Image names automatically calculated (project-service pattern)"
 echo "  [✓] Connect service properly implements business logic"
 echo "  [✓] Database DSN correctly configured for compose"
 echo "  [✓] Docker images use runtime image from registry"
+echo "  [✓] Compose files output to deploy/compose/ directory"
 echo "  [✓] Backend service compiles without errors"
 echo "  [✓] Docker Compose configuration is valid"
 

@@ -23,8 +23,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/eggybyte-technology/egg/core/log"
-	"github.com/eggybyte-technology/egg/runtimex/internal"
+	"go.eggybyte.com/egg/core/log"
+	"go.eggybyte.com/egg/runtimex/internal"
 )
 
 // Service defines the interface for services that can be started and stopped.

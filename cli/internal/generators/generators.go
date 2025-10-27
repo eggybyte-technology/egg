@@ -21,11 +21,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/eggybyte-technology/egg/cli/internal/configschema"
-	"github.com/eggybyte-technology/egg/cli/internal/projectfs"
-	"github.com/eggybyte-technology/egg/cli/internal/templates"
-	"github.com/eggybyte-technology/egg/cli/internal/toolrunner"
-	"github.com/eggybyte-technology/egg/cli/internal/ui"
+	"go.eggybyte.com/egg/cli/internal/configschema"
+	"go.eggybyte.com/egg/cli/internal/projectfs"
+	"go.eggybyte.com/egg/cli/internal/templates"
+	"go.eggybyte.com/egg/cli/internal/toolrunner"
+	"go.eggybyte.com/egg/cli/internal/ui"
 )
 
 // APIGenerator provides API definition generation.
@@ -233,6 +233,7 @@ func (g *APIGenerator) Generate(ctx context.Context) error {
 //   - ctx: Context for cancellation
 //   - name: Service name
 //   - config: Project configuration
+//   - protoTemplate: Proto template type (echo, crud, or none)
 //   - useLocalModules: Whether to use local egg modules for development
 //
 // Returns:
@@ -243,7 +244,7 @@ func (g *APIGenerator) Generate(ctx context.Context) error {
 //
 // Performance:
 //   - Service scaffolding and module initialization
-func (g *BackendGenerator) Create(ctx context.Context, name string, config *configschema.Config, useLocalModules bool) error {
+func (g *BackendGenerator) Create(ctx context.Context, name string, config *configschema.Config, protoTemplate string, useLocalModules bool) error {
 	ui.Info("Creating backend service: %s", name)
 
 	// Validate service name
@@ -305,13 +306,14 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 
 		// Add replace directives to use local modules directly
 		replaceDeps := map[string]string{
-			"github.com/eggybyte-technology/egg/bootstrap": filepath.Join(eggRoot, "bootstrap"),
-			"github.com/eggybyte-technology/egg/runtimex":  filepath.Join(eggRoot, "runtimex"),
-			"github.com/eggybyte-technology/egg/connectx":  filepath.Join(eggRoot, "connectx"),
-			"github.com/eggybyte-technology/egg/configx":   filepath.Join(eggRoot, "configx"),
-			"github.com/eggybyte-technology/egg/obsx":      filepath.Join(eggRoot, "obsx"),
-			"github.com/eggybyte-technology/egg/core":      filepath.Join(eggRoot, "core"),
-			"github.com/eggybyte-technology/egg/storex":    filepath.Join(eggRoot, "storex"),
+			"go.eggybyte.com/egg/core":     filepath.Join(eggRoot, "core"),
+			"go.eggybyte.com/egg/logx":     filepath.Join(eggRoot, "logx"),
+			"go.eggybyte.com/egg/configx":  filepath.Join(eggRoot, "configx"),
+			"go.eggybyte.com/egg/obsx":     filepath.Join(eggRoot, "obsx"),
+			"go.eggybyte.com/egg/connectx": filepath.Join(eggRoot, "connectx"),
+			"go.eggybyte.com/egg/runtimex": filepath.Join(eggRoot, "runtimex"),
+			"go.eggybyte.com/egg/servicex": filepath.Join(eggRoot, "servicex"),
+			"go.eggybyte.com/egg/storex":   filepath.Join(eggRoot, "storex"),
 		}
 
 		for modulePath, localPath := range replaceDeps {
@@ -322,13 +324,14 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 
 		// Add required dependencies explicitly
 		requiredDeps := []string{
-			"github.com/eggybyte-technology/egg/bootstrap@latest",
-			"github.com/eggybyte-technology/egg/runtimex@latest",
-			"github.com/eggybyte-technology/egg/connectx@latest",
-			"github.com/eggybyte-technology/egg/configx@latest",
-			"github.com/eggybyte-technology/egg/obsx@latest",
-			"github.com/eggybyte-technology/egg/core@latest",
-			"github.com/eggybyte-technology/egg/storex@latest",
+			"go.eggybyte.com/egg/core@latest",
+			"go.eggybyte.com/egg/logx@latest",
+			"go.eggybyte.com/egg/configx@latest",
+			"go.eggybyte.com/egg/obsx@latest",
+			"go.eggybyte.com/egg/connectx@latest",
+			"go.eggybyte.com/egg/runtimex@latest",
+			"go.eggybyte.com/egg/servicex@latest",
+			"go.eggybyte.com/egg/storex@latest",
 			"connectrpc.com/connect@latest",
 			"gorm.io/gorm@latest",
 			"gorm.io/driver/mysql@latest",
@@ -343,13 +346,14 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 		// Use published modules (when available)
 		ui.Info("Using published egg modules...")
 		eggDeps := []string{
-			"github.com/eggybyte-technology/egg/bootstrap@latest",
-			"github.com/eggybyte-technology/egg/runtimex@latest",
-			"github.com/eggybyte-technology/egg/connectx@latest",
-			"github.com/eggybyte-technology/egg/configx@latest",
-			"github.com/eggybyte-technology/egg/obsx@latest",
-			"github.com/eggybyte-technology/egg/core@latest",
-			"github.com/eggybyte-technology/egg/storex@latest",
+			"go.eggybyte.com/egg/core@latest",
+			"go.eggybyte.com/egg/logx@latest",
+			"go.eggybyte.com/egg/configx@latest",
+			"go.eggybyte.com/egg/obsx@latest",
+			"go.eggybyte.com/egg/connectx@latest",
+			"go.eggybyte.com/egg/runtimex@latest",
+			"go.eggybyte.com/egg/servicex@latest",
+			"go.eggybyte.com/egg/storex@latest",
 			"connectrpc.com/connect@latest",
 			"gorm.io/gorm@latest",
 			"gorm.io/driver/mysql@latest",
@@ -362,9 +366,24 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 		}
 	}
 
-	// Generate service files first
-	if err := g.generateBackendFiles(name, serviceConfig, config); err != nil {
+	// Prepare template data
+	templateData := g.prepareTemplateData(name, serviceConfig, config)
+
+	// Generate proto file if requested
+	if protoTemplate != "none" {
+		if err := g.generateProtoFile(name, protoTemplate, templateData); err != nil {
+			return fmt.Errorf("failed to generate proto file: %w", err)
+		}
+	}
+
+	// Generate service files
+	if err := g.generateBackendFiles(name, serviceConfig, config, templateData); err != nil {
 		return fmt.Errorf("failed to generate service files: %w", err)
+	}
+
+	// Generate Makefile
+	if err := g.generateMakefile(serviceDir, templateData); err != nil {
+		return fmt.Errorf("failed to generate Makefile: %w", err)
 	}
 
 	// Tidy module after generating files with imports
@@ -387,6 +406,7 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 //   - name: Service name
 //   - serviceConfig: Service configuration
 //   - config: Project configuration
+//   - templateData: Template data for rendering
 //
 // Returns:
 //   - error: Generation error if any
@@ -396,12 +416,18 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 //
 // Performance:
 //   - Template-based file generation
-func (g *BackendGenerator) generateBackendFiles(name string, serviceConfig configschema.BackendService, config *configschema.Config) error {
+func (g *BackendGenerator) generateBackendFiles(name string, serviceConfig configschema.BackendService, config *configschema.Config, templateData *TemplateData) error {
+	// Convert TemplateData to map for compatibility with loader.LoadAndRender
 	data := map[string]interface{}{
-		"ModulePrefix":     config.ModulePrefix,
-		"ServiceName":      name,
-		"ServiceNameCamel": camelCaseServiceName(name),
-		"ServiceNameVar":   serviceNameToVar(name),
+		"ModulePrefix":     templateData.ModulePrefix,
+		"ServiceName":      templateData.ServiceName,
+		"ServiceNameCamel": templateData.ServiceNameCamel,
+		"ServiceNameVar":   templateData.ServiceNameVar,
+		"ProtoPackage":     templateData.ProtoPackage,
+		"BinaryName":       templateData.BinaryName,
+		"HTTPPort":         templateData.HTTPPort,
+		"HealthPort":       templateData.HealthPort,
+		"MetricsPort":      templateData.MetricsPort,
 	}
 
 	// Generate main.go from template
@@ -456,6 +482,15 @@ func (g *BackendGenerator) generateBackendFiles(name string, serviceConfig confi
 	}
 	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "repository", "repository.go"), repositoryGo, 0644); err != nil {
 		return fmt.Errorf("failed to write repository.go: %w", err)
+	}
+
+	// Generate errors from template
+	errorsGo, err := g.loader.LoadAndRender("backend/errors.go.tmpl", data)
+	if err != nil {
+		return fmt.Errorf("failed to load and render errors.go template: %w", err)
+	}
+	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "model", "errors.go"), errorsGo, 0644); err != nil {
+		return fmt.Errorf("failed to write errors.go: %w", err)
 	}
 
 	return nil
@@ -566,7 +601,7 @@ func (g *FrontendGenerator) Create(ctx context.Context, name string, platforms [
 // Performance:
 //   - Template-based file generation
 func (g *BackendGenerator) GenerateCompose(ctx context.Context, config *configschema.Config) error {
-	ui.Info("Generating docker-compose.yaml...")
+	ui.Info("Generating docker-compose configuration...")
 
 	data := map[string]interface{}{
 		"ProjectName":     config.ProjectName,
@@ -578,8 +613,8 @@ func (g *BackendGenerator) GenerateCompose(ctx context.Context, config *configsc
 	if err != nil {
 		return fmt.Errorf("failed to load and render docker-compose.yaml template: %w", err)
 	}
-	if err := g.fs.WriteFile("docker-compose.yaml", composeYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write docker-compose.yaml: %w", err)
+	if err := g.fs.WriteFile("deploy/compose/compose.yaml", composeYAML, 0644); err != nil {
+		return fmt.Errorf("failed to write compose configuration: %w", err)
 	}
 
 	// Generate Dockerfile.backend from template
@@ -591,7 +626,7 @@ func (g *BackendGenerator) GenerateCompose(ctx context.Context, config *configsc
 		return fmt.Errorf("failed to write Dockerfile.backend: %w", err)
 	}
 
-	ui.Success("docker-compose.yaml generated")
+	ui.Success("docker-compose configuration generated: deploy/compose/compose.yaml")
 	return nil
 }
 
@@ -636,7 +671,7 @@ func (g *BackendGenerator) findEggProjectRoot() (string, error) {
 				ui.Debug("Found go.work at: %s", goWorkPath)
 			}
 			// Also check if this directory contains egg modules
-			eggModules := []string{"runtimex", "connectx", "configx", "obsx", "cli"}
+			eggModules := []string{"core", "logx", "configx", "servicex", "cli"}
 			hasEggModules := true
 			for _, module := range eggModules {
 				modulePath := filepath.Join(currentDir, module)
@@ -826,4 +861,181 @@ func serviceNameToVar(name string) string {
 	}
 
 	return result
+}
+
+// prepareTemplateData prepares template data for rendering backend service templates.
+//
+// Parameters:
+//   - name: Service name
+//   - serviceConfig: Service configuration
+//   - config: Project configuration
+//
+// Returns:
+//   - *TemplateData: Prepared template data
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - O(1) data preparation
+func (g *BackendGenerator) prepareTemplateData(name string, serviceConfig configschema.BackendService, config *configschema.Config) *TemplateData {
+	// Get ports with defaults
+	httpPort := 8080
+	healthPort := 8081
+	metricsPort := 9091
+
+	if serviceConfig.Ports != nil {
+		if serviceConfig.Ports.HTTP > 0 {
+			httpPort = serviceConfig.Ports.HTTP
+		}
+		if serviceConfig.Ports.Health > 0 {
+			healthPort = serviceConfig.Ports.Health
+		}
+		if serviceConfig.Ports.Metrics > 0 {
+			metricsPort = serviceConfig.Ports.Metrics
+		}
+	}
+
+	// Compute proto package from module prefix
+	// e.g., "github.com/org/project" -> "org.project"
+	protoPackage := computeProtoPackage(config.ModulePrefix)
+
+	return &TemplateData{
+		ModulePrefix:     config.ModulePrefix,
+		ServiceName:      name,
+		ServiceNameCamel: camelCaseServiceName(name),
+		ServiceNameVar:   serviceNameToVar(name),
+		ProtoPackage:     protoPackage,
+		BinaryName:       "server",
+		HTTPPort:         httpPort,
+		HealthPort:       healthPort,
+		MetricsPort:      metricsPort,
+	}
+}
+
+// generateProtoFile generates a proto file for the service.
+//
+// Parameters:
+//   - name: Service name
+//   - protoTemplate: Proto template type (echo or crud)
+//   - templateData: Template data for rendering
+//
+// Returns:
+//   - error: Generation error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Template rendering and file I/O
+func (g *BackendGenerator) generateProtoFile(name string, protoTemplate string, templateData *TemplateData) error {
+	ui.Info("Generating proto file: %s", protoTemplate)
+
+	// Create API directory structure
+	protoDir := filepath.Join("api", name, "v1")
+	if err := g.fs.CreateDirectory(protoDir); err != nil {
+		return fmt.Errorf("failed to create proto directory: %w", err)
+	}
+
+	// Convert TemplateData to map
+	data := map[string]interface{}{
+		"ModulePrefix":     templateData.ModulePrefix,
+		"ServiceName":      templateData.ServiceName,
+		"ServiceNameCamel": templateData.ServiceNameCamel,
+		"ServiceNameVar":   templateData.ServiceNameVar,
+		"ProtoPackage":     templateData.ProtoPackage,
+	}
+
+	// Load and render template
+	var templatePath string
+	if protoTemplate == "echo" {
+		templatePath = "api/proto_echo.tmpl"
+	} else if protoTemplate == "crud" {
+		templatePath = "api/proto_crud.tmpl"
+	} else {
+		return fmt.Errorf("invalid proto template: %s", protoTemplate)
+	}
+
+	protoContent, err := g.loader.LoadAndRender(templatePath, data)
+	if err != nil {
+		return fmt.Errorf("failed to render proto template: %w", err)
+	}
+
+	// Write proto file
+	protoFile := filepath.Join(protoDir, name+".proto")
+	if err := g.fs.WriteFile(protoFile, protoContent, 0644); err != nil {
+		return fmt.Errorf("failed to write proto file: %w", err)
+	}
+
+	ui.Success("Proto file generated: %s", protoFile)
+	return nil
+}
+
+// generateMakefile generates a Makefile for the service.
+//
+// Parameters:
+//   - serviceDir: Service directory path
+//   - templateData: Template data for rendering
+//
+// Returns:
+//   - error: Generation error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Template rendering and file I/O
+func (g *BackendGenerator) generateMakefile(serviceDir string, templateData *TemplateData) error {
+	ui.Info("Generating Makefile")
+
+	// Convert TemplateData to map
+	data := map[string]interface{}{
+		"ServiceName":      templateData.ServiceName,
+		"ServiceNameCamel": templateData.ServiceNameCamel,
+		"ServiceNameVar":   templateData.ServiceNameVar,
+	}
+
+	// Load and render template
+	makefileContent, err := g.loader.LoadAndRender("build/Makefile.backend.tmpl", data)
+	if err != nil {
+		return fmt.Errorf("failed to render Makefile template: %w", err)
+	}
+
+	// Write Makefile
+	makefilePath := filepath.Join(serviceDir, "Makefile")
+	if err := g.fs.WriteFile(makefilePath, makefileContent, 0644); err != nil {
+		return fmt.Errorf("failed to write Makefile: %w", err)
+	}
+
+	ui.Success("Makefile generated: %s", makefilePath)
+	return nil
+}
+
+// computeProtoPackage computes the proto package name from module prefix.
+// e.g., "github.com/org/project" -> "org.project"
+//
+// Parameters:
+//   - modulePrefix: Go module prefix
+//
+// Returns:
+//   - string: Proto package name
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - O(n) string processing
+func computeProtoPackage(modulePrefix string) string {
+	// Remove common prefixes
+	modulePrefix = strings.TrimPrefix(modulePrefix, "github.com/")
+	modulePrefix = strings.TrimPrefix(modulePrefix, "gitlab.com/")
+	modulePrefix = strings.TrimPrefix(modulePrefix, "bitbucket.org/")
+
+	// Replace slashes with dots
+	protoPackage := strings.ReplaceAll(modulePrefix, "/", ".")
+
+	// Convert to lowercase
+	protoPackage = strings.ToLower(protoPackage)
+
+	return protoPackage
 }

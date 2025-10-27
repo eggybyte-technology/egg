@@ -1,236 +1,142 @@
 // Package main provides the main entry point for the {{.ServiceName}} service.
 //
 // Overview:
-//   - Responsibility: Service initialization using servicex library
-//   - Key Types: Main function with minimal service setup
-//   - Concurrency Model: Graceful shutdown handled by servicex
-//   - Error Semantics: Startup errors are logged and cause exit
-//   - Performance Notes: Optimized for fast startup and graceful shutdown
+//
+//	This service demonstrates a production-ready CRUD service using the egg
+//	framework. It showcases proper layering (handler/service/repository),
+//	database integration with GORM, and comprehensive error handling.
+//
+// Key Features:
+//   - Full CRUD operations: Create, Read, Update, Delete, List (with pagination)
+//   - Database integration: MySQL/PostgreSQL with auto-migration and connection pooling
+//   - Layered architecture: Clear separation of concerns (handler/service/repository/model)
+//   - Connect RPC: Modern HTTP/2-based RPC with streaming support
+//   - Structured logging: All operations logged with context
+//   - Comprehensive validation: Email format, required fields, uniqueness constraints
+//   - Automatic health checks: Database connectivity verification
+//   - Automatic metrics: Request counts, latencies, error rates, database stats
+//
+// Architecture:
+//
+//   - Handler layer: Connect RPC protocol implementation (thin adapter)
+//   - Service layer: Business logic and domain validation
+//   - Repository layer: Database operations and persistence
+//   - Model layer: Domain entities and validation rules
+//
+// This demonstrates the egg framework's recommended pattern for production
+// services requiring proper layering, testability, and maintainability.
 //
 // Usage:
 //
-//	go run cmd/server/main.go
-//	./{{.ServiceName}}
+//	Database is required. Configure via environment variable:
+//	  DB_DSN="user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local" ./{{.ServiceNameVar}}-service
+//
+//	Additional configuration via environment:
+//	  SERVICE_NAME={{.ServiceNameVar}}-service HTTP_PORT=8080 HEALTH_PORT=8081 ./{{.ServiceNameVar}}-service
+//
+// Endpoints:
+//   - HTTP: 8080 (configurable via HTTP_PORT)
+//   - Health: 8081 (configurable via HEALTH_PORT)
+//   - Metrics: 9091 (configurable via METRICS_PORT)
+//
+// Database:
+//
+//	The service auto-migrates the schema on startup. Database connection is
+//	mandatory - the service will fail to start if DB_DSN is not configured.
+//	Supported databases: MySQL, PostgreSQL, SQLite (via GORM).
+//
+// Dependencies:
+//   - servicex: unified service initialization (L4)
+//   - configx: configuration management (L2)
+//   - logx: structured logging (L1)
+//   - connectx: Connect interceptor stack (L3)
+//   - storex: database connection and transaction management (附属)
+//   - core/errors: error codes and wrapping (L0)
+//   - GORM: database ORM
 package main
 
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
 
 	"connectrpc.com/connect"
-	"github.com/eggybyte-technology/egg/core/errors"
-	"github.com/eggybyte-technology/egg/core/log"
-	{{.ServiceNameCamel}}v1connect "{{.ModulePrefix}}/backend/{{.ServiceName}}/gen/go/{{.ServiceName}}/v1/{{.ServiceName}}v1connect"
-	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/config"
-	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/handler"
-	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/model"
-	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/repository"
-	"{{.ModulePrefix}}/backend/{{.ServiceName}}/internal/service"
-	"github.com/eggybyte-technology/egg/servicex"
-	"github.com/eggybyte-technology/egg/storex"
-	"github.com/google/uuid"
-	"gorm.io/gorm"
+	{{.ServiceNameVar}}v1connect "{{.ModulePrefix}}/gen/go/{{.ServiceNameVar}}/v1/{{.ServiceNameVar}}v1connect"
+	"{{.ModulePrefix}}/internal/config"
+	"{{.ModulePrefix}}/internal/handler"
+	"{{.ModulePrefix}}/internal/model"
+	"{{.ModulePrefix}}/internal/repository"
+	"{{.ModulePrefix}}/internal/service"
+	"go.eggybyte.com/egg/servicex"
 )
 
 func main() {
-	// Create context with signal handling
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Create context for the service
+	ctx := context.Background()
 
 	// Initialize configuration - will be populated by servicex
 	cfg := &config.AppConfig{}
 
-	// Run the service using servicex
+	// Run the service using servicex with database integration
+	// servicex automatically creates a logger with LOG_LEVEL from environment
+	// WithAppConfig automatically detects BaseConfig and uses Database configuration
 	err := servicex.Run(ctx,
-		servicex.WithService("{{.ServiceName}}", "0.1.0"),
-		servicex.WithConfig(cfg),
-		servicex.WithTracing(true),
-		servicex.WithMetrics(true),
-		servicex.WithTimeout(30000),
-		servicex.WithSlowRequestThreshold(1000),
-		servicex.WithShutdownTimeout(15*time.Second),
-		servicex.WithRegister(func(app *servicex.App) error {
-			// At this point, cfg has been loaded by servicex
-			var {{.ServiceNameCamel}}Repo repository.{{.ServiceNameCamel}}Repository
-
-			// Check if database is configured
-			if cfg.Database.DSN != "" {
-				app.Logger().Info("Database configuration found, initializing connection",
-					log.Str("driver", cfg.Database.Driver),
-				)
-
-				// Initialize database manually
-				db, err := initializeDatabase(ctx, cfg, app.Logger())
-				if err != nil {
-					return errors.Wrap(errors.CodeInternal, "database initialization", err)
-				}
-
-				// Auto-migrate
-				if err := db.AutoMigrate(&model.{{.ServiceNameCamel}}{}); err != nil {
-					return errors.Wrap(errors.CodeInternal, "database migration", err)
-				}
-
-				app.Logger().Info("Database initialized successfully")
-				{{.ServiceNameCamel}}Repo = repository.New{{.ServiceNameCamel}}Repository(db)
-			} else {
-				// Use in-memory repository
-				app.Logger().Info("No database configured, using mock repository")
-				{{.ServiceNameCamel}}Repo = &mock{{.ServiceNameCamel}}Repository{}
-			}
-
-			// Initialize service and handler
-			{{.ServiceNameCamel}}Service := service.New{{.ServiceNameCamel}}Service({{.ServiceNameCamel}}Repo, app.Logger())
-			{{.ServiceNameCamel}}Handler := handler.New{{.ServiceNameCamel}}Handler({{.ServiceNameCamel}}Service, app.Logger())
-
-			// Create Connect handler with interceptors
-			path, connectHandler := {{.ServiceNameCamel}}v1connect.New{{.ServiceNameCamel}}ServiceHandler(
-				{{.ServiceNameCamel}}Handler,
-				connect.WithInterceptors(app.Interceptors()...),
-			)
-
-			// Register handler
-			app.Mux().Handle(path, connectHandler)
-			app.Logger().Info("Registered Connect handler", log.Str("path", path))
-
-			app.Logger().Info("{{.ServiceNameCamel}} service initialized successfully")
-			return nil
-		}),
+		servicex.WithService("{{.ServiceNameVar}}", "0.1.0"),
+		servicex.WithAppConfig(cfg), // Auto-detects database config from BaseConfig
+		servicex.WithAutoMigrate(&model.{{.ServiceNameCamel}}{}),
+		servicex.WithMetricsConfig(true, true, true, false), // Enable runtime, process, and DB metrics
+		servicex.WithRegister(registerServices),
 	)
 	if err != nil {
-		// servicex handles logging internally, but we can still log here if needed
-		return
+		// Logger is not available here if service fails, use panic
+		panic(fmt.Sprintf("service failed to start: %v", err))
 	}
 }
 
-// initializeDatabase initializes the database connection using storex
-func initializeDatabase(ctx context.Context, cfg *config.AppConfig, logger log.Logger) (*gorm.DB, error) {
-	store, err := storex.NewGORMStore(storex.GORMOptions{
-		DSN:             cfg.Database.DSN,
-		Driver:          cfg.Database.Driver,
-		MaxIdleConns:    cfg.Database.MaxIdle,
-		MaxOpenConns:    cfg.Database.MaxOpen,
-		ConnMaxLifetime: cfg.Database.MaxLifetime,
-		Logger:          logger,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create database store: %w", err)
+// registerServices registers all service handlers with the application.
+//
+// This function is called by servicex during initialization. It demonstrates
+// production-ready service registration with mandatory database dependency.
+//
+// Parameters:
+//   - app: servicex application instance providing database, logger, mux, and interceptors
+//
+// Returns:
+//   - error: nil on success; error if database is not configured or registration fails
+//
+// Behavior:
+//   - Requires database to be configured via DB_DSN environment variable
+//   - Fails fast if database is not available (production best practice)
+//   - Registers Connect handler with full interceptor stack
+//   - Logs registration progress for observability
+//
+// Concurrency:
+//
+//	Called once during service startup, not safe for concurrent use.
+func registerServices(app *servicex.App) error {
+	// Ensure database is configured (production requirement)
+	db := app.DB()
+	if db == nil {
+		return fmt.Errorf("database is required but not configured: please set DB_DSN environment variable (e.g., DB_DSN=\"user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local\")")
 	}
 
-	// Test connection
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	app.Logger().Info("initializing {{.ServiceNameVar}} service with database-backed repository")
 
-	if err := store.Ping(pingCtx); err != nil {
-		store.Close()
-		return nil, fmt.Errorf("database ping failed: %w", err)
-	}
+	// Initialize repository with database
+	{{.ServiceNameVar}}Repo := repository.New{{.ServiceNameCamel}}Repository(db)
 
-	return store.GetDB(), nil
-}
+	// Initialize service and handler layers
+	{{.ServiceNameVar}}Service := service.New{{.ServiceNameCamel}}Service({{.ServiceNameVar}}Repo, app.Logger())
+	{{.ServiceNameVar}}Handler := handler.New{{.ServiceNameCamel}}Handler({{.ServiceNameVar}}Service, app.Logger())
 
-// mock{{.ServiceNameCamel}}Repository is a simple in-memory implementation for demo purposes
-type mock{{.ServiceNameCamel}}Repository struct {
-	{{.ServiceNameVar}}s map[string]*model.{{.ServiceNameCamel}}
-	mutex sync.RWMutex
-}
+	// Register Connect handler with interceptors
+	path, connectHandler := {{.ServiceNameVar}}v1connect.New{{.ServiceNameCamel}}ServiceHandler(
+		{{.ServiceNameVar}}Handler,
+		connect.WithInterceptors(app.Interceptors()...),
+	)
 
-func (m *mock{{.ServiceNameCamel}}Repository) Create(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
+	app.Mux().Handle(path, connectHandler)
+	app.Logger().Info("registered Connect handler", "path", path)
+	app.Logger().Info("{{.ServiceNameVar}} service initialized successfully")
 
-	if m.{{.ServiceNameVar}}s == nil {
-		m.{{.ServiceNameVar}}s = make(map[string]*model.{{.ServiceNameCamel}})
-	}
-
-	// Generate ID and timestamps
-	{{.ServiceNameVar}}.ID = uuid.New().String()
-	now := time.Now()
-	{{.ServiceNameVar}}.CreatedAt = now
-	{{.ServiceNameVar}}.UpdatedAt = now
-
-	m.{{.ServiceNameVar}}s[{{.ServiceNameVar}}.ID] = {{.ServiceNameVar}}
-	return {{.ServiceNameVar}}, nil
-}
-
-func (m *mock{{.ServiceNameCamel}}Repository) GetByID(ctx context.Context, id string) (*model.{{.ServiceNameCamel}}, error) {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
-	if m.{{.ServiceNameVar}}s == nil {
-		return nil, errors.Wrap(errors.CodeNotFound, "get {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
-	}
-
-	{{.ServiceNameVar}}, exists := m.{{.ServiceNameVar}}s[id]
-	if !exists {
-		return nil, errors.Wrap(errors.CodeNotFound, "get {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
-	}
-
-	return {{.ServiceNameVar}}, nil
-}
-
-func (m *mock{{.ServiceNameCamel}}Repository) Update(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	if m.{{.ServiceNameVar}}s == nil {
-		return nil, errors.Wrap(errors.CodeNotFound, "update {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
-	}
-
-	existing{{.ServiceNameCamel}}, exists := m.{{.ServiceNameVar}}s[{{.ServiceNameVar}}.ID]
-	if !exists {
-		return nil, errors.Wrap(errors.CodeNotFound, "update {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
-	}
-
-	// Update fields
-	existing{{.ServiceNameCamel}}.Name = {{.ServiceNameVar}}.Name
-	existing{{.ServiceNameCamel}}.UpdatedAt = time.Now()
-
-	m.{{.ServiceNameVar}}s[{{.ServiceNameVar}}.ID] = existing{{.ServiceNameCamel}}
-	return existing{{.ServiceNameCamel}}, nil
-}
-
-func (m *mock{{.ServiceNameCamel}}Repository) Delete(ctx context.Context, id string) error {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	if m.{{.ServiceNameVar}}s == nil {
-		return errors.Wrap(errors.CodeNotFound, "delete {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
-	}
-
-	if _, exists := m.{{.ServiceNameVar}}s[id]; !exists {
-		return errors.Wrap(errors.CodeNotFound, "delete {{.ServiceName}}", errors.New(errors.CodeNotFound, "{{.ServiceName}} not found"))
-	}
-
-	delete(m.{{.ServiceNameVar}}s, id)
 	return nil
-}
-
-func (m *mock{{.ServiceNameCamel}}Repository) List(ctx context.Context, page, pageSize int) ([]*model.{{.ServiceNameCamel}}, int64, error) {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
-	if m.{{.ServiceNameVar}}s == nil {
-		return []*model.{{.ServiceNameCamel}}{}, 0, nil
-	}
-
-	{{.ServiceNameVar}}s := make([]*model.{{.ServiceNameCamel}}, 0, len(m.{{.ServiceNameVar}}s))
-	for _, {{.ServiceNameVar}} := range m.{{.ServiceNameVar}}s {
-		{{.ServiceNameVar}}s = append({{.ServiceNameVar}}s, {{.ServiceNameVar}})
-	}
-
-	total := int64(len({{.ServiceNameVar}}s))
-	start := (page - 1) * pageSize
-	end := start + pageSize
-
-	if start >= int(total) {
-		return []*model.{{.ServiceNameCamel}}{}, total, nil
-	}
-
-	if end > int(total) {
-		end = int(total)
-	}
-
-	return {{.ServiceNameVar}}s[start:end], total, nil
 }

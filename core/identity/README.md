@@ -17,7 +17,7 @@ This package offers a lightweight, context-based approach to managing user ident
 ## Quick Start
 
 ```go
-import "github.com/eggybyte-technology/egg/core/identity"
+import "go.eggybyte.com/egg/core/identity"
 
 // Store user information in context
 ctx := identity.WithUser(ctx, &identity.UserInfo{
