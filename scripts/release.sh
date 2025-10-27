@@ -218,8 +218,8 @@ release_single_module() {
         if [ ${#RELEASED_MODULES[@]} -gt 0 ]; then
             for dep in "${RELEASED_MODULES[@]}"; do
                 if [[ "$dep" != "$mod" ]]; then
-                    # Check if this module actually depends on the released module
-                    if grep -q "$REPO_BASE/$dep" go.mod 2>/dev/null; then
+                    # Check if this module imports from the released module (in .go files)
+                    if grep -r "\"$REPO_BASE/$dep" . --include="*.go" --exclude-dir=vendor 2>/dev/null | head -1 > /dev/null; then
                         print_info "    ↳ Setting $dep@$version"
                         go mod edit -require="$REPO_BASE/$dep@$version" || true
                     fi
