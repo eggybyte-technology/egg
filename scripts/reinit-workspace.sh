@@ -45,25 +45,26 @@ log_info "Repository root: $REPO_ROOT"
 # Module base path
 MODULE_BASE="go.eggybyte.com/egg"
 
-# Define all modules with their paths
-declare -a MODULES=(
-    "cli"
-    "clientx"
-    "configx"
-    "connectx"
-    "core"
-    "httpx"
-    "k8sx"
-    "logx"
-    "obsx"
-    "runtimex"
-    "servicex"
-    "storex"
-    "testingx"
-    "examples/connect-tester"
-    "examples/minimal-connect-service"
-    "examples/user-service"
-    "scripts/connect-tester"
+# Define modules in dependency order (layers)
+# This ensures dependencies are initialized before dependents
+declare -a MODULE_LAYERS=(
+    "core"                                                      # L0: Zero dependencies
+    "logx"                                                      # L1: Depends on core
+    "configx obsx httpx"                                        # L2: Depends on L0/L1
+    "runtimex connectx clientx storex k8sx testingx"           # L3: Depends on L0/L1/L2
+    "servicex"                                                  # L4: Depends on all above
+    "cli"                                                       # Tools
+    "examples/minimal-connect-service examples/user-service examples/connect-tester"  # Examples
+)
+
+# Flatten for iteration
+declare -a ALL_MODULES=(
+    core logx configx obsx httpx
+    runtimex connectx clientx storex k8sx testingx
+    servicex cli
+    examples/minimal-connect-service
+    examples/user-service
+    examples/connect-tester
 )
 
 # Step 1: Delete all go.mod, go.sum, go.work, and go.work.sum files
@@ -81,7 +82,7 @@ if [ -f go.work.sum ]; then
 fi
 
 # Delete go.mod and go.sum in each module
-for module in "${MODULES[@]}"; do
+for module in "${ALL_MODULES[@]}"; do
     module_dir="$REPO_ROOT/$module"
     if [ -d "$module_dir" ]; then
         if [ -f "$module_dir/go.mod" ]; then
@@ -102,7 +103,7 @@ echo ""
 # Step 2: Initialize each module with correct module path
 log_info "Step 2: Initializing each module with go mod init..."
 
-for module in "${MODULES[@]}"; do
+for module in "${ALL_MODULES[@]}"; do
     module_dir="$REPO_ROOT/$module"
     if [ -d "$module_dir" ]; then
         module_path="$MODULE_BASE/$module"
@@ -126,7 +127,7 @@ log_info "Step 3: Creating go.work and adding all modules..."
 
 # Build the list of module paths for go work init
 module_paths=()
-for module in "${MODULES[@]}"; do
+for module in "${ALL_MODULES[@]}"; do
     module_dir="$REPO_ROOT/$module"
     if [ -d "$module_dir" ] && [ -f "$module_dir/go.mod" ]; then
         module_paths+=("./$module")
@@ -150,24 +151,52 @@ fi
 
 echo ""
 
-# Step 4: Run go mod tidy for each module (workspace auto-resolves dependencies)
-log_info "Step 4: Running go mod tidy for each module..."
-log_info "Note: Workspace will automatically resolve local module dependencies"
+# Step 4: Add dependencies and run go mod tidy layer by layer
+log_info "Step 4: Processing modules by dependency layers..."
+log_info "Note: Processing in dependency order to avoid resolution issues"
 
-for module in "${MODULES[@]}"; do
-    module_dir="$REPO_ROOT/$module"
-    if [ -d "$module_dir" ] && [ -f "$module_dir/go.mod" ]; then
-        log_info "Running go mod tidy in $module..."
-        cd "$module_dir"
-        # Run without GOFLAGS to let workspace handle local dependencies
-        go mod tidy 2>&1 || {
-            log_error "Failed to run go mod tidy in $module"
+# Track processed modules for dependency injection
+declare -a PROCESSED_MODULES=()
+
+layer_num=0
+for layer in "${MODULE_LAYERS[@]}"; do
+    layer_num=$((layer_num + 1))
+    log_info ""
+    log_info "Processing Layer $layer_num: $layer"
+    
+    for module in $layer; do
+        module_dir="$REPO_ROOT/$module"
+        if [ ! -d "$module_dir" ] || [ ! -f "$module_dir/go.mod" ]; then
+            log_warning "Skipping $module (not found or no go.mod)"
             continue
-        }
-        log_success "go mod tidy completed for $module"
-    else
-        log_warning "Skipping $module (no go.mod found)"
-    fi
+        fi
+        
+        log_info "  → Processing $module..."
+        cd "$module_dir"
+        
+        # Inject dependencies from already-processed modules
+        if [ ${#PROCESSED_MODULES[@]} -gt 0 ]; then
+            for dep in "${PROCESSED_MODULES[@]}"; do
+                # Check if this module imports from the processed module
+                if grep -r "\"$MODULE_BASE/$dep" . --include="*.go" --exclude-dir=vendor --exclude-dir=gen 2>/dev/null | head -1 > /dev/null; then
+                    log_info "    ↳ Adding dependency: $dep"
+                    go mod edit -require="$MODULE_BASE/$dep@v0.0.0-00010101000000-000000000000" 2>/dev/null || true
+                    go mod edit -replace="$MODULE_BASE/$dep=$REPO_ROOT/$dep" 2>/dev/null || true
+                fi
+            done
+        fi
+        
+        # Run go mod tidy with error tolerance
+        log_info "    ↳ Running go mod tidy..."
+        if go mod tidy 2>&1; then
+            log_success "    ✓ Completed $module"
+            PROCESSED_MODULES+=("$module")
+        else
+            log_warning "    ⚠ Tidy failed for $module (continuing anyway)"
+            # Mark as processed so dependents can reference it
+            PROCESSED_MODULES+=("$module")
+        fi
+    done
 done
 
 cd "$REPO_ROOT"
