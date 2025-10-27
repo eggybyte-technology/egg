@@ -174,14 +174,18 @@ for layer in "${MODULE_LAYERS[@]}"; do
         log_info "  → Processing $module..."
         cd "$module_dir"
         
-        # Inject dependencies from already-processed modules
+        # Add replace directives for ALL processed modules (including transitive deps)
+        # This ensures that go mod tidy won't try to download fake versions
         if [ ${#PROCESSED_MODULES[@]} -gt 0 ]; then
             for dep in "${PROCESSED_MODULES[@]}"; do
-                # Check if this module imports from the processed module
+                # Always add replace directive for all processed modules
+                # This handles both direct and transitive dependencies
+                go mod edit -replace="$MODULE_BASE/$dep=$REPO_ROOT/$dep" 2>/dev/null || true
+                
+                # Only add require directive if this module actually imports it
                 if grep -r "\"$MODULE_BASE/$dep" . --include="*.go" --exclude-dir=vendor --exclude-dir=gen 2>/dev/null | head -1 > /dev/null; then
                     log_info "    ↳ Adding dependency: $dep"
                     go mod edit -require="$MODULE_BASE/$dep@v0.0.0-00010101000000-000000000000" 2>/dev/null || true
-                    go mod edit -replace="$MODULE_BASE/$dep=$REPO_ROOT/$dep" 2>/dev/null || true
                 fi
             done
         fi
