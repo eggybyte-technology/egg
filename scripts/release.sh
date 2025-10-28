@@ -231,13 +231,33 @@ release_single_module() {
             print_info "    ↳ No dependencies to update (L0 module)"
         fi
         
-        # Skip go mod tidy during release to avoid proxy/cache issues
-        # Rationale:
-        # 1. We just pushed tags, but Go proxy hasn't indexed them yet
-        # 2. Even with GOPROXY=direct, transitive test dependencies cause issues
-        # 3. The workspace handles local development dependencies
-        # 4. Users will run `go get` which automatically tidies
-        print_info "    ↳ Skipping go mod tidy (proxy needs time to index new tags)"
+        # Run go mod tidy with retry mechanism
+        # Use GOPROXY=direct to bypass proxy cache and fetch directly from GitHub
+        # Add retry logic to handle GitHub propagation delays
+        print_info "    ↳ Running go mod tidy with GOPROXY=direct..."
+        
+        tidy_success=false
+        max_retries=3
+        retry_delay=5
+        
+        for attempt in $(seq 1 $max_retries); do
+            if [ $attempt -gt 1 ]; then
+                print_info "    ↳ Retry attempt $attempt/$max_retries (waiting ${retry_delay}s for GitHub to propagate tags)..."
+                sleep $retry_delay
+            fi
+            
+            if GOPROXY=direct go mod tidy 2>&1; then
+                print_success "    ↳ go mod tidy completed successfully"
+                tidy_success=true
+                break
+            else
+                if [ $attempt -eq $max_retries ]; then
+                    print_warning "    ↳ go mod tidy failed after $max_retries attempts"
+                    print_warning "    ↳ This may be due to GitHub tag propagation delays"
+                    print_info "    ↳ Users can run 'go get' later to fetch the correct dependencies"
+                fi
+            fi
+        done
     ) || return 1
     
     # Step 2: Commit changes (require version updates)
