@@ -1,6 +1,6 @@
 # Makefile for egg framework
 .PHONY: help build build-cli test test-cli test-cli-production test-examples test-all lint clean tools generate \
-	release publish-modules \
+	release publish-modules delete-all-tags \
 	fmt vet security quality setup \
 	docker-build docker-build-alpine docker-backend docker-go-service docker-all docker-clean \
 	deploy-up deploy-down deploy-restart deploy-logs deploy-status deploy-health deploy-clean deploy-ports \
@@ -63,6 +63,7 @@ help:
 	@echo "$(BOLD)Release Management:$(RESET)"
 	@echo "  $(CYAN)release$(RESET)          - Release all modules with specified version (Usage: make release VERSION=v0.1.0)"
 	@echo "  $(CYAN)publish-modules$(RESET)  - Publish all modules with specified version (Usage: make publish-modules VERSION=v0.1.0)"
+	@echo "  $(RED)delete-all-tags$(RESET)  - $(RED)$(BOLD)[DANGEROUS]$(RESET) Delete ALL version tags (requires 3 confirmations)"
 	@echo ""
 	@echo "$(BOLD)Quality:$(RESET)"
 	@echo "  $(CYAN)fmt$(RESET)              - Format code"
@@ -315,6 +316,17 @@ publish-modules:
 	@for module in $(MODULES); do \
 		echo "   go get go.eggybyte.com/egg/$$module@$(VERSION)"; \
 	done
+
+# Delete ALL version tags (DANGEROUS OPERATION!)
+# This will delete all tags for all modules, both locally and remotely
+# Requires 3 confirmations to proceed
+delete-all-tags:
+	$(call print_header,⚠️  DANGER: Delete ALL Version Tags)
+	@echo ""
+	@echo "$(RED)$(BOLD)⚠️  WARNING: This will delete ALL version tags for ALL modules!$(RESET)"
+	@echo "$(RED)$(BOLD)⚠️  This operation is IRREVERSIBLE!$(RESET)"
+	@echo ""
+	@./scripts/release.sh --delete-all-tags
 
 # ==============================================================================
 # Docker & Containerization

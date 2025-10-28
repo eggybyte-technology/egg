@@ -6,10 +6,12 @@
 # It follows a layer-by-layer release strategy to ensure dependency consistency.
 #
 # Usage:
-#   ./scripts/release.sh v0.x.y
+#   ./scripts/release.sh v0.x.y              # Release a new version
+#   ./scripts/release.sh --delete-all-tags   # Delete ALL tags (DANGEROUS!)
 #
 # Example:
 #   ./scripts/release.sh v0.1.0
+#   ./scripts/release.sh --delete-all-tags
 #
 # Environment Variables:
 #   AUTO_COMMIT_CHANGES - Set to "true" to auto-commit without prompting (for CI/CD)
@@ -229,22 +231,27 @@ release_single_module() {
             print_info "    ↳ No dependencies to update (L0 module)"
         fi
         
-        # Run go mod tidy to ensure go.sum is up-to-date with the new dependency versions
-        # At this point, all dependencies should have been released with proper tags
-        # Use GOPROXY=direct to bypass proxy cache and ensure we get the latest tags
-        print_info "    ↳ Running go mod tidy with GOPROXY=direct..."
-        if GOPROXY=direct go mod tidy 2>&1; then
-            print_info "    ↳ go mod tidy completed successfully"
-        else
-            print_warning "    ↳ go mod tidy failed (may be due to missing tags, will retry after push)"
-        fi
+        # Skip go mod tidy during release to avoid proxy/cache issues
+        # Rationale:
+        # 1. We just pushed tags, but Go proxy hasn't indexed them yet
+        # 2. Even with GOPROXY=direct, transitive test dependencies cause issues
+        # 3. The workspace handles local development dependencies
+        # 4. Users will run `go get` which automatically tidies
+        print_info "    ↳ Skipping go mod tidy (proxy needs time to index new tags)"
     ) || return 1
     
-    # Step 2: Commit changes if any
-    if ! git diff --quiet -- "$mod/go.mod" "$mod/go.sum" 2>/dev/null; then
+    # Step 2: Commit changes (require version updates)
+    # Check for unstaged changes in the module directory
+    cd "$PROJECT_ROOT"
+    if ! git diff --quiet -- "$mod/" 2>/dev/null; then
         print_info "  → Committing dependency updates for $mod..."
-        git add "$mod/go.mod" "$mod/go.sum" 2>/dev/null || true
-        git commit -m "chore($mod): update dependencies to $version" || true
+        # Stage all changes in this module directory (go.mod and go.sum if exists)
+        git add "$mod/" 2>/dev/null || true
+        if git commit -m "chore($mod): update dependencies to $version" 2>/dev/null; then
+            print_info "    ↳ Changes committed"
+        else
+            print_warning "    ↳ No changes to commit or commit failed"
+        fi
     else
         print_info "  → No dependency changes for $mod"
     fi
@@ -356,6 +363,126 @@ display_release_summary() {
 }
 
 # ============================================================================
+# Function: delete_all_tags
+# Description: Deletes ALL tags for all modules (DANGEROUS OPERATION!)
+#              Requires 3 confirmations to proceed
+# ============================================================================
+delete_all_tags() {
+    print_header "Delete ALL Tags - DANGEROUS OPERATION"
+    
+    echo ""
+    print_error "⚠️  WARNING: This will delete ALL version tags for ALL modules!"
+    print_error "⚠️  This operation is IRREVERSIBLE!"
+    echo ""
+    
+    # List all existing tags
+    print_info "Finding existing tags..."
+    local all_tags=()
+    for mod in "${ALL_MODULES[@]}"; do
+        # Find all tags for this module
+        while IFS= read -r tag; do
+            if [[ -n "$tag" ]]; then
+                all_tags+=("$tag")
+            fi
+        done < <(git tag -l "${mod}/*" 2>/dev/null)
+    done
+    
+    if [ ${#all_tags[@]} -eq 0 ]; then
+        print_info "No tags found to delete"
+        exit 0
+    fi
+    
+    echo ""
+    print_info "Found ${#all_tags[@]} tags:"
+    for tag in "${all_tags[@]}"; do
+        echo "  - $tag"
+    done
+    echo ""
+    
+    # First confirmation
+    print_error "═══════════════════════════════════════════════════════════"
+    print_error "  CONFIRMATION 1 OF 3"
+    print_error "═══════════════════════════════════════════════════════════"
+    echo ""
+    read -rp "Are you ABSOLUTELY SURE you want to delete ALL ${#all_tags[@]} tags? (type 'yes' to continue): " confirm1
+    
+    if [[ "$confirm1" != "yes" ]]; then
+        print_info "Operation cancelled"
+        exit 0
+    fi
+    
+    # Second confirmation
+    echo ""
+    print_error "═══════════════════════════════════════════════════════════"
+    print_error "  CONFIRMATION 2 OF 3"
+    print_error "═══════════════════════════════════════════════════════════"
+    echo ""
+    print_warning "This will delete tags both locally AND from remote (origin)"
+    echo ""
+    read -rp "Do you understand this will affect the remote repository? (type 'DELETE' to continue): " confirm2
+    
+    if [[ "$confirm2" != "DELETE" ]]; then
+        print_info "Operation cancelled"
+        exit 0
+    fi
+    
+    # Third confirmation
+    echo ""
+    print_error "═══════════════════════════════════════════════════════════"
+    print_error "  CONFIRMATION 3 OF 3 - FINAL WARNING"
+    print_error "═══════════════════════════════════════════════════════════"
+    echo ""
+    print_error "Last chance to abort! This action CANNOT be undone!"
+    echo ""
+    read -rp "Type the exact text 'I UNDERSTAND THE CONSEQUENCES' to proceed: " confirm3
+    
+    if [[ "$confirm3" != "I UNDERSTAND THE CONSEQUENCES" ]]; then
+        print_info "Operation cancelled"
+        exit 0
+    fi
+    
+    # Proceed with deletion
+    echo ""
+    print_section "Deleting Tags"
+    
+    local deleted_count=0
+    local failed_count=0
+    
+    for tag in "${all_tags[@]}"; do
+        print_info "Deleting tag: $tag"
+        
+        # Delete local tag
+        if git tag -d "$tag" 2>/dev/null; then
+            print_info "  ↳ Local tag deleted"
+        else
+            print_warning "  ↳ Failed to delete local tag (may not exist)"
+        fi
+        
+        # Delete remote tag
+        if git push --delete origin "$tag" 2>/dev/null; then
+            print_success "  ✓ Remote tag deleted"
+            deleted_count=$((deleted_count + 1))
+        else
+            print_error "  ✗ Failed to delete remote tag"
+            failed_count=$((failed_count + 1))
+        fi
+    done
+    
+    echo ""
+    print_header "Deletion Summary"
+    echo ""
+    print_info "Total tags processed: ${#all_tags[@]}"
+    print_success "Successfully deleted: $deleted_count"
+    
+    if [ $failed_count -gt 0 ]; then
+        print_error "Failed to delete: $failed_count"
+    fi
+    
+    echo ""
+    print_success "Tag deletion completed!"
+}
+
+# ============================================================================
 # Main Execution
 # ============================================================================
 main() {
@@ -363,15 +490,24 @@ main() {
     
     print_header "Egg Framework Release Script"
     
+    # Check for special commands
+    if [[ "$version" == "--delete-all-tags" ]]; then
+        delete_all_tags
+        exit 0
+    fi
+    
     # Validate input
     if [[ -z "$version" ]]; then
         print_error "Version argument is required"
         echo ""
-        echo "Usage: $0 v0.x.y"
+        echo "Usage:"
+        echo "  $0 v0.x.y              # Release a new version"
+        echo "  $0 --delete-all-tags   # Delete ALL tags (DANGEROUS!)"
         echo ""
         echo "Example:"
         echo "  $0 v0.1.0"
         echo "  $0 v0.2.0-beta.1"
+        echo "  $0 --delete-all-tags"
         exit 1
     fi
     
