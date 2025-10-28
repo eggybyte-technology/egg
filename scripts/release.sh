@@ -226,13 +226,18 @@ release_single_module() {
                 fi
             done
         else
-            print_info "    ↳ No dependencies to update (first module)"
+            print_info "    ↳ No dependencies to update (L0 module)"
         fi
         
-        # Skip go mod tidy during release to avoid remote resolution issues
-        # The workspace will handle dependency resolution during development
-        # After all tags are pushed, users can run go mod tidy to sync
-        print_info "    ↳ Skipping go mod tidy (dependencies managed via workspace)"
+        # Run go mod tidy to ensure go.sum is up-to-date with the new dependency versions
+        # At this point, all dependencies should have been released with proper tags
+        # Use GOPROXY=direct to bypass proxy cache and ensure we get the latest tags
+        print_info "    ↳ Running go mod tidy with GOPROXY=direct..."
+        if GOPROXY=direct go mod tidy 2>&1; then
+            print_info "    ↳ go mod tidy completed successfully"
+        else
+            print_warning "    ↳ go mod tidy failed (may be due to missing tags, will retry after push)"
+        fi
     ) || return 1
     
     # Step 2: Commit changes if any

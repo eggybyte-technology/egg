@@ -174,26 +174,24 @@ for layer in "${MODULE_LAYERS[@]}"; do
         log_info "  → Processing $module..."
         cd "$module_dir"
         
-        # Add replace directives for ALL processed modules (including transitive deps)
-        # This ensures that go mod tidy won't try to download fake versions
+        # Step 1: Add temporary replace directives for ALL processed modules
+        # This ensures that go mod tidy won't try to download fake versions from remote
+        declare -a replace_args=()
+        declare -a require_args=()
+        
         if [ ${#PROCESSED_MODULES[@]} -gt 0 ]; then
-            # Build lists of edits to apply in batch
-            declare -a replace_args=()
-            declare -a require_args=()
-            
             for dep in "${PROCESSED_MODULES[@]}"; do
                 # Always add replace directive for all processed modules
                 replace_args+=("-replace=$MODULE_BASE/$dep=$REPO_ROOT/$dep")
                 
                 # Only add require directive if this module actually imports it
                 if grep -r "\"$MODULE_BASE/$dep" . --include="*.go" --exclude-dir=vendor --exclude-dir=gen 2>/dev/null | head -1 > /dev/null; then
-                    log_info "    ↳ Adding dependency: $dep"
+                    log_info "    ↳ Adding temporary dependency: $dep"
                     require_args+=("-require=$MODULE_BASE/$dep@v0.0.0-00010101000000-000000000000")
                 fi
             done
             
-            # Apply all edits in a single go mod edit call to avoid conflicts
-            # Build the complete argument list safely (avoiding empty array issues with set -u)
+            # Apply all edits in a single go mod edit call
             declare -a all_args=()
             if [ ${#replace_args[@]} -gt 0 ]; then
                 all_args+=("${replace_args[@]}")
@@ -203,20 +201,34 @@ for layer in "${MODULE_LAYERS[@]}"; do
             fi
             
             if [ ${#all_args[@]} -gt 0 ]; then
+                log_info "    ↳ Adding temporary replace directives..."
                 go mod edit "${all_args[@]}" 2>/dev/null || true
             fi
         fi
         
-        # Run go mod tidy with error tolerance
+        # Step 2: Run go mod tidy with temporary replace directives in place
         log_info "    ↳ Running go mod tidy..."
+        tidy_success=false
         if go mod tidy 2>&1; then
-            log_success "    ✓ Completed $module"
-            PROCESSED_MODULES+=("$module")
+            tidy_success=true
         else
             log_warning "    ⚠ Tidy failed for $module (continuing anyway)"
-            # Mark as processed so dependents can reference it
-            PROCESSED_MODULES+=("$module")
         fi
+        
+        # Step 3: Remove ALL replace directives after tidy (critical!)
+        # This ensures go.mod stays clean for release and doesn't have local paths
+        if [ ${#PROCESSED_MODULES[@]} -gt 0 ]; then
+            log_info "    ↳ Removing temporary replace directives..."
+            for dep in "${PROCESSED_MODULES[@]}"; do
+                go mod edit -dropreplace="$MODULE_BASE/$dep" 2>/dev/null || true
+            done
+        fi
+        
+        # Step 4: Mark as processed
+        if [ "$tidy_success" = true ]; then
+            log_success "    ✓ Completed $module"
+        fi
+        PROCESSED_MODULES+=("$module")
     done
 done
 
