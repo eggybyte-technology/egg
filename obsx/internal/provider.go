@@ -11,41 +11,40 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 )
 
-// ProviderOptions holds configuration for the observability provider.
+// ProviderOptions holds configuration for the metrics provider.
 type ProviderOptions struct {
-	ServiceName       string
-	ServiceVersion    string
-	OTLPEndpoint      string
-	ResourceAttrs     map[string]string
-	TraceSamplerRatio float64
+	ServiceName    string
+	ServiceVersion string
+	ResourceAttrs  map[string]string
 }
 
-// Provider manages OpenTelemetry tracing and metrics providers.
+// Provider manages OpenTelemetry metrics provider with Prometheus export.
 type Provider struct {
-	TracerProvider     *sdktrace.TracerProvider
 	MeterProvider      *metric.MeterProvider
 	prometheusRegistry *promclient.Registry
 }
 
-// NewProvider creates a new observability provider with the given options.
+// NewProvider creates a new metrics provider with Prometheus export.
+//
+// Parameters:
+//   - ctx: context for provider initialization
+//   - opts: provider configuration options
+//
+// Returns:
+//   - *Provider: initialized provider instance
+//   - error: initialization error if any
+//
+// Concurrency:
+//   - Safe to call from multiple goroutines
 func NewProvider(ctx context.Context, opts ProviderOptions) (*Provider, error) {
 	if opts.ServiceName == "" {
 		return nil, fmt.Errorf("service name is required")
-	}
-
-	// Set default sampling ratio
-	samplerRatio := opts.TraceSamplerRatio
-	if samplerRatio <= 0 {
-		samplerRatio = 0.1 // Default 10% sampling
 	}
 
 	// Create resource
@@ -54,24 +53,16 @@ func NewProvider(ctx context.Context, opts ProviderOptions) (*Provider, error) {
 		return nil, err
 	}
 
-	// Create trace provider
-	tp, err := createTracerProvider(ctx, res, opts.OTLPEndpoint, samplerRatio)
-	if err != nil {
-		return nil, err
-	}
-
 	// Create meter provider with Prometheus support
-	mp, promRegistry, err := createMeterProvider(ctx, res, opts.OTLPEndpoint)
+	mp, promRegistry, err := createMeterProvider(ctx, res)
 	if err != nil {
 		return nil, err
 	}
 
-	// Set global providers
-	otel.SetTracerProvider(tp)
+	// Set global meter provider
 	otel.SetMeterProvider(mp)
 
 	return &Provider{
-		TracerProvider:     tp,
 		MeterProvider:      mp,
 		prometheusRegistry: promRegistry,
 	}, nil
@@ -104,42 +95,18 @@ func createResource(ctx context.Context, opts ProviderOptions) (*resource.Resour
 	return res, nil
 }
 
-// createTracerProvider creates a tracer provider with optional OTLP export.
-func createTracerProvider(ctx context.Context, res *resource.Resource, otlpEndpoint string, samplerRatio float64) (*sdktrace.TracerProvider, error) {
-	// Create trace exporter if OTLP endpoint is provided
-	var traceExporter sdktrace.SpanExporter
-	if otlpEndpoint != "" {
-		var err error
-		traceExporter, err = otlptracegrpc.New(ctx,
-			otlptracegrpc.WithEndpoint(otlpEndpoint),
-			otlptracegrpc.WithInsecure(), // In production, use proper TLS
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create trace exporter: %w", err)
-		}
-	}
-
-	// Create tracer provider
-	var tp *sdktrace.TracerProvider
-	if traceExporter != nil {
-		tp = sdktrace.NewTracerProvider(
-			sdktrace.WithResource(res),
-			sdktrace.WithSampler(sdktrace.TraceIDRatioBased(samplerRatio)),
-			sdktrace.WithBatcher(traceExporter),
-		)
-	} else {
-		tp = sdktrace.NewTracerProvider(
-			sdktrace.WithResource(res),
-			sdktrace.WithSampler(sdktrace.TraceIDRatioBased(samplerRatio)),
-		)
-	}
-
-	return tp, nil
-}
-
-// createMeterProvider creates a meter provider with Prometheus and optional OTLP export.
+// createMeterProvider creates a meter provider with Prometheus export only.
 // It returns the meter provider and a Prometheus registry for HTTP handler.
-func createMeterProvider(ctx context.Context, res *resource.Resource, otlpEndpoint string) (*metric.MeterProvider, *promclient.Registry, error) {
+//
+// Parameters:
+//   - ctx: context for initialization
+//   - res: OpenTelemetry resource with service attributes
+//
+// Returns:
+//   - *metric.MeterProvider: meter provider instance
+//   - *promclient.Registry: Prometheus registry for HTTP handler
+//   - error: creation error if any
+func createMeterProvider(ctx context.Context, res *resource.Resource) (*metric.MeterProvider, *promclient.Registry, error) {
 	// Create Prometheus registry and exporter
 	promRegistry := promclient.NewRegistry()
 	promExporter, err := prometheus.New(
@@ -152,26 +119,11 @@ func createMeterProvider(ctx context.Context, res *resource.Resource, otlpEndpoi
 		return nil, nil, fmt.Errorf("failed to create prometheus exporter: %w", err)
 	}
 
-	// Build meter provider options
-	meterOpts := []metric.Option{
+	// Create meter provider with Prometheus reader
+	mp := metric.NewMeterProvider(
 		metric.WithResource(res),
 		metric.WithReader(promExporter),
-	}
-
-	// Create OTLP metric exporter if endpoint is provided
-	if otlpEndpoint != "" {
-		otlpExporter, err := otlpmetricgrpc.New(ctx,
-			otlpmetricgrpc.WithEndpoint(otlpEndpoint),
-			otlpmetricgrpc.WithInsecure(), // In production, use proper TLS
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create otlp metric exporter: %w", err)
-		}
-		meterOpts = append(meterOpts, metric.WithReader(metric.NewPeriodicReader(otlpExporter)))
-	}
-
-	// Create meter provider with all readers
-	mp := metric.NewMeterProvider(meterOpts...)
+	)
 
 	return mp, promRegistry, nil
 }
@@ -198,30 +150,27 @@ func (p *Provider) GetPrometheusHandler() http.Handler {
 	})
 }
 
-// Shutdown gracefully shuts down the provider.
+// Shutdown gracefully shuts down the metrics provider.
+//
+// Parameters:
+//   - ctx: context with shutdown timeout
+//
+// Returns:
+//   - error: shutdown error if any
+//
+// Concurrency:
+//   - Safe to call from multiple goroutines
+//   - Blocks until shutdown completes or timeout
 func (p *Provider) Shutdown(ctx context.Context) error {
 	// Create a timeout context for shutdown
 	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	var errors []error
-
-	// Shutdown tracer provider
-	if p.TracerProvider != nil {
-		if err := p.TracerProvider.Shutdown(shutdownCtx); err != nil {
-			errors = append(errors, fmt.Errorf("failed to shutdown tracer provider: %w", err))
-		}
-	}
-
 	// Shutdown meter provider
 	if p.MeterProvider != nil {
 		if err := p.MeterProvider.Shutdown(shutdownCtx); err != nil {
-			errors = append(errors, fmt.Errorf("failed to shutdown meter provider: %w", err))
+			return fmt.Errorf("failed to shutdown meter provider: %w", err)
 		}
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("shutdown errors: %v", errors)
 	}
 
 	return nil

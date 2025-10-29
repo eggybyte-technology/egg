@@ -11,7 +11,8 @@
 // # Features
 //
 //   - Per-RPC timeout control (global default with optional overrides)
-//   - Unified structured logging with request/trace correlation
+//   - Unified structured logging with request correlation
+//   - Prometheus-based RPC metrics (request count, duration, payload sizes)
 //   - Error mapping between core/errors and Connect/HTTP codes
 //   - Identity extraction from headers and context propagation
 //   - Extensible interceptor chaining (platform + business layers)
@@ -24,6 +25,7 @@
 //		myHandler,
 //		connect.WithInterceptors(connectx.DefaultInterceptors(connectx.Options{
 //			Logger:            logger,
+//			Otel:              metricsProvider,
 //			SlowRequestMillis: 1000,
 //			PayloadAccounting: true,
 //		})...),
@@ -36,5 +38,5 @@
 //
 // # Stability
 //
-// Stable since v0.1.0. Backward-compatible API changes only occur with a minor version bump.
+// Stable since v0.1.0. Tracing support removed in v0.3.0.
 package connectx

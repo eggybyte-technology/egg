@@ -146,13 +146,6 @@ func WithLogger(logger log.Logger) Option {
 	}
 }
 
-// WithTracing enables tracing.
-func WithTracing(enabled bool) Option {
-	return func(c *internal.ServiceConfig) {
-		c.EnableTracing = enabled
-	}
-}
-
 // WithMetrics enables metrics.
 func WithMetrics(enabled bool) Option {
 	return func(c *internal.ServiceConfig) {
@@ -192,7 +185,10 @@ func WithRegister(fn func(*App) error) Option {
 				shutdownHooks: internalApp.ShutdownHooks,
 				db:            internalApp.DB,
 			}
-			return fn(servicexApp)
+			err := fn(servicexApp)
+			// Copy shutdown hooks back to internal app after registration
+			internalApp.ShutdownHooks = servicexApp.shutdownHooks
+			return err
 		}
 	}
 }
@@ -355,7 +351,6 @@ type Options struct {
 	Database          *DatabaseConfig
 	Migrate           DatabaseMigrator
 	Register          ServiceRegistrar
-	EnableTracing     bool          `env:"ENABLE_TRACING" default:"true"`
 	EnableHealthCheck bool          `env:"ENABLE_HEALTH_CHECK" default:"true"`
 	EnableMetrics     bool          `env:"ENABLE_METRICS" default:"true"`
 	EnableDebugLogs   bool          `env:"ENABLE_DEBUG_LOGS" default:"false"`

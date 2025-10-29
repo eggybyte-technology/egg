@@ -1,5 +1,8 @@
 #!/bin/bash
+#
 # CLI Integration Test Script for Egg Framework
+#
+# Uses the unified logger from scripts/logger.sh for consistent output formatting.
 #
 # This script performs comprehensive testing of all CLI commands by:
 # 0. Environment Check (egg doctor)
@@ -39,13 +42,16 @@
 
 set -e  # Exit on error
 
-# Source the unified logger
+# Source the unified logger from project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/logger.sh"
+CLI_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$CLI_ROOT/.." && pwd)"
+source "$PROJECT_ROOT/scripts/logger.sh"
 
 # Test configuration
 PROJECT_NAME="test-project"
-TEST_DIR="$PROJECT_NAME"  # Match project name from egg init
+TEST_WORKSPACE="$CLI_ROOT/tmp"  # Tests run in cli/tmp/
+TEST_DIR="$TEST_WORKSPACE/$PROJECT_NAME"  # Full path to test project
 BACKEND_SERVICE="user"  # Main service with CRUD proto
 BACKEND_PING_SERVICE="ping"  # Secondary service with CRUD proto
 FRONTEND_SERVICE="admin_portal"  # Use underscore for Dart compatibility
@@ -65,24 +71,19 @@ done
 # Helper Functions
 # ==============================================================================
 
-# Print colored output with professional symbols (using unified logger)
+# Print CLI section header (uses logger.sh functions)
 print_cli_section() {
-    echo ""
-    echo -e "${CYAN}┌─────────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│ $1${NC}"
-    echo -e "${CYAN}└─────────────────────────────────────────────────────────────────┘${NC}"
+    print_section "$1"
 }
 
-print_cli_command() {
-    print_command "$1"
-}
-
+# Print command output header
 print_output_header() {
-    echo -e "${GRAY}┌── Output ──────────────────────────────────────────────────────┐${NC}"
+    printf "${CYAN}┌── Output ──────────────────────────────────────────────────────┐${RESET}\n"
 }
 
+# Print command output footer
 print_output_footer() {
-    echo -e "${GRAY}└────────────────────────────────────────────────────────────────┘${NC}"
+    printf "${CYAN}└────────────────────────────────────────────────────────────────┘${RESET}\n"
 }
 
 # Run egg command with detailed output
@@ -92,21 +93,17 @@ run_egg_command() {
     local cmd="$@"
     
     print_cli_section "$description"
-    print_cli_command "$EGG_CLI $cmd"
+    print_command "$EGG_CLI $cmd"
     print_output_header
     
     # Run command and capture output, preserving exit code
     local output_file=$(mktemp)
     set +e  # Temporarily disable exit on error
     
-    # Check if this is the init command (should run in parent directory)
-    if [[ "$cmd" == "init"* ]]; then
-        # Run init in current directory (parent directory)
-        $EGG_CLI $cmd 2>&1 | tee "$output_file" | while IFS= read -r line; do echo -e "${GRAY}│${NC} $line"; done
-    else
-        # Run other commands in current directory (should be in project directory after line 259)
-        $EGG_CLI $cmd 2>&1 | tee "$output_file" | while IFS= read -r line; do echo -e "${GRAY}│${NC} $line"; done
-    fi
+    # Run command and format output
+    $EGG_CLI $cmd 2>&1 | tee "$output_file" | while IFS= read -r line; do 
+        printf "${CYAN}│${RESET} %s\n" "$line"
+    done
     
     local exit_code=${PIPESTATUS[0]}
     set -e  # Re-enable exit on error
@@ -122,13 +119,12 @@ run_egg_command() {
         
         # Special handling for doctor command failure
         if [[ "$description" == *"doctor"* ]]; then
-            echo ""
+            printf "\n"
             print_error "Environment check failed!"
             print_warning "Please install missing components by running:"
-            echo "  ${EGG_CLI} doctor --install"
-            echo ""
-            print_error "Test suite terminated"
-            exit 1
+            printf "  %s doctor --install\n" "$EGG_CLI"
+            printf "\n"
+            exit_with_error "Test suite terminated due to environment issues"
         fi
         
         return $exit_code
@@ -140,44 +136,92 @@ check_success() {
     if [ $? -eq 0 ]; then
         print_success "$1"
     else
-        print_error "$1 failed"
-        exit 1
+        exit_with_error "$1 failed"
     fi
 }
 
-# Check if file exists
+# Check if file exists (wrapper for consistency with test script)
 check_file() {
-    if [ -f "$1" ]; then
-        print_success "File exists: $1"
+    local file="$1"
+    if [ -f "$file" ]; then
+        print_success "File exists: $file"
     else
-        print_error "File missing: $1"
-        exit 1
+        exit_with_error "File missing: $file"
     fi
 }
 
-# Check if directory exists
+# Check if directory exists (wrapper for consistency with test script)
 check_dir() {
-    if [ -d "$1" ]; then
-        print_success "Directory exists: $1"
+    local dir="$1"
+    if [ -d "$dir" ]; then
+        print_success "Directory exists: $dir"
     else
-        print_error "Directory missing: $1"
-        exit 1
+        exit_with_error "Directory missing: $dir"
     fi
 }
 
 # Check if file contains expected content
 check_file_content() {
-    local file=$1
-    local expected=$2
-    local description=$3
+    local file="$1"
+    local expected="$2"
+    local description="$3"
+    
+    if [ ! -f "$file" ]; then
+        exit_with_error "File not found: $file"
+    fi
     
     if grep -q "$expected" "$file"; then
         print_success "$description: found in $file"
     else
         print_error "$description: not found in $file"
         print_info "Expected: $expected"
-        exit 1
+        exit_with_error "Content validation failed for $file"
     fi
+}
+
+# Wait for endpoint with retry (non-fatal version for tests)
+wait_for_endpoint() {
+    local url="$1"
+    local max_attempts="${2:-30}"
+    local description="${3:-Endpoint}"
+    local attempt=1
+    
+    print_info "Waiting for $description (max ${max_attempts}s)..."
+    while [ $attempt -le $max_attempts ]; do
+        if curl -sf "$url" > /dev/null 2>&1; then
+            print_success "$description ready (attempt $attempt/$max_attempts)"
+            return 0
+        fi
+        printf "."
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+    printf "\n"
+    print_warning "$description not ready after $max_attempts attempts"
+    return 1
+}
+
+# Wait for endpoint with pattern match (non-fatal version for tests)
+wait_for_endpoint_pattern() {
+    local url="$1"
+    local pattern="$2"
+    local max_attempts="${3:-30}"
+    local description="${4:-Endpoint}"
+    local attempt=1
+    
+    print_info "Waiting for $description (max ${max_attempts}s)..."
+    while [ $attempt -le $max_attempts ]; do
+        if curl -sf "$url" 2>/dev/null | grep -q "$pattern"; then
+            print_success "$description ready (attempt $attempt/$max_attempts)"
+            return 0
+        fi
+        printf "."
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+    printf "\n"
+    print_warning "$description not ready after $max_attempts attempts"
+    return 1
 }
 
 # ==============================================================================
@@ -189,9 +233,17 @@ cleanup() {
         print_info "Keeping test directory: $TEST_DIR"
     else
         print_info "Cleaning up test directory..."
-        cd ..
-        rm -rf "$TEST_DIR"
-        print_success "Cleanup completed"
+        if [ -d "$TEST_DIR" ]; then
+            rm -rf "$TEST_DIR"
+            print_success "Cleanup completed: $TEST_DIR"
+        else
+            print_info "Test directory already removed"
+        fi
+        # Clean up tmp workspace if empty
+        if [ -d "$TEST_WORKSPACE" ] && [ -z "$(ls -A "$TEST_WORKSPACE")" ]; then
+            rmdir "$TEST_WORKSPACE"
+            print_info "Removed empty workspace: $TEST_WORKSPACE"
+        fi
     fi
 }
 
@@ -203,37 +255,46 @@ trap 'print_error "Test failed at line $LINENO"; cleanup' ERR
 # ==============================================================================
 
 print_header "Egg CLI Integration Test"
-echo ""
-
-# Get script directory (egg project root)
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+printf "\n"
 
 print_info "Project root: $PROJECT_ROOT"
+print_info "CLI root: $CLI_ROOT"
+print_info "Test workspace: $TEST_WORKSPACE"
 print_info "Test directory: $TEST_DIR"
-echo ""
+printf "\n"
 
-# Always rebuild egg CLI for fresh testing
-print_info "Building egg CLI for testing..."
-cd "$PROJECT_ROOT"
-make build-cli
-check_success "CLI build"
-echo ""
+# Get absolute path to egg CLI (should be already built by Makefile)
+EGG_CLI="$CLI_ROOT/bin/egg"
+print_step "Setup" "Verifying egg CLI binary"
 
-# Get absolute path to egg CLI
-EGG_CLI="$PROJECT_ROOT/cli/bin/egg"
-print_info "Using egg CLI: $EGG_CLI"
+# Verify CLI binary exists
+if [ ! -f "$EGG_CLI" ]; then
+    exit_with_error "CLI binary not found: $EGG_CLI (run 'make build' first)"
+fi
+
+if [ ! -x "$EGG_CLI" ]; then
+    exit_with_error "CLI binary is not executable: $EGG_CLI"
+fi
+
+print_success "CLI binary ready: $EGG_CLI"
+printf "\n"
 
 # ==============================================================================
 # Cleanup: Remove any existing test directory
 # ==============================================================================
 
+# Create test workspace directory
+mkdir -p "$TEST_WORKSPACE"
+cd "$TEST_WORKSPACE"
+print_info "Working directory: $(pwd)"
+
 # Clean up any existing test directory BEFORE running tests
-if [ -d "$TEST_DIR" ]; then
+if [ -d "$PROJECT_NAME" ]; then
     print_info "Removing existing test directory..."
-    rm -rf "$TEST_DIR"
+    rm -rf "$PROJECT_NAME"
     print_success "Removed existing test directory"
 fi
+printf "\n"
 
 # ==============================================================================
 # Test 0: Environment Check (egg doctor) - Run First
@@ -253,11 +314,10 @@ run_egg_command "Project Initialization (egg init)" init \
     --version v1.0.0
 
 # Enter the created project directory
-if [ ! -d "$TEST_DIR" ]; then
-    print_error "Project directory '$TEST_DIR' was not created by egg init"
-    exit 1
+if [ ! -d "$PROJECT_NAME" ]; then
+    exit_with_error "Project directory '$PROJECT_NAME' was not created by egg init"
 fi
-cd "$TEST_DIR"
+cd "$PROJECT_NAME"
 print_info "Changed to project directory: $(pwd)"
 
 # Validate directory structure
@@ -333,9 +393,7 @@ check_file_content "backend/$BACKEND_SERVICE/internal/model/errors.go" "Err.*Not
 
 # Note: Makefile no longer generated - services built with egg CLI
 # Makefiles have been removed in favor of egg build commands
-print_section "Validating build configuration"
-check_file "../../docker/Dockerfile.backend"
-check_file "../../docker/nginx.conf"
+# Docker configuration already validated in Test 1
 
 # Validate proto file generation (crud)
 print_section "Validating proto file generation (crud)"
@@ -531,10 +589,8 @@ else
     
     for attempt in $(seq 1 $MAX_RETRIES); do
         print_info "API generation attempt $attempt/$MAX_RETRIES..."
-        print_cli_section "API Generation (attempt $attempt)"
-        print_cli_command "$EGG_CLI api generate"
         
-        # Run command directly and capture output
+        # Run command (it will print the command internally)
         if run_egg_command "API Generation (attempt $attempt)" api generate; then
             API_SUCCESS=true
             break
@@ -604,12 +660,14 @@ print_section "Building all backend services"
 
 # Only build if API generation was successful (services depend on generated code)
 if [ "$API_SUCCESS" = true ]; then
-    # Use egg build command (unified build standard)
-    run_egg_command "Build Backend Services (egg build backend --all)" build backend --all
+    # Build all services using egg build all command
+    print_section "Building all services"
+    
+    run_egg_command "Build all services (egg build all)" build all
 
-    # Verify binaries exist
-    check_file "backend/$BACKEND_SERVICE/bin/server"
-    check_file "backend/$BACKEND_PING_SERVICE/bin/server"
+    # Verify backend binaries were created
+    check_file "bin/backend/$BACKEND_SERVICE/server"
+    check_file "bin/backend/$BACKEND_PING_SERVICE/server"
 
     print_success "All backend services compiled successfully (2 services)"
 else
@@ -714,20 +772,20 @@ if [ "$API_SUCCESS" = true ]; then
     # Test building a specific service
     run_egg_command "Build single service (egg build backend)" build backend $BACKEND_SERVICE
 
-    # Verify binary was created
+    # Verify binary was created (note: egg build backend outputs to bin/backend/<service>/server)
     print_section "Validating build output"
-    if [ -f "backend/$BACKEND_SERVICE/bin/server" ]; then
-        print_success "Binary created: backend/$BACKEND_SERVICE/bin/server"
+    if [ -f "bin/backend/$BACKEND_SERVICE/server" ]; then
+        print_success "Binary created: bin/backend/$BACKEND_SERVICE/server"
         
         # Check if binary is executable
-        if [ -x "backend/$BACKEND_SERVICE/bin/server" ]; then
+        if [ -x "bin/backend/$BACKEND_SERVICE/server" ]; then
             print_success "Binary is executable"
         else
             print_error "Binary is not executable"
             exit 1
         fi
     else
-        print_error "Binary not found: backend/$BACKEND_SERVICE/bin/server"
+        print_error "Binary not found: bin/backend/$BACKEND_SERVICE/server"
         exit 1
     fi
 else
@@ -939,32 +997,23 @@ if [ "$API_SUCCESS" = true ]; then
     if docker compose up -d 2>&1; then
         print_success "Services started successfully"
         
-        # Wait for services to be ready
-        print_info "Waiting for services to be ready..."
-        sleep 10
-        
         # Check service status
         print_section "Checking service status"
         print_command "docker compose ps"
         docker compose ps
         
-        # Test ping service endpoint
-        print_section "Testing ping service"
-        print_command "curl -s http://localhost:8080/health"
-        if curl -s http://localhost:8080/health > /dev/null 2>&1; then
-            print_success "Ping service health endpoint accessible"
-        else
-            print_warning "Ping service health endpoint not accessible (may need more time)"
-        fi
+        # Test ping service health endpoint with retry
+        print_section "Testing ping service health endpoint"
+        wait_for_endpoint "http://localhost:8080/health" 30 "ping service health"
         
-        # Test user service metrics endpoint
-        print_section "Testing user service metrics"
-        print_command "curl -s http://localhost:9091/metrics"
-        if curl -s http://localhost:9091/metrics | grep -q "go_"; then
-            print_success "User service metrics endpoint accessible"
-        else
-            print_warning "User service metrics endpoint not accessible (may need more time)"
-        fi
+        # Test user service metrics endpoint with retry
+        print_section "Testing user service metrics endpoint"
+        wait_for_endpoint_pattern "http://localhost:9091/metrics" "go_" 30 "user service metrics"
+        
+        # Get container logs for debugging (last 20 lines)
+        print_section "Container logs (last 20 lines)"
+        print_command "docker compose logs --tail=20"
+        docker compose logs --tail=20 2>&1 | head -50
         
         # Stop services
         print_section "Stopping services"
@@ -990,106 +1039,107 @@ print_header "Test Summary"
 print_success "All integration tests completed successfully"
 
 print_section "Commands Tested"
-echo "  [✓] egg doctor                           - Environment diagnostic check"
-echo "  [✓] egg init                             - Project initialization"
-echo "  [✓] egg create backend                   - Backend service with local modules"
-echo "  [✓] egg create backend --proto crud      - Backend with CRUD proto (user)"
-echo "  [✓] egg create backend --proto crud      - Backend with CRUD proto (ping)"
-echo "  [✓] egg create backend --force           - Force recreate existing service"
-echo "  [✓] egg create frontend                  - Frontend service (Flutter with Dart naming)"
-echo "  [✓] egg api init                         - API definition initialization"
-echo "  [✓] egg api generate                     - Code generation from protobuf"
-echo "  [✓] egg compose generate                 - Docker Compose configuration generation"
-echo "  [✓] egg build backend --all              - Build all backend binaries"
-echo "  [✓] egg build docker <service>           - Build Docker images"
-echo "  [✓] egg kube generate                    - Unified Helm chart generation"
-echo "  [✓] egg check                            - Configuration validation"
-echo "  [✓] buf generate                         - API code generation verification"
-echo "  [✓] go vet                               - Syntax validation"
+printf "  ${GREEN}[✓]${RESET} egg doctor                           - Environment diagnostic check\n"
+printf "  ${GREEN}[✓]${RESET} egg init                             - Project initialization\n"
+printf "  ${GREEN}[✓]${RESET} egg create backend                   - Backend service with local modules\n"
+printf "  ${GREEN}[✓]${RESET} egg create backend --proto crud      - Backend with CRUD proto (user)\n"
+printf "  ${GREEN}[✓]${RESET} egg create backend --proto crud      - Backend with CRUD proto (ping)\n"
+printf "  ${GREEN}[✓]${RESET} egg create backend --force           - Force recreate existing service\n"
+printf "  ${GREEN}[✓]${RESET} egg create frontend                  - Frontend service (Flutter with Dart naming)\n"
+printf "  ${GREEN}[✓]${RESET} egg api init                         - API definition initialization\n"
+printf "  ${GREEN}[✓]${RESET} egg api generate                     - Code generation from protobuf\n"
+printf "  ${GREEN}[✓]${RESET} egg compose generate                 - Docker Compose configuration generation\n"
+printf "  ${GREEN}[✓]${RESET} egg build all                       - Build all services\n"
+printf "  ${GREEN}[✓]${RESET} egg build backend <service>         - Build single backend service\n"
+printf "  ${GREEN}[✓]${RESET} egg build docker <service>           - Build Docker images\n"
+printf "  ${GREEN}[✓]${RESET} egg kube generate                    - Unified Helm chart generation\n"
+printf "  ${GREEN}[✓]${RESET} egg check                            - Configuration validation\n"
+printf "  ${GREEN}[✓]${RESET} buf generate                         - API code generation verification\n"
+printf "  ${GREEN}[✓]${RESET} go vet                               - Syntax validation\n"
 
 print_section "Features Validated"
-echo "  [✓] Project initialization with custom configuration"
-echo "  [✓] Backend service generation with local module dependencies"
-echo "  [✓] Proto template generation (echo, crud)"
-echo "  [✓] Service name validation (reject -service suffix)"
-echo "  [✓] Complete layered structure (7 core files)"
-echo "  [✓] Docker configuration (Dockerfile.backend, nginx.conf)"
-echo "  [✓] Image name auto-calculation (no image_name in config)"
-echo "  [✓] Backend-scoped workspace (backend/go.work with ../gen/go)"
-echo "  [✓] gen/go independent module (module_prefix/gen/go)"
-echo "  [✓] Automatic workspace integration for generated code"
-echo "  [✓] Force flag for service recreation"
-echo "  [✓] Duplicate service prevention"
-echo "  [✓] Frontend service generation (Flutter)"
-echo "  [✓] Service registration in egg.yaml"
-echo "  [✓] Infrastructure configuration (MySQL, etc.)"
-echo "  [✓] API configuration setup"
-echo "  [✓] Directory structure generation"
-echo "  [✓] Template rendering with all variables"
-echo "  [✓] Configuration validation (egg check)"
-echo "  [✓] .gitignore generation"
-echo "  [✓] Connect service implementation"
-echo "  [✓] Database configuration integration"
-echo "  [✓] Docker Compose configuration (deploy/compose/)"
-echo "  [✓] Docker Compose service listing"
-echo "  [✓] Docker Compose .env file generation"
-echo "  [✓] Runtime image checking (eggybyte-go-alpine)"
-echo "  [✓] Unified build system (egg build backend/docker)"
-echo "  [✓] Parallel service builds (when applicable)"
-echo "  [✓] Docker image building with standardized flow"
-echo "  [✓] Unified Helm chart generation (project-level)"
-echo "  [✓] Helm chart linting"
-echo "  [✓] Helm template rendering"
-echo "  [✓] Binary executable verification"
-echo "  [✓] Multiple service management in single workspace"
-echo "  [✓] Proto code generation verification (buf generate)"
-echo "  [✓] Generated Go code compilation"
-echo "  [✓] Code syntax validation (go vet)"
-echo "  [✓] Docker Compose service startup"
-echo "  [✓] Service health endpoint validation"
-echo "  [✓] Service metrics endpoint validation"
+printf "  ${GREEN}[✓]${RESET} Project initialization with custom configuration\n"
+printf "  ${GREEN}[✓]${RESET} Backend service generation with local module dependencies\n"
+printf "  ${GREEN}[✓]${RESET} Proto template generation (echo, crud)\n"
+printf "  ${GREEN}[✓]${RESET} Service name validation (reject -service suffix)\n"
+printf "  ${GREEN}[✓]${RESET} Complete layered structure (7 core files)\n"
+printf "  ${GREEN}[✓]${RESET} Docker configuration (Dockerfile.backend, nginx.conf)\n"
+printf "  ${GREEN}[✓]${RESET} Image name auto-calculation (no image_name in config)\n"
+printf "  ${GREEN}[✓]${RESET} Backend-scoped workspace (backend/go.work with ../gen/go)\n"
+printf "  ${GREEN}[✓]${RESET} gen/go independent module (module_prefix/gen/go)\n"
+printf "  ${GREEN}[✓]${RESET} Automatic workspace integration for generated code\n"
+printf "  ${GREEN}[✓]${RESET} Force flag for service recreation\n"
+printf "  ${GREEN}[✓]${RESET} Duplicate service prevention\n"
+printf "  ${GREEN}[✓]${RESET} Frontend service generation (Flutter)\n"
+printf "  ${GREEN}[✓]${RESET} Service registration in egg.yaml\n"
+printf "  ${GREEN}[✓]${RESET} Infrastructure configuration (MySQL, etc.)\n"
+printf "  ${GREEN}[✓]${RESET} API configuration setup\n"
+printf "  ${GREEN}[✓]${RESET} Directory structure generation\n"
+printf "  ${GREEN}[✓]${RESET} Template rendering with all variables\n"
+printf "  ${GREEN}[✓]${RESET} Configuration validation (egg check)\n"
+printf "  ${GREEN}[✓]${RESET} .gitignore generation\n"
+printf "  ${GREEN}[✓]${RESET} Connect service implementation\n"
+printf "  ${GREEN}[✓]${RESET} Database configuration integration\n"
+printf "  ${GREEN}[✓]${RESET} Docker Compose configuration (deploy/compose/)\n"
+printf "  ${GREEN}[✓]${RESET} Docker Compose service listing\n"
+printf "  ${GREEN}[✓]${RESET} Docker Compose .env file generation\n"
+printf "  ${GREEN}[✓]${RESET} Runtime image checking (eggybyte-go-alpine)\n"
+printf "  ${GREEN}[✓]${RESET} Unified build system (egg build backend/docker)\n"
+printf "  ${GREEN}[✓]${RESET} Individual service builds (per service)\n"
+printf "  ${GREEN}[✓]${RESET} Docker image building with standardized flow\n"
+printf "  ${GREEN}[✓]${RESET} Unified Helm chart generation (project-level)\n"
+printf "  ${GREEN}[✓]${RESET} Helm chart linting\n"
+printf "  ${GREEN}[✓]${RESET} Helm template rendering\n"
+printf "  ${GREEN}[✓]${RESET} Binary executable verification\n"
+printf "  ${GREEN}[✓]${RESET} Multiple service management in single workspace\n"
+printf "  ${GREEN}[✓]${RESET} Proto code generation verification (buf generate)\n"
+printf "  ${GREEN}[✓]${RESET} Generated Go code compilation\n"
+printf "  ${GREEN}[✓]${RESET} Code syntax validation (go vet)\n"
+printf "  ${GREEN}[✓]${RESET} Docker Compose service startup\n"
+printf "  ${GREEN}[✓]${RESET} Service health endpoint validation\n"
+printf "  ${GREEN}[✓]${RESET} Service metrics endpoint validation\n"
 
 print_section "Critical Validations"
-echo "  [✓] Local egg modules properly replaced in go.mod"
-echo "  [✓] Backend-scoped workspace architecture implemented"
-echo "  [✓]   - backend/go.work manages all Go code"
-echo "  [✓]   - ../gen/go added to workspace automatically"
-echo "  [✓]   - gen/go module path: <module_prefix>/gen/go"
-echo "  [✓]   - Service modules: <module_prefix>/backend/<service>"
-echo "  [✓] Root directory remains language-agnostic (no go.mod)"
-echo "  [✓] All required directories and files generated"
-echo "  [✓] Configuration files contain correct values"
-echo "  [✓] Service templates include proper imports"
-echo "  [✓] Generated files follow project standards"
-echo "  [✓] Complete layered structure (handler/service/repository/model)"
-echo "  [✓] Proto templates correctly generated (echo, crud, none)"
-echo "  [✓] Docker configuration for containerized builds"
-echo "  [✓] Service name validation prevents -service suffix"
-echo "  [✓] Custom port configuration works correctly"
-echo "  [✓] Force flag allows service recreation"
-echo "  [✓] Duplicate service prevention without force flag"
-echo "  [✓] Image names automatically calculated (project-service pattern)"
-echo "  [✓] Connect service properly implements business logic"
-echo "  [✓] Database DSN correctly configured for compose"
-echo "  [✓] Docker images use runtime image from registry"
-echo "  [✓] Compose files output to deploy/compose/ directory"
-echo "  [✓] All backend services compile without errors (2 services)"
-echo "  [✓] Docker Compose configuration is syntactically valid"
-echo "  [✓] Docker Compose can list all services"
-echo "  [✓] Docker image builds successfully"
-echo "  [✓] Docker image exists in local registry"
-echo "  [✓] Built binaries are executable"
-echo "  [✓] egg build command produces valid binaries"
-echo "  [✓] Unified Helm chart follows standard structure"
-echo "  [✓] Helm chart contains all services in values.yaml"
-echo "  [✓] Helm templates render correctly"
-echo "  [✓] Helm charts pass lint validation"
-echo "  [✓] egg.yaml contains all registered services"
-echo "  [✓] Infrastructure configuration is complete"
-echo "  [✓] Workspace automatically updated for each new service"
-echo "  [✓] Proto files correctly generate Go code"
-echo "  [✓] Generated code compiles without errors"
-echo "  [✓] Generated code passes static analysis"
+printf "  ${GREEN}[✓]${RESET} Local egg modules properly replaced in go.mod\n"
+printf "  ${GREEN}[✓]${RESET} Backend-scoped workspace architecture implemented\n"
+printf "  ${GREEN}[✓]${RESET}   - backend/go.work manages all Go code\n"
+printf "  ${GREEN}[✓]${RESET}   - ../gen/go added to workspace automatically\n"
+printf "  ${GREEN}[✓]${RESET}   - gen/go module path: <module_prefix>/gen/go\n"
+printf "  ${GREEN}[✓]${RESET}   - Service modules: <module_prefix>/backend/<service>\n"
+printf "  ${GREEN}[✓]${RESET} Root directory remains language-agnostic (no go.mod)\n"
+printf "  ${GREEN}[✓]${RESET} All required directories and files generated\n"
+printf "  ${GREEN}[✓]${RESET} Configuration files contain correct values\n"
+printf "  ${GREEN}[✓]${RESET} Service templates include proper imports\n"
+printf "  ${GREEN}[✓]${RESET} Generated files follow project standards\n"
+printf "  ${GREEN}[✓]${RESET} Complete layered structure (handler/service/repository/model)\n"
+printf "  ${GREEN}[✓]${RESET} Proto templates correctly generated (echo, crud, none)\n"
+printf "  ${GREEN}[✓]${RESET} Docker configuration for containerized builds\n"
+printf "  ${GREEN}[✓]${RESET} Service name validation prevents -service suffix\n"
+printf "  ${GREEN}[✓]${RESET} Custom port configuration works correctly\n"
+printf "  ${GREEN}[✓]${RESET} Force flag allows service recreation\n"
+printf "  ${GREEN}[✓]${RESET} Duplicate service prevention without force flag\n"
+printf "  ${GREEN}[✓]${RESET} Image names automatically calculated (project-service pattern)\n"
+printf "  ${GREEN}[✓]${RESET} Connect service properly implements business logic\n"
+printf "  ${GREEN}[✓]${RESET} Database DSN correctly configured for compose\n"
+printf "  ${GREEN}[✓]${RESET} Docker images use runtime image from registry\n"
+printf "  ${GREEN}[✓]${RESET} Compose files output to deploy/compose/ directory\n"
+printf "  ${GREEN}[✓]${RESET} All backend services compile without errors (2 services)\n"
+printf "  ${GREEN}[✓]${RESET} Docker Compose configuration is syntactically valid\n"
+printf "  ${GREEN}[✓]${RESET} Docker Compose can list all services\n"
+printf "  ${GREEN}[✓]${RESET} Docker image builds successfully\n"
+printf "  ${GREEN}[✓]${RESET} Docker image exists in local registry\n"
+printf "  ${GREEN}[✓]${RESET} Built binaries are executable\n"
+printf "  ${GREEN}[✓]${RESET} egg build command produces valid binaries\n"
+printf "  ${GREEN}[✓]${RESET} Unified Helm chart follows standard structure\n"
+printf "  ${GREEN}[✓]${RESET} Helm chart contains all services in values.yaml\n"
+printf "  ${GREEN}[✓]${RESET} Helm templates render correctly\n"
+printf "  ${GREEN}[✓]${RESET} Helm charts pass lint validation\n"
+printf "  ${GREEN}[✓]${RESET} egg.yaml contains all registered services\n"
+printf "  ${GREEN}[✓]${RESET} Infrastructure configuration is complete\n"
+printf "  ${GREEN}[✓]${RESET} Workspace automatically updated for each new service\n"
+printf "  ${GREEN}[✓]${RESET} Proto files correctly generate Go code\n"
+printf "  ${GREEN}[✓]${RESET} Generated code compiles without errors\n"
+printf "  ${GREEN}[✓]${RESET} Generated code passes static analysis\n"
 
 # ==============================================================================
 # Cleanup
@@ -1098,5 +1148,13 @@ echo "  [✓] Generated code passes static analysis"
 cleanup
 
 print_header "Integration Test Complete"
+printf "\n"
 print_success "Egg CLI integration test suite completed successfully"
+printf "\n"
+if [ "$KEEP_TEST_DIR" = true ]; then
+    print_info "Test artifacts preserved in: $TEST_DIR"
+else
+    print_info "Test artifacts cleaned up"
+fi
+printf "\n"
 

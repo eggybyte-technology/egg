@@ -1,20 +1,21 @@
-// Package obsx provides OpenTelemetry and Prometheus provider initialization.
+// Package obsx provides Prometheus-based metrics collection for Go applications.
 //
 // Overview:
-//   - Responsibility: Bootstrap OpenTelemetry tracing and metrics providers
+//   - Responsibility: Bootstrap OpenTelemetry metrics provider with Prometheus export
 //   - Key Types: Options for configuration, Provider for managing lifecycle
 //   - Concurrency Model: Provider is safe for concurrent use
 //   - Error Semantics: NewProvider returns error for initialization failures
-//   - Performance Notes: Supports configurable sampling and resource attributes
+//   - Performance Notes: Lightweight metrics collection without tracing overhead
 //
 // Usage:
 //
 //	provider, err := obsx.NewProvider(ctx, obsx.Options{
 //	  ServiceName: "my-service",
 //	  ServiceVersion: "1.0.0",
-//	  OTLPEndpoint: "otel-collector:4317",
-//	  EnableRuntimeMetrics: true,
 //	})
+//	if err := provider.EnableRuntimeMetrics(ctx); err != nil {
+//	    log.Fatal(err)
+//	}
 //	defer provider.Shutdown(ctx)
 package obsx
 
@@ -26,28 +27,19 @@ import (
 	"go.eggybyte.com/egg/obsx/internal"
 	api "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// Options holds configuration for the observability provider.
+// Options holds configuration for the metrics provider.
 type Options struct {
-	ServiceName          string            // Service name for tracing and metrics
-	ServiceVersion       string            // Service version
-	OTLPEndpoint         string            // OTLP endpoint (e.g., "otel-collector:4317")
-	EnableRuntimeMetrics bool              // Enable Go runtime metrics
-	ResourceAttrs        map[string]string // Additional resource attributes
-	TraceSamplerRatio    float64           // Trace sampling ratio (0.0-1.0)
+	ServiceName    string            // Service name for metrics
+	ServiceVersion string            // Service version
+	ResourceAttrs  map[string]string // Additional resource attributes
 }
 
-// Provider manages OpenTelemetry tracing and metrics providers.
+// Provider manages OpenTelemetry metrics provider with Prometheus export.
 // The provider must be shut down when no longer needed.
 type Provider struct {
 	impl *internal.Provider
-}
-
-// TracerProvider returns the OpenTelemetry tracer provider.
-func (p *Provider) TracerProvider() *sdktrace.TracerProvider {
-	return p.impl.TracerProvider
 }
 
 // MeterProvider returns the OpenTelemetry meter provider.
@@ -96,7 +88,7 @@ func (p *Provider) Meter(name string) api.Meter {
 	return p.impl.MeterProvider.Meter(name)
 }
 
-// NewProvider creates a new observability provider with the given options.
+// NewProvider creates a new metrics provider with Prometheus export.
 // The provider must be shut down when no longer needed.
 //
 // Parameters:
@@ -111,14 +103,12 @@ func (p *Provider) Meter(name string) api.Meter {
 //   - Safe to call from multiple goroutines
 //
 // Performance:
-//   - Default sampling ratio is 10% if not specified
+//   - Lightweight metrics collection with local Prometheus scraping only
 func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	impl, err := internal.NewProvider(ctx, internal.ProviderOptions{
-		ServiceName:       opts.ServiceName,
-		ServiceVersion:    opts.ServiceVersion,
-		OTLPEndpoint:      opts.OTLPEndpoint,
-		ResourceAttrs:     opts.ResourceAttrs,
-		TraceSamplerRatio: opts.TraceSamplerRatio,
+		ServiceName:    opts.ServiceName,
+		ServiceVersion: opts.ServiceVersion,
+		ResourceAttrs:  opts.ResourceAttrs,
 	})
 	if err != nil {
 		return nil, err

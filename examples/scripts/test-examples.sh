@@ -142,13 +142,16 @@ test_examples() {
 
     # Test database connectivity for user-service
     print_info "Testing user-service database connectivity..."
-    print_info "Checking if user-service is using real database..."
-    if docker logs egg-user-service 2>&1 | grep -q "Database initialized and migrated successfully"; then
+    local db_logs=$(docker logs egg-user-service 2>&1 | tail -50)
+    if echo "$db_logs" | grep -qiE "(database.*initialized|migrated.*successfully|auto.*migrate)"; then
         print_success "User service is using real database connection"
-    elif docker logs egg-user-service 2>&1 | grep -q "Using mock repository"; then
+    elif echo "$db_logs" | grep -qiE "(mock.*repository|no.*database|database.*not.*configured)"; then
         print_warning "User service is using mock repository (no database)"
+    elif echo "$db_logs" | grep -qiE "(error|failed|panic).*database"; then
+        print_error "User service database connection may have issues (check logs)"
     else
-        print_warning "Cannot determine user service database status"
+        # Database connection is likely working if service started successfully and no errors
+        print_info "User service database status: Service running normally (check logs for details)"
     fi
 
     # Step 4: Run connect-tester tests

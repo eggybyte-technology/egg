@@ -521,20 +521,27 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 			return fmt.Errorf("failed to find egg project root: %w", err)
 		}
 
-		// Add replace directives to use local modules directly
-		replaceDeps := map[string]string{
-			"go.eggybyte.com/egg/core":     filepath.Join(eggRoot, "core"),
-			"go.eggybyte.com/egg/logx":     filepath.Join(eggRoot, "logx"),
-			"go.eggybyte.com/egg/configx":  filepath.Join(eggRoot, "configx"),
-			"go.eggybyte.com/egg/obsx":     filepath.Join(eggRoot, "obsx"),
-			"go.eggybyte.com/egg/connectx": filepath.Join(eggRoot, "connectx"),
-			"go.eggybyte.com/egg/runtimex": filepath.Join(eggRoot, "runtimex"),
-			"go.eggybyte.com/egg/servicex": filepath.Join(eggRoot, "servicex"),
-			"go.eggybyte.com/egg/storex":   filepath.Join(eggRoot, "storex"),
+		// Calculate relative path from service directory to egg modules
+		// This is critical for Docker builds to work
+		serviceAbsPath, err := filepath.Abs(serviceDir)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path for service: %w", err)
 		}
 
-		for modulePath, localPath := range replaceDeps {
-			if _, err := serviceRunner.Go(ctx, "mod", "edit", "-replace", fmt.Sprintf("%s=%s", modulePath, localPath)); err != nil {
+		// Define egg modules with their paths
+		eggModules := []string{"core", "logx", "configx", "obsx", "connectx", "runtimex", "servicex", "storex"}
+		
+		for _, module := range eggModules {
+			moduleAbsPath := filepath.Join(eggRoot, module)
+			
+			// Calculate relative path from service dir to egg module
+			relPath, err := filepath.Rel(serviceAbsPath, moduleAbsPath)
+			if err != nil {
+				return fmt.Errorf("failed to calculate relative path for %s: %w", module, err)
+			}
+			
+			modulePath := fmt.Sprintf("go.eggybyte.com/egg/%s", module)
+			if _, err := serviceRunner.Go(ctx, "mod", "edit", "-replace", fmt.Sprintf("%s=%s", modulePath, relPath)); err != nil {
 				return fmt.Errorf("failed to add replace directive for %s: %w", modulePath, err)
 			}
 		}

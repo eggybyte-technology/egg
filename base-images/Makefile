@@ -1,37 +1,34 @@
 # Makefile for Egg Framework Base Images
 .PHONY: help build-all build-builder build-runtime push-all clean
 
-# Color definitions for enhanced output
-RED := \033[0;31m
-GREEN := \033[0;32m
-YELLOW := \033[1;33m
-BLUE := \033[0;34m
-CYAN := \033[0;36m
-BOLD := \033[1m
-RESET := \033[0m
+# Logger script for unified output
+LOGGER := ../scripts/logger.sh
 
-# Output formatting functions
+# Helper function to call logger.sh functions
+# Usage: $(call log,function_name,message)
+define log
+	@bash -c 'source $(LOGGER) && $(1) "$(2)"'
+endef
+
+# Output formatting functions (using logger.sh)
 define print_header
-	@echo ""
-	@echo "$(BLUE)================================================================================$(RESET)"
-	@echo "$(BLUE)$(BOLD)▶ $(1)$(RESET)"
-	@echo "$(BLUE)================================================================================$(RESET)"
+	$(call log,print_header,$(1))
 endef
 
 define print_success
-	@echo "$(GREEN)[SUCCESS]$(RESET) $(1)"
+	$(call log,print_success,$(1))
 endef
 
 define print_error
-	@echo "$(RED)[ERROR]$(RESET) $(1)"
+	$(call log,print_error,$(1))
 endef
 
 define print_info
-	@echo "$(CYAN)[INFO]$(RESET) $(1)"
+	$(call log,print_info,$(1))
 endef
 
 define print_warning
-	@echo "$(YELLOW)[WARNING]$(RESET) $(1)"
+	$(call log,print_warning,$(1))
 endef
 
 # Configuration
@@ -46,33 +43,35 @@ PUSH ?= false
 
 # Default target
 help:
-	@echo "$(BOLD)$(BLUE)Egg Framework - Base Images$(RESET)"
-	@echo ""
-	@echo "$(BOLD)Purpose:$(RESET)"
-	@echo "  Build foundation Docker images for Egg services"
-	@echo ""
-	@echo "$(BOLD)Available Targets:$(RESET)"
-	@echo "  $(CYAN)build-all$(RESET)       - Build both builder and runtime images"
-	@echo "  $(CYAN)build-builder$(RESET)   - Build Go builder image (compilation environment)"
-	@echo "  $(CYAN)build-runtime$(RESET)   - Build Alpine runtime image (minimal execution environment)"
-	@echo "  $(CYAN)push-all$(RESET)        - Build and push all images to registry"
-	@echo "  $(CYAN)clean$(RESET)           - Remove local images"
-	@echo ""
-	@echo "$(BOLD)Configuration:$(RESET)"
-	@echo "  DOCKER_REGISTRY  = $(DOCKER_REGISTRY)"
-	@echo "  GO_VERSION       = $(GO_VERSION)"
-	@echo "  ALPINE_VERSION   = $(ALPINE_VERSION)"
-	@echo "  DOCKER_PLATFORM  = $(DOCKER_PLATFORM)"
-	@echo "  PUSH             = $(PUSH)"
-	@echo ""
-	@echo "$(BOLD)Usage Examples:$(RESET)"
-	@echo "  $(CYAN)make build-all$(RESET)                           # Build locally for current arch"
-	@echo "  $(CYAN)make build-all PUSH=true$(RESET)                 # Build multi-arch and push"
-	@echo "  $(CYAN)make build-builder GO_VERSION=1.25.2$(RESET)     # Build with specific Go version"
-	@echo ""
-	@echo "$(BOLD)Images:$(RESET)"
-	@echo "  Builder: $(BUILDER_IMAGE)"
-	@echo "  Runtime: $(RUNTIME_IMAGE)"
+	@source $(LOGGER); \
+	echo ""; \
+	printf "$${BOLD}$${BLUE}Egg Framework - Base Images$${RESET}\n"; \
+	echo ""; \
+	printf "$${BOLD}Purpose:$${RESET}\n"; \
+	echo "  Build foundation Docker images for Egg services"; \
+	echo ""; \
+	printf "$${BOLD}Available Targets:$${RESET}\n"; \
+	printf "  $${CYAN}build-all$${RESET}       - Build both builder and runtime images\n"; \
+	printf "  $${CYAN}build-builder$${RESET}   - Build Go builder image (compilation environment)\n"; \
+	printf "  $${CYAN}build-runtime$${RESET}   - Build Alpine runtime image (minimal execution environment)\n"; \
+	printf "  $${CYAN}push-all$${RESET}        - Build and push all images to registry\n"; \
+	printf "  $${CYAN}clean$${RESET}           - Remove local images\n"; \
+	echo ""; \
+	printf "$${BOLD}Configuration:$${RESET}\n"; \
+	echo "  DOCKER_REGISTRY  = $(DOCKER_REGISTRY)"; \
+	echo "  GO_VERSION       = $(GO_VERSION)"; \
+	echo "  ALPINE_VERSION   = $(ALPINE_VERSION)"; \
+	echo "  DOCKER_PLATFORM  = $(DOCKER_PLATFORM)"; \
+	echo "  PUSH             = $(PUSH)"; \
+	echo ""; \
+	printf "$${BOLD}Usage Examples:$${RESET}\n"; \
+	printf "  $${CYAN}make build-all$${RESET}                           # Build locally for current arch\n"; \
+	printf "  $${CYAN}make build-all PUSH=true$${RESET}                 # Build multi-arch and push\n"; \
+	printf "  $${CYAN}make build-builder GO_VERSION=1.25.2$${RESET}     # Build with specific Go version\n"; \
+	echo ""; \
+	printf "$${BOLD}Images:$${RESET}\n"; \
+	echo "  Builder: $(BUILDER_IMAGE)"; \
+	echo "  Runtime: $(RUNTIME_IMAGE)"
 
 # Build all foundation images (builder + runtime)
 build-all: build-builder build-runtime
@@ -169,23 +168,24 @@ build-runtime:
 # Clean local images
 clean:
 	$(call print_header,Cleaning local base images)
-	@echo ""
-	@echo "$(YELLOW)This will remove the following images:$(RESET)"
-	@echo "  - $(BUILDER_IMAGE)"
-	@echo "  - $(DOCKER_REGISTRY)/eggybyte-go-builder:latest"
-	@echo "  - $(RUNTIME_IMAGE)"
-	@echo "  - $(DOCKER_REGISTRY)/eggybyte-go-alpine:latest"
-	@echo ""
-	@read -p "Continue? (y/N): " confirm; \
+	@source $(LOGGER); \
+	echo ""; \
+	printf "$${YELLOW}This will remove the following images:$${RESET}\n"; \
+	echo "  - $(BUILDER_IMAGE)"; \
+	echo "  - $(DOCKER_REGISTRY)/eggybyte-go-builder:latest"; \
+	echo "  - $(RUNTIME_IMAGE)"; \
+	echo "  - $(DOCKER_REGISTRY)/eggybyte-go-alpine:latest"; \
+	echo ""; \
+	read -p "Continue? (y/N): " confirm; \
 	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
-		$(call print_info,Removing builder images...); \
+		print_info "Removing builder images..."; \
 		docker rmi $(BUILDER_IMAGE) 2>/dev/null || true; \
 		docker rmi $(DOCKER_REGISTRY)/eggybyte-go-builder:latest 2>/dev/null || true; \
-		$(call print_info,Removing runtime images...); \
+		print_info "Removing runtime images..."; \
 		docker rmi $(RUNTIME_IMAGE) 2>/dev/null || true; \
 		docker rmi $(DOCKER_REGISTRY)/eggybyte-go-alpine:latest 2>/dev/null || true; \
-		$(call print_success,Images removed); \
+		print_success "Images removed"; \
 	else \
-		$(call print_info,Cancelled); \
+		print_info "Cancelled"; \
 	fi
 

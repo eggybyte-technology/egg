@@ -4,51 +4,57 @@
 	infra-up infra-down infra-restart infra-status infra-clean \
 	services-up services-down services-restart
 
-# Color definitions
-GREEN := \033[0;32m
-BLUE := \033[0;34m
-CYAN := \033[0;36m
-RESET := \033[0m
+# Logger script for unified output
+LOGGER := ../scripts/logger.sh
 
-# Output formatting
+# Helper function to call logger.sh functions
+# Usage: $(call log,function_name,message)
+define log
+	@bash -c 'source $(LOGGER) && $(1) "$(2)"'
+endef
+
+# Output formatting functions (using logger.sh)
 define print_header
-	@echo ""
-	@echo "$(BLUE)================================================================================$(RESET)"
-	@echo "$(BLUE)▶ $(1)$(RESET)"
-	@echo "$(BLUE)================================================================================$(RESET)"
+	$(call log,print_header,$(1))
 endef
 
 define print_success
-	@echo "$(GREEN)[SUCCESS]$(RESET) $(1)"
+	$(call log,print_success,$(1))
+endef
+
+define print_info
+	$(call log,print_info,$(1))
 endef
 
 help:
-	@echo "$(BLUE)Egg Examples - Build, Test & Deploy$(RESET)"
-	@echo ""
-	@echo "Build & Test:"
-	@echo "  $(CYAN)build$(RESET)              - Build all example services"
-	@echo "  $(CYAN)test$(RESET)               - Test example services (full integration)"
-	@echo "  $(CYAN)docker-build$(RESET)       - Build Docker images for examples"
-	@echo "  $(CYAN)docker-clean$(RESET)       - Clean Docker images"
-	@echo ""
-	@echo "Deployment (All Services):"
-	@echo "  $(CYAN)deploy-up$(RESET)          - Start all services (infra + app)"
-	@echo "  $(CYAN)deploy-down$(RESET)        - Stop all services"
-	@echo "  $(CYAN)deploy-restart$(RESET)     - Restart all services"
-	@echo "  $(CYAN)deploy-logs$(RESET)        - Show service logs"
-	@echo "  $(CYAN)deploy-status$(RESET)      - Show service status"
-	@echo ""
-	@echo "Infrastructure Only:"
-	@echo "  $(CYAN)infra-up$(RESET)           - Start infrastructure (MySQL, Jaeger, OTEL)"
-	@echo "  $(CYAN)infra-down$(RESET)         - Stop infrastructure"
-	@echo "  $(CYAN)infra-restart$(RESET)      - Restart infrastructure"
-	@echo "  $(CYAN)infra-status$(RESET)       - Show infrastructure status"
-	@echo "  $(CYAN)infra-clean$(RESET)        - Clean infrastructure (including volumes)"
-	@echo ""
-	@echo "Application Services Only:"
-	@echo "  $(CYAN)services-up$(RESET)        - Start application services"
-	@echo "  $(CYAN)services-down$(RESET)      - Stop application services"
-	@echo "  $(CYAN)services-restart$(RESET)   - Restart application services"
+	@source $(LOGGER); \
+	echo ""; \
+	printf "$${BOLD}$${BLUE}Egg Examples - Build, Test & Deploy$${RESET}\n"; \
+	echo ""; \
+	echo "Build & Test:"; \
+	printf "  $${CYAN}build$${RESET}              - Build all example services\n"; \
+	printf "  $${CYAN}test$${RESET}               - Test example services (full integration)\n"; \
+	printf "  $${CYAN}docker-build$${RESET}       - Build Docker images for examples\n"; \
+	printf "  $${CYAN}docker-clean$${RESET}       - Clean Docker images\n"; \
+	echo ""; \
+	echo "Deployment (All Services):"; \
+	printf "  $${CYAN}deploy-up$${RESET}          - Start all services (infra + app)\n"; \
+	printf "  $${CYAN}deploy-down$${RESET}        - Stop all services\n"; \
+	printf "  $${CYAN}deploy-restart$${RESET}     - Restart all services\n"; \
+	printf "  $${CYAN}deploy-logs$${RESET}        - Show service logs\n"; \
+	printf "  $${CYAN}deploy-status$${RESET}      - Show service status\n"; \
+	echo ""; \
+	echo "Infrastructure Only:"; \
+	printf "  $${CYAN}infra-up$${RESET}           - Start infrastructure (MySQL, Jaeger, OTEL)\n"; \
+	printf "  $${CYAN}infra-down$${RESET}         - Stop infrastructure\n"; \
+	printf "  $${CYAN}infra-restart$${RESET}      - Restart infrastructure\n"; \
+	printf "  $${CYAN}infra-status$${RESET}       - Show infrastructure status\n"; \
+	printf "  $${CYAN}infra-clean$${RESET}        - Clean infrastructure (including volumes)\n"; \
+	echo ""; \
+	echo "Application Services Only:"; \
+	printf "  $${CYAN}services-up$${RESET}        - Start application services\n"; \
+	printf "  $${CYAN}services-down$${RESET}      - Stop application services\n"; \
+	printf "  $${CYAN}services-restart$${RESET}   - Restart application services\n"
 
 # Build all example services
 build:

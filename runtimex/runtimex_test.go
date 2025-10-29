@@ -4,6 +4,7 @@ package runtimex
 import (
 	"context"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,17 +13,35 @@ import (
 
 // testLogger is a test logger implementation.
 type testLogger struct {
+	mu   sync.Mutex
 	logs []string
 }
 
-func (l *testLogger) With(kv ...any) log.Logger              { return l }
-func (l *testLogger) Debug(msg string, kv ...any)            { l.logs = append(l.logs, "DEBUG: "+msg) }
-func (l *testLogger) Info(msg string, kv ...any)             { l.logs = append(l.logs, "INFO: "+msg) }
-func (l *testLogger) Warn(msg string, kv ...any)             { l.logs = append(l.logs, "WARN: "+msg) }
-func (l *testLogger) Error(err error, msg string, kv ...any) { l.logs = append(l.logs, "ERROR: "+msg) }
+func (l *testLogger) With(kv ...any) log.Logger { return l }
+func (l *testLogger) Debug(msg string, kv ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.logs = append(l.logs, "DEBUG: "+msg)
+}
+func (l *testLogger) Info(msg string, kv ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.logs = append(l.logs, "INFO: "+msg)
+}
+func (l *testLogger) Warn(msg string, kv ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.logs = append(l.logs, "WARN: "+msg)
+}
+func (l *testLogger) Error(err error, msg string, kv ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.logs = append(l.logs, "ERROR: "+msg)
+}
 
 // mockService is a mock implementation of the Service interface.
 type mockService struct {
+	mu          sync.Mutex
 	startCalled bool
 	stopCalled  bool
 	startErr    error
@@ -30,13 +49,29 @@ type mockService struct {
 }
 
 func (m *mockService) Start(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.startCalled = true
 	return m.startErr
 }
 
 func (m *mockService) Stop(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.stopCalled = true
 	return m.stopErr
+}
+
+func (m *mockService) getStartCalled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.startCalled
+}
+
+func (m *mockService) getStopCalled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.stopCalled
 }
 
 func TestOptions(t *testing.T) {
@@ -262,11 +297,11 @@ func TestRun_WithServices(t *testing.T) {
 	// Give it some time to stop
 	time.Sleep(200 * time.Millisecond)
 
-	if !service.startCalled {
+	if !service.getStartCalled() {
 		t.Error("Service Start should have been called")
 	}
 
-	if !service.stopCalled {
+	if !service.getStopCalled() {
 		t.Error("Service Stop should have been called")
 	}
 }

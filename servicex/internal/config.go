@@ -17,7 +17,6 @@ type ServiceConfig struct {
 	ServiceVersion string
 	Config         any
 	Logger         log.Logger
-	EnableTracing  bool
 	EnableMetrics  bool
 	MetricsConfig  *MetricsConfig // Fine-grained metrics configuration
 	EnableDebug    bool
@@ -64,7 +63,6 @@ func NewServiceConfig() *ServiceConfig {
 	return &ServiceConfig{
 		ServiceName:       "app",
 		ServiceVersion:    "0.0.0",
-		EnableTracing:     true,
 		EnableMetrics:     true,
 		MetricsConfig:     nil, // Will be set by WithMetricsConfig if needed
 		HTTPPort:          8080,

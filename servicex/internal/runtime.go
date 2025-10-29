@@ -281,10 +281,10 @@ func (r *ServiceRuntime) initializeDatabase(ctx context.Context) error {
 	return nil
 }
 
-// initializeObservability initializes OpenTelemetry providers.
+// initializeObservability initializes metrics provider.
 func (r *ServiceRuntime) initializeObservability(ctx context.Context) error {
-	// Initialize OTEL provider if either tracing or metrics is enabled
-	if !r.config.EnableTracing && !r.config.EnableMetrics {
+	// Skip if metrics is disabled
+	if !r.config.EnableMetrics {
 		return nil
 	}
 
@@ -293,14 +293,15 @@ func (r *ServiceRuntime) initializeObservability(ctx context.Context) error {
 		ServiceVersion: r.config.ServiceVersion,
 	})
 	if err != nil {
-		r.logger.Error(err, "otel init failed, continuing without observability")
+		r.logger.Error(err, "metrics provider init failed, continuing without observability")
 		return nil // Non-fatal
 	}
 
 	r.otelProvider = otelProvider
+	r.logger.Info("metrics provider initialized")
 
 	// Enable additional metrics based on MetricsConfig
-	if r.config.EnableMetrics && r.config.MetricsConfig != nil {
+	if r.config.MetricsConfig != nil {
 		if r.config.MetricsConfig.EnableRuntime {
 			if err := otelProvider.EnableRuntimeMetrics(ctx); err != nil {
 				r.logger.Error(err, "failed to enable runtime metrics")

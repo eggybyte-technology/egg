@@ -74,3 +74,6 @@ build/
 # Node modules (if using any JS tooling)
 node_modules/
 
+
+# CLI test workspace
+cli/tmp/

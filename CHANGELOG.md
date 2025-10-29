@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **servicex**: Automatic default logger creation from `LOG_LEVEL` environment variable
 - **examples**: `GetBaseConfig()` method in AppConfig implementing BaseConfigProvider interface
 - **examples**: Production-ready examples with complete GoDoc documentation
+- **examples**: Dedicated build script (`examples/scripts/build-examples.sh`) for building service binaries and Docker images
+- **examples**: Comprehensive test script (`examples/scripts/test-examples.sh`) with infrastructure management and health checks
+- **examples**: Docker Compose infrastructure setup (MySQL) for local development and testing
+- **examples**: Enhanced `connect-tester` with comprehensive metrics endpoint validation (RPC, Runtime, Process, Database metrics)
+- **examples**: `examples/bin/` directory for compiled binaries (Git-tracked with `.gitkeep`)
 
 ### Changed
 
@@ -48,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **examples/minimal-connect-service**: Moved `main.go` to `cmd/server/` for standard project structure
 - **examples/minimal-connect-service**: Simplified `main.go` to use servicex auto-configuration
 - **build**: Updated `build.sh` to correctly build both services from `cmd/server` directory
+- **examples**: Refactored build system to use dedicated `build-examples.sh` script instead of root `build.sh`
+- **examples**: Simplified infrastructure to MySQL-only (removed Jaeger and OTEL Collector; tracing disabled, metrics-only)
+- **examples**: Standardized Docker Compose configuration with proper servicex environment variables
+- **examples**: Updated Docker Compose files to remove obsolete `version` field (Compose V2)
+- **examples**: Improved port cleanup script to only check necessary ports (MySQL + application services)
 
 ### Improved
 
@@ -66,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Architecture**: Replaced reflection-based config extraction with interface-based approach (50+ lines removed, type-safe)
 - **Consistency**: Logger configuration follows the same pattern as other framework components (config-first approach)
 - **Code Quality**: Eliminated reflection usage in servicex configuration handling for better maintainability and compile-time safety
+- **Testing**: All framework modules now pass `go test -race` with zero data race warnings
+- **Testing**: Enhanced test reliability with proper synchronization primitives in concurrent test code
+- **Testing**: Improved test isolation by using random port allocation to prevent conflicts during parallel execution
 
 ### Removed
 
@@ -88,6 +101,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **connectx**: Added panic protection in metrics interceptor when accessing response body
 - **connectx**: Enhanced recovery interceptor logging for better panic debugging
 - **connectx**: Protected response size recording from potential nil pointer dereferences in error scenarios
+- **examples**: Fixed Docker platform mismatch warnings by using `docker buildx` with explicit `--platform` for multi-arch base images
+- **examples**: Fixed MySQL 9.4 configuration (removed obsolete `--default-authentication-plugin` parameter)
+- **examples**: Fixed Docker Compose orphan container warnings (expected behavior, documented in comments)
+- **examples**: Fixed database status detection logic to be more robust and informative
+- **examples**: Fixed Docker build to automatically select correct platform variant (arm64/amd64) matching binary architecture
+- **core/identity**: Fixed nil value handling - `WithUser(ctx, nil)` and `WithMeta(ctx, nil)` now return context unchanged instead of storing nil
+- **core/identity**: Fixed `UserFrom()` and `MetaFrom()` to correctly return `false` when stored value is nil
+- **runtimex**: Fixed data race in test logger by adding mutex protection for concurrent log writes
+- **runtimex**: Fixed data race in mock service by adding mutex protection for state access
+- **servicex**: Fixed shutdown hooks not being called - hooks registered via `AddShutdownHook()` are now properly copied back to internal App
+- **servicex**: Fixed port conflicts in integration tests by using random port allocation (`HTTP_PORT=0`) for parallel test execution
 
 ### Security
 

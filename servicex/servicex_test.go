@@ -2,11 +2,15 @@
 package servicex
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
+	"go.eggybyte.com/egg/configx"
 	"go.eggybyte.com/egg/core/log"
 	"go.eggybyte.com/egg/servicex/internal"
 	"gorm.io/gorm"
@@ -25,6 +29,40 @@ func (m *MockLogger) Debug(msg string, kv ...any)            { m.debugs = append
 func (m *MockLogger) Info(msg string, kv ...any)             { m.infos = append(m.infos, msg) }
 func (m *MockLogger) Warn(msg string, kv ...any)             { m.warns = append(m.warns, msg) }
 func (m *MockLogger) Error(err error, msg string, kv ...any) { m.errors = append(m.errors, msg) }
+
+// setupTestPorts sets up random ports for testing to avoid conflicts
+func setupTestPorts(t *testing.T) func() {
+	t.Helper()
+
+	// Save original values
+	originalHTTP := os.Getenv("HTTP_PORT")
+	originalHealth := os.Getenv("HEALTH_PORT")
+	originalMetrics := os.Getenv("METRICS_PORT")
+
+	// Set to "0" to allocate random ports
+	os.Setenv("HTTP_PORT", "0")
+	os.Setenv("HEALTH_PORT", "0")
+	os.Setenv("METRICS_PORT", "0")
+
+	// Return cleanup function
+	return func() {
+		if originalHTTP != "" {
+			os.Setenv("HTTP_PORT", originalHTTP)
+		} else {
+			os.Unsetenv("HTTP_PORT")
+		}
+		if originalHealth != "" {
+			os.Setenv("HEALTH_PORT", originalHealth)
+		} else {
+			os.Unsetenv("HEALTH_PORT")
+		}
+		if originalMetrics != "" {
+			os.Setenv("METRICS_PORT", originalMetrics)
+		} else {
+			os.Unsetenv("METRICS_PORT")
+		}
+	}
+}
 
 func TestOptions(t *testing.T) {
 	tests := []struct {
@@ -189,5 +227,335 @@ func TestDatabaseMigrator(t *testing.T) {
 	}
 	if err != nil {
 		t.Errorf("DatabaseMigrator returned error = %v, want nil", err)
+	}
+}
+
+// ========================================
+// Integration Tests
+// ========================================
+
+// TestServiceLifecycle tests the full service lifecycle.
+func TestServiceLifecycle(t *testing.T) {
+	cleanup := setupTestPorts(t)
+	defer cleanup()
+
+	tests := []struct {
+		name        string
+		opts        []Option
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "minimal service with defaults",
+			opts: []Option{
+				WithService("test-service", "1.0.0"),
+				WithRegister(func(app *App) error {
+					app.Mux().HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
+						w.WriteHeader(http.StatusOK)
+						w.Write([]byte("OK"))
+					})
+					return nil
+				}),
+			},
+			wantErr: false,
+		},
+		{
+			name: "service with config",
+			opts: []Option{
+				WithService("test-service", "1.0.0"),
+				WithConfig(&configx.BaseConfig{}),
+				WithRegister(func(app *App) error {
+					return nil
+				}),
+			},
+			wantErr: false,
+		},
+		{
+			name: "service with metrics enabled",
+			opts: []Option{
+				WithService("test-service", "1.0.0"),
+				WithMetrics(true),
+				WithRegister(func(app *App) error {
+					return nil
+				}),
+			},
+			wantErr: false,
+		},
+		{
+			name: "service with metrics config",
+			opts: []Option{
+				WithService("test-service", "1.0.0"),
+				WithMetricsConfig(true, true, false, false),
+				WithRegister(func(app *App) error {
+					return nil
+				}),
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create cancellable context with timeout
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			// Run service in goroutine
+			errChan := make(chan error, 1)
+			go func() {
+				errChan <- Run(ctx, tt.opts...)
+			}()
+
+			// Wait for service to start
+			time.Sleep(200 * time.Millisecond)
+
+			// Cancel context to trigger shutdown
+			cancel()
+
+			// Wait for service to stop
+			select {
+			case err := <-errChan:
+				if tt.wantErr && err == nil {
+					t.Errorf("Expected error but got nil")
+				}
+				if !tt.wantErr && err != nil && err != context.Canceled {
+					t.Errorf("Unexpected error: %v", err)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("Service did not shut down in time")
+			}
+		})
+	}
+}
+
+// TestServiceWithCustomTimeout tests service with custom timeout settings.
+func TestServiceWithCustomTimeout(t *testing.T) {
+	cleanup := setupTestPorts(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- Run(ctx,
+			WithService("test-service", "1.0.0"),
+			WithTimeout(5000), // 5 seconds
+			WithSlowRequestThreshold(100),
+			WithRegister(func(app *App) error {
+				return nil
+			}),
+		)
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errChan:
+		if err != nil && err != context.Canceled {
+			t.Errorf("Unexpected error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Service did not shut down in time")
+	}
+}
+
+// TestServiceWithShutdownHook tests shutdown hook execution.
+func TestServiceWithShutdownHook(t *testing.T) {
+	cleanup := setupTestPorts(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	hookCalled := false
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- Run(ctx,
+			WithService("test-service", "1.0.0"),
+			WithRegister(func(app *App) error {
+				app.AddShutdownHook(func(ctx context.Context) error {
+					hookCalled = true
+					return nil
+				})
+				return nil
+			}),
+		)
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-errChan:
+		// Wait a bit for shutdown to complete
+		time.Sleep(100 * time.Millisecond)
+		if !hookCalled {
+			t.Error("Shutdown hook was not called")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Service did not shut down in time")
+	}
+}
+
+// TestServiceRegistrationError tests error handling during service registration.
+func TestServiceRegistrationError(t *testing.T) {
+	cleanup := setupTestPorts(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	expectedErr := fmt.Errorf("registration error")
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- Run(ctx,
+			WithService("test-service", "1.0.0"),
+			WithRegister(func(app *App) error {
+				return expectedErr
+			}),
+		)
+	}()
+
+	select {
+	case err := <-errChan:
+		if err == nil {
+			t.Error("Expected error but got nil")
+		}
+		// Error should contain "registration" or similar
+	case <-time.After(3 * time.Second):
+		t.Fatal("Service did not return error in time")
+	}
+}
+
+// TestServiceWithShutdownTimeout tests graceful shutdown timeout.
+func TestServiceWithShutdownTimeout(t *testing.T) {
+	cleanup := setupTestPorts(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- Run(ctx,
+			WithService("test-service", "1.0.0"),
+			WithShutdownTimeout(1*time.Second),
+			WithRegister(func(app *App) error {
+				return nil
+			}),
+		)
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-errChan:
+		// Shutdown completed
+	case <-time.After(5 * time.Second):
+		t.Fatal("Service did not shut down in time")
+	}
+}
+
+// TestServiceEnvironmentVariables tests service configuration via environment.
+func TestServiceEnvironmentVariables(t *testing.T) {
+	// Save original env vars
+	originalHTTP := os.Getenv("HTTP_PORT")
+	originalHealth := os.Getenv("HEALTH_PORT")
+	originalMetrics := os.Getenv("METRICS_PORT")
+	defer func() {
+		os.Setenv("HTTP_PORT", originalHTTP)
+		os.Setenv("HEALTH_PORT", originalHealth)
+		os.Setenv("METRICS_PORT", originalMetrics)
+	}()
+
+	// Set test env vars (use high ports to avoid conflicts)
+	os.Setenv("HTTP_PORT", "18080")
+	os.Setenv("HEALTH_PORT", "18081")
+	os.Setenv("METRICS_PORT", "19091")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- Run(ctx,
+			WithService("test-service", "1.0.0"),
+			WithConfig(&configx.BaseConfig{}),
+			WithRegister(func(app *App) error {
+				return nil
+			}),
+		)
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errChan:
+		if err != nil && err != context.Canceled {
+			t.Errorf("Unexpected error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Service did not shut down in time")
+	}
+}
+
+// TestServiceAppMethods tests App methods during registration.
+func TestServiceAppMethods(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	var capturedApp *App
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- Run(ctx,
+			WithService("test-service", "1.0.0"),
+			WithRegister(func(app *App) error {
+				capturedApp = app
+
+				// Test Mux
+				if app.Mux() == nil {
+					return fmt.Errorf("Mux() returned nil")
+				}
+
+				// Test Logger
+				if app.Logger() == nil {
+					return fmt.Errorf("Logger() returned nil")
+				}
+
+				// Test Interceptors
+				if app.Interceptors() == nil {
+					return fmt.Errorf("Interceptors() returned nil")
+				}
+
+				// Test DB (should be nil without database config)
+				if app.DB() != nil {
+					return fmt.Errorf("DB() should be nil without database config")
+				}
+
+				return nil
+			}),
+		)
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errChan:
+		if err != nil && err != context.Canceled {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if capturedApp == nil {
+			t.Error("App was not captured during registration")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Service did not complete in time")
 	}
 }

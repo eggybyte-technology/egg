@@ -83,10 +83,11 @@ Both examples demonstrate:
 
 ✅ **servicex Integration**: One-call service initialization  
 ✅ **Connect Protocol**: HTTP/2-based RPC with efficient serialization  
-✅ **Observability**: OpenTelemetry tracing, Prometheus metrics, structured logging  
+✅ **Observability**: Prometheus metrics, structured logging (metrics-only focus)  
 ✅ **Health Checks**: Built-in `/health` and `/metrics` endpoints  
 ✅ **Graceful Shutdown**: Automatic signal handling and resource cleanup  
 ✅ **Production Ready**: Error handling, validation, context propagation  
+✅ **Multi-Platform Support**: Automatic Docker image platform detection (arm64/amd64)  
 
 ## Project Structure
 
@@ -161,7 +162,7 @@ make docker-build           # Build all service images
 
 **Deploy with Docker Compose:**
 ```bash
-make infra-up              # Start infrastructure (MySQL, Jaeger, OTEL)
+make infra-up              # Start infrastructure (MySQL)
 make services-up           # Start application services
 ```
 
@@ -173,7 +174,8 @@ make deploy-status         # Show container status
 
 **Rebuild and restart:**
 ```bash
-make services-rebuild      # Rebuild images and restart services
+make docker-build          # Rebuild Docker images
+make services-restart      # Restart services with latest images
 ```
 
 ## Configuration
@@ -201,8 +203,8 @@ SLOW_REQUEST_MILLIS=1000
 The `examples/deploy/` directory contains Docker Compose configurations for:
 
 - **MySQL 9.4** - Database (port 3306)
-- **Jaeger** - Distributed tracing UI (port 16686)
-- **OpenTelemetry Collector** - Telemetry aggregation (ports 4317/4318)
+
+**Note**: Tracing infrastructure (Jaeger, OTEL Collector) has been removed. Examples now focus on **metrics-only** observability using Prometheus.
 
 See [deploy/README.md](deploy/README.md) for detailed deployment documentation.
 
@@ -216,7 +218,6 @@ See [deploy/README.md](deploy/README.md) for detailed deployment documentation.
 | User Service | http://localhost:8082 | Connect-RPC endpoints |
 | User Health | http://localhost:8083/health | Health check |
 | User Metrics | http://localhost:9092/metrics | Prometheus metrics |
-| Jaeger UI | http://localhost:16686 | Distributed tracing UI |
 | MySQL | localhost:3306 | Database (user: egguser, pass: eggpassword) |
 
 ### Health Checks
@@ -233,11 +234,16 @@ curl http://localhost:9091/metrics  # Minimal service metrics
 curl http://localhost:9092/metrics  # User service metrics
 ```
 
-### Tracing
+### Metrics Collection
 
-View traces in Jaeger UI: http://localhost:16686
+Services expose Prometheus metrics on dedicated ports. The `connect-tester` tool automatically validates metrics endpoints, checking for:
 
-Services automatically send traces to the OTEL collector at `otel-collector:4317`.
+- **RPC Metrics**: Request counts, durations, sizes
+- **Runtime Metrics**: Goroutines, GC, memory usage
+- **Process Metrics**: CPU, RSS, uptime
+- **Database Metrics**: Connection pool stats (for user-service)
+
+Metrics are collected via pull model (Prometheus scrapes `/metrics` endpoints). No additional infrastructure required.
 
 ## Testing with Connect
 
@@ -292,7 +298,7 @@ The `examples/Makefile` provides comprehensive deployment and testing targets:
 - `make deploy-status` - Show service status
 
 ### Infrastructure Only
-- `make infra-up` - Start MySQL, Jaeger, OTEL Collector
+- `make infra-up` - Start MySQL database
 - `make infra-down` - Stop infrastructure
 - `make infra-restart` - Restart infrastructure
 - `make infra-status` - Show infrastructure status
@@ -302,7 +308,6 @@ The `examples/Makefile` provides comprehensive deployment and testing targets:
 - `make services-up` - Start minimal-service and user-service
 - `make services-down` - Stop application services
 - `make services-restart` - Restart application services
-- `make services-rebuild` - Rebuild images and restart
 
 ## Adding a New Example
 

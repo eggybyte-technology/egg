@@ -29,15 +29,6 @@ func TestNewProvider(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "with OTLP endpoint",
-			opts: Options{
-				ServiceName:    "test-service",
-				ServiceVersion: "1.0.0",
-				OTLPEndpoint:   "localhost:4317",
-			},
-			wantErr: false,
-		},
-		{
 			name: "with resource attributes",
 			opts: Options{
 				ServiceName:    "test-service",
@@ -46,15 +37,6 @@ func TestNewProvider(t *testing.T) {
 					"environment": "test",
 					"region":      "us-west-2",
 				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "with custom sampling ratio",
-			opts: Options{
-				ServiceName:       "test-service",
-				ServiceVersion:    "1.0.0",
-				TraceSamplerRatio: 0.5,
 			},
 			wantErr: false,
 		},
@@ -74,30 +56,15 @@ func TestNewProvider(t *testing.T) {
 					return
 				}
 
-				if provider.TracerProvider() == nil {
-					t.Error("TracerProvider is nil")
-				}
-
 				if provider.MeterProvider() == nil {
 					t.Error("MeterProvider is nil")
 				}
 
-				// Test shutdown with shorter timeout for OTLP endpoint tests
-				shutdownTimeout := 5 * time.Second
-				if tt.opts.OTLPEndpoint != "" {
-					shutdownTimeout = 1 * time.Second // Shorter timeout for OTLP tests
-				}
-
-				ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 
 				if err := provider.Shutdown(ctx); err != nil {
-					// Ignore connection errors for OTLP endpoint tests
-					if tt.opts.OTLPEndpoint != "" {
-						t.Logf("Shutdown() error (expected for OTLP test): %v", err)
-					} else {
-						t.Errorf("Shutdown() error = %v", err)
-					}
+					t.Errorf("Shutdown() error = %v", err)
 				}
 			}
 		})
@@ -131,13 +98,10 @@ func TestProviderShutdown(t *testing.T) {
 	}
 }
 
-func TestProviderWithOTLPEndpoint(t *testing.T) {
-	// This test might fail if there's no OTLP collector running
-	// but it should still create the provider successfully
+func TestProviderWithRuntimeMetrics(t *testing.T) {
 	provider, err := NewProvider(context.Background(), Options{
 		ServiceName:    "test-service",
 		ServiceVersion: "1.0.0",
-		OTLPEndpoint:   "localhost:4317",
 	})
 	if err != nil {
 		t.Fatalf("NewProvider() error = %v", err)
@@ -147,34 +111,17 @@ func TestProviderWithOTLPEndpoint(t *testing.T) {
 		t.Fatal("Provider is nil")
 	}
 
-	// Test shutdown with shorter timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	if err := provider.Shutdown(ctx); err != nil {
-		t.Logf("Shutdown() error (expected for OTLP test): %v", err)
-	}
-}
-
-func TestProviderWithRuntimeMetrics(t *testing.T) {
-	provider, err := NewProvider(context.Background(), Options{
-		ServiceName:          "test-service",
-		ServiceVersion:       "1.0.0",
-		EnableRuntimeMetrics: true,
-	})
-	if err != nil {
-		t.Fatalf("NewProvider() error = %v", err)
-	}
-
-	if provider == nil {
-		t.Fatal("Provider is nil")
+	// Enable runtime metrics
+	ctx := context.Background()
+	if err := provider.EnableRuntimeMetrics(ctx); err != nil {
+		t.Errorf("EnableRuntimeMetrics() error = %v", err)
 	}
 
 	// Test shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := provider.Shutdown(ctx); err != nil {
+	if err := provider.Shutdown(shutdownCtx); err != nil {
 		t.Errorf("Shutdown() error = %v", err)
 	}
 }

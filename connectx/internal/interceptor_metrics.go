@@ -10,7 +10,6 @@ import (
 	"go.eggybyte.com/egg/obsx"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // MetricsCollector holds OpenTelemetry metrics instruments for RPC monitoring.
@@ -177,17 +176,7 @@ func MetricsInterceptor(collector *MetricsCollector) connect.UnaryInterceptorFun
 
 			// Record metrics
 			collector.requestsTotal.Add(ctx, 1, metric.WithAttributes(attrs...))
-
-			// Record duration with exemplar (trace_id) for histogram
-			// Extract trace_id from context for exemplar support
-			metricOpts := []metric.RecordOption{metric.WithAttributes(attrs...)}
-			if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
-				traceID := span.SpanContext().TraceID().String()
-				metricOpts = append(metricOpts, metric.WithAttributes(
-					attribute.String("trace_id", traceID),
-				))
-			}
-			collector.requestDuration.Record(ctx, duration, metricOpts...)
+			collector.requestDuration.Record(ctx, duration, metric.WithAttributes(attrs...))
 
 			// Record response size if available (with safe nil checks)
 			if resp != nil {

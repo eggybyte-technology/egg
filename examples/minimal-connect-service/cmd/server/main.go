@@ -221,7 +221,7 @@ func main() {
 // the standard pattern for registering Connect services:
 //  1. Create service implementation with dependencies (logger, etc.)
 //  2. Wrap with Connect handler using generated code
-//  3. Apply interceptors from servicex (logging, metrics, tracing, etc.)
+//  3. Apply interceptors from servicex (logging, metrics, error mapping, etc.)
 //  4. Register the handler path with the HTTP mux
 //
 // Parameters:

@@ -1,33 +1,39 @@
 # Makefile for egg CLI
 .PHONY: help build test test-integration test-production clean
 
-# Color definitions
-GREEN := \033[0;32m
-BLUE := \033[0;34m
-CYAN := \033[0;36m
-RESET := \033[0m
+# Logger script for unified output
+LOGGER := ../scripts/logger.sh
 
-# Output formatting
+# Helper function to call logger.sh functions
+# Usage: $(call log,function_name,message)
+define log
+	@bash -c 'source $(LOGGER) && $(1) "$(2)"'
+endef
+
+# Output formatting functions (using logger.sh)
 define print_header
-	@echo ""
-	@echo "$(BLUE)================================================================================$(RESET)"
-	@echo "$(BLUE)▶ $(1)$(RESET)"
-	@echo "$(BLUE)================================================================================$(RESET)"
+	$(call log,print_header,$(1))
 endef
 
 define print_success
-	@echo "$(GREEN)[SUCCESS]$(RESET) $(1)"
+	$(call log,print_success,$(1))
+endef
+
+define print_info
+	$(call log,print_info,$(1))
 endef
 
 help:
-	@echo "$(BLUE)Egg CLI - Build & Test$(RESET)"
-	@echo ""
-	@echo "Targets:"
-	@echo "  $(CYAN)build$(RESET)              - Build egg CLI tool"
-	@echo "  $(CYAN)test$(RESET)               - Run unit tests"
-	@echo "  $(CYAN)test-integration$(RESET)   - Run CLI integration tests (local modules)"
-	@echo "  $(CYAN)test-production$(RESET)    - Run CLI integration tests (remote modules)"
-	@echo "  $(CYAN)clean$(RESET)              - Clean build artifacts"
+	@source $(LOGGER); \
+	echo ""; \
+	printf "$${BOLD}$${BLUE}Egg CLI - Build & Test$${RESET}\n"; \
+	echo ""; \
+	echo "Targets:"; \
+	printf "  $${CYAN}build$${RESET}              - Build egg CLI tool\n"; \
+	printf "  $${CYAN}test$${RESET}               - Run unit tests\n"; \
+	printf "  $${CYAN}test-integration$${RESET}   - Run CLI integration tests (local modules)\n"; \
+	printf "  $${CYAN}test-production$${RESET}    - Run CLI integration tests (remote modules)\n"; \
+	printf "  $${CYAN}clean$${RESET}              - Clean build artifacts\n"
 
 # Build egg CLI tool
 build:
@@ -47,14 +53,15 @@ test:
 # Run CLI integration tests with local modules
 test-integration: build
 	$(call print_header,Running CLI integration tests with local modules)
-	@cd .. && ./scripts/test-cli.sh
+	@./scripts/test-cli.sh
 	$(call print_success,CLI integration tests passed)
 
 # Run CLI integration tests with remote modules (production)
 test-production: build
 	$(call print_header,Running CLI integration tests with remote modules)
-	@cd .. && ./scripts/test-cli-production.sh
-	$(call print_success,CLI production integration tests passed)
+	@echo "Production test script not yet implemented"
+	@echo "TODO: Create scripts/test-cli-production.sh for testing with remote modules"
+	@exit 1
 
 # Clean build artifacts
 clean:

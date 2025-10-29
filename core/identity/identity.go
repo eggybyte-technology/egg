@@ -43,7 +43,11 @@ const (
 
 // WithUser stores user information in the context.
 // Returns a new context with the user information attached.
+// If u is nil, returns the context unchanged.
 func WithUser(ctx context.Context, u *UserInfo) context.Context {
+	if u == nil {
+		return ctx
+	}
 	return context.WithValue(ctx, userKey, u)
 }
 
@@ -51,12 +55,19 @@ func WithUser(ctx context.Context, u *UserInfo) context.Context {
 // Returns the user info and a boolean indicating if it was found.
 func UserFrom(ctx context.Context) (*UserInfo, bool) {
 	u, ok := ctx.Value(userKey).(*UserInfo)
-	return u, ok
+	if !ok || u == nil {
+		return nil, false
+	}
+	return u, true
 }
 
 // WithMeta stores request metadata in the context.
 // Returns a new context with the metadata attached.
+// If m is nil, returns the context unchanged.
 func WithMeta(ctx context.Context, m *RequestMeta) context.Context {
+	if m == nil {
+		return ctx
+	}
 	return context.WithValue(ctx, metaKey, m)
 }
 
@@ -64,7 +75,10 @@ func WithMeta(ctx context.Context, m *RequestMeta) context.Context {
 // Returns the metadata and a boolean indicating if it was found.
 func MetaFrom(ctx context.Context) (*RequestMeta, bool) {
 	m, ok := ctx.Value(metaKey).(*RequestMeta)
-	return m, ok
+	if !ok || m == nil {
+		return nil, false
+	}
+	return m, true
 }
 
 // HasRole checks if the user in the context has the specified role.
