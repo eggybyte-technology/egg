@@ -21,8 +21,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/logger.sh"
 
-# Get the project root directory
-PROJECT_ROOT="$(get_project_root)"
+# Get the examples root directory (parent of scripts/)
+EXAMPLES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_ROOT="$(cd "$EXAMPLES_ROOT/.." && pwd)"
 
 # Test example services (smart infrastructure + rebuild services)
 test_examples() {
@@ -41,44 +42,42 @@ test_examples() {
     fi
 
     local test_failed=0
-    cd "$PROJECT_ROOT/deploy"
+    cd "$EXAMPLES_ROOT/deploy"
 
     # Step 1: Build latest example service images
     print_header "Step 1: Building latest example service images"
     print_info "Building application services..."
-    if ! "$PROJECT_ROOT/scripts/build.sh" all; then
+    if ! "$EXAMPLES_ROOT/scripts/build-examples.sh" all; then
         exit_with_error "Failed to build services"
     fi
     print_success "Services built successfully"
+    
+    # Verify Docker images exist
+    print_info "Verifying Docker images..."
+    if ! docker images minimal-connect-service:latest -q | grep -q .; then
+        exit_with_error "minimal-connect-service image not found"
+    fi
+    if ! docker images user-service:latest -q | grep -q .; then
+        exit_with_error "user-service image not found"
+    fi
+    print_success "All Docker images verified"
 
-    # Step 2: Check infrastructure services (mysql, jaeger, otel)
+    # Step 2: Check infrastructure services (mysql only - tracing disabled)
     # Note: Infrastructure services are never stopped during tests - they persist across test runs
     print_header "Step 2: Checking infrastructure services"
     print_info "Checking infrastructure status..."
     
-    # Check if all infrastructure services are running
+    # Check if MySQL is running
     local mysql_running=false
-    local jaeger_running=false
-    local otel_running=false
     
     if docker ps --format '{{.Names}}' | grep -q "egg-mysql"; then
         mysql_running=true
         print_info "MySQL is already running"
     fi
     
-    if docker ps --format '{{.Names}}' | grep -q "egg-jaeger"; then
-        jaeger_running=true
-        print_info "Jaeger is already running"
-    fi
-    
-    if docker ps --format '{{.Names}}' | grep -q "egg-otel-collector"; then
-        otel_running=true
-        print_info "OTEL Collector is already running"
-    fi
-    
-    # If any infrastructure service is not running, start them all
-    if [ "$mysql_running" = false ] || [ "$jaeger_running" = false ] || [ "$otel_running" = false ]; then
-        print_info "Some infrastructure services are not running, starting all infrastructure..."
+    # If MySQL is not running, start infrastructure
+    if [ "$mysql_running" = false ]; then
+        print_info "MySQL is not running, starting infrastructure..."
         
         # Clean up ports if needed
         if ! "$PROJECT_ROOT/scripts/cleanup-ports.sh"; then
@@ -107,13 +106,11 @@ test_examples() {
     docker-compose -f docker-compose.services.yaml down 2>/dev/null || true
     print_success "Application services stopped"
 
-    # Start application services with latest images
+    # Start application services with latest images (force recreate to use new images)
     print_info "Starting application services with latest images..."
-    
-    # Ensure config file exists
-    check_file "otel-collector-config.yaml" "OpenTelemetry Collector config file not found"
+    print_info "Note: Any 'orphan containers' or 'version obsolete' warnings are expected and can be ignored"
 
-    if ! docker-compose -f docker-compose.services.yaml up -d; then
+    if ! docker-compose -f docker-compose.services.yaml up -d --force-recreate; then
         exit_with_error "Failed to start application services"
     fi
     print_success "Application services started"
@@ -163,7 +160,7 @@ test_examples() {
     # Keep all services running after tests
     # Note: Infrastructure services persist across test runs for better performance
     print_info "Tests completed - all services remain running"
-    print_info "Infrastructure services (persistent): mysql, jaeger, otel-collector"
+    print_info "Infrastructure services (persistent): mysql"
     print_info "Application services: minimal-service, user-service"
     print_info ""
     print_info "To stop services manually:"
@@ -194,7 +191,7 @@ run_connect_tester_tests() {
     local test_failed=0
 
     # Change to connect-tester directory
-    cd "$PROJECT_ROOT/examples/connect-tester"
+    cd "$EXAMPLES_ROOT/connect-tester"
 
     # Test minimal service
     print_info "Testing minimal-service endpoints..."

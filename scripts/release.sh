@@ -210,12 +210,26 @@ release_single_module() {
         return 1
     fi
     
-    # Step 1: Update dependencies to already-released modules
+    # Step 1: Clean and update dependencies
     print_info "  → Updating dependencies for $mod..."
     (
         cd "$mod_path"
         
-        # Update dependencies only to modules that have been released
+        # Step 1a: Remove ALL replace directives (left from development/reinit)
+        # This is critical for releases - go.mod must not contain local paths
+        print_info "    ↳ Removing any existing replace directives..."
+        existing_replaces=$(go mod edit -json | grep -o '"Replace":\[[^]]*\]' || echo "")
+        if [[ -n "$existing_replaces" && "$existing_replaces" != "\"Replace\":[]" ]]; then
+            # Get all replace paths from go.mod
+            for dep_module in "${ALL_MODULES[@]}"; do
+                go mod edit -dropreplace="$REPO_BASE/$dep_module" 2>/dev/null || true
+            done
+            print_success "    ↳ Cleaned replace directives"
+        else
+            print_info "    ↳ No replace directives to remove"
+        fi
+        
+        # Step 1b: Update dependencies to already-released modules
         # Use array expansion that's safe for empty arrays (set -u compatible)
         if [ ${#RELEASED_MODULES[@]} -gt 0 ]; then
             for dep in "${RELEASED_MODULES[@]}"; do
@@ -231,7 +245,7 @@ release_single_module() {
             print_info "    ↳ No dependencies to update (L0 module)"
         fi
         
-        # Run go mod tidy with retry mechanism
+        # Step 1c: Run go mod tidy with retry mechanism
         # Use GOPROXY=direct to bypass proxy cache and fetch directly from GitHub
         # Add retry logic to handle GitHub propagation delays
         print_info "    ↳ Running go mod tidy with GOPROXY=direct..."
@@ -260,7 +274,7 @@ release_single_module() {
         done
     ) || return 1
     
-    # Step 2: Commit changes (require version updates)
+    # Step 2: Commit changes (go.mod and go.sum updates)
     # Check for unstaged changes in the module directory
     cd "$PROJECT_ROOT"
     if ! git diff --quiet -- "$mod/" 2>/dev/null; then

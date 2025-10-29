@@ -20,7 +20,7 @@ import (
 	"go.eggybyte.com/egg/core/log"
 	{{.ServiceNameVar}}v1 "{{.ModulePrefix}}/gen/go/{{.ServiceNameVar}}/v1"
 	{{.ServiceNameVar}}v1connect "{{.ModulePrefix}}/gen/go/{{.ServiceNameVar}}/v1/{{.ServiceNameVar}}v1connect"
-	"{{.ModulePrefix}}/internal/service"
+	"{{.ServiceModulePath}}/internal/service"
 )
 
 // {{.ServiceNameCamel}}Handler implements the Connect protocol for the {{.ServiceName}} service.

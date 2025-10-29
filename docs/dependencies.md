@@ -121,17 +121,14 @@
 
 1. **永远在仓库根目录使用同一个 `go.work`，并把它提交到 Git。**
 2. 想同时改 `core` 和 `runtimex`？可以，直接改。用 `go build` / `go test` 在 workspace 下验证。
-3. 不要在还没准备发版时到处跑 `go mod tidy`，尤其是高层模块（会污染它的 go.mod，试图去远程 resolve 你本地还没发 tag 的低层模块）。
-4. 真的必须 tidy（例如你刚删除大量 import、go.mod 越来越脏）：
-
-   * 允许你**临时**在当前模块的 go.mod 里加一条本地 replace：
-
-     ```go
-     replace github.com/eggybyte-technology/egg/core => ../core
-     ```
-   * 运行 `go mod tidy`
-   * 运行成功后，把这条 replace 恢复/删除，不要 commit 上去。
-   * 这是“开发期局部清扫”的安全逃生法。
+3. **使用 `./scripts/reinit-workspace.sh` 重新初始化工作区**：
+   * 这个脚本会为每个模块添加必要的 `replace` 指令
+   * 这些 replace 指令**应该保留在 go.mod 中**，它们是开发期的正确状态
+   * `go.work` + replace 指令共同确保本地模块互相引用正确
+4. **不要手动删除 go.mod 中的 replace 指令**（开发期）：
+   * 这些 replace 防止 go mod tidy 尝试从远程拉取不存在的版本
+   * 发布时 `release.sh` 会自动清理它们
+   * 提交时可以安全地 commit 包含 replace 的 go.mod
 
 ### 外部依赖的升级
 
@@ -143,48 +140,78 @@
 
 ## 发布前（准备打 tag 的那一刻）
 
-1. 从依赖最底层模块开始（core → runtimex → connectx → ...）。
-2. 在该模块目录下**只更新 require 版本**（`go mod edit -require=...`）。
-3. **不运行 `go mod tidy`**（原因见下文"为何发布时不 tidy"）。
-4. Commit require 版本更新（`go.mod` 的修改）。
-5. 打 tag：`git tag <module>/<vX.Y.Z>`，`git push origin <module>/<vX.Y.Z>`。
-6. 然后到上层模块，把它的 `require` 更新到刚发的下层 tag，再重复步骤 2~5。
-7. 完成整条链后，通知下游服务 `go get go.eggybyte.com/egg/xxx@vX.Y.Z`（下游的 `go get` 会自动处理 tidy）。
+**使用自动化脚本**：`./scripts/release.sh v0.x.y`
 
-### 为何发布时不 tidy？
+该脚本会自动完成以下步骤（从底层到高层，逐层发布）：
 
-**问题**：在 `release.sh` 中，我们曾经尝试在推送 tag 后立即运行 `go mod tidy`，但遇到这样的错误：
+1. **清理 replace 指令**：删除所有开发期遗留的本地 replace 指令
+2. **更新依赖版本**：将内部依赖更新到刚发布的版本（`go mod edit -require=...`）
+3. **运行 go mod tidy**：使用 `GOPROXY=direct` + 重试机制确保 go.sum 正确
+4. **提交变更**：commit 所有 go.mod 和 go.sum 的修改
+5. **打标签并推送**：`git tag <module>/<vX.Y.Z>` + `git push origin <module>/<vX.Y.Z>`
+6. **重复上述步骤**：自动处理所有模块，按依赖顺序逐层发布
+
+**手动发布**（如需手动控制）：
+1. 从依赖最底层模块开始（core → runtimex → connectx → ...）
+2. 删除所有 replace 指令：`go mod edit -dropreplace=go.eggybyte.com/egg/...`
+3. 更新 require 版本：`go mod edit -require=go.eggybyte.com/egg/xxx@v0.x.y`
+4. 运行 `GOPROXY=direct go mod tidy`
+5. Commit 变更并打 tag
+
+### 发布时如何正确 tidy？
+
+**问题**：在 `release.sh` 中运行 `go mod tidy` 时，可能遇到 "unknown revision" 错误：
 
 ```
 go: reading go.eggybyte.com/egg/core/go.mod at revision v0.3.0-alpha.2: unknown revision v0.3.0-alpha.2
 ```
 
 **原因**：
-1. Tag 刚推送到 GitHub，Go 模块代理（proxy.golang.org）还没有索引到它。
-2. 即使使用 `GOPROXY=direct`，某些传递依赖的测试包仍会尝试通过代理解析。
-3. 导致 tidy 失败，并且可能部分修改 go.mod/go.sum 但未提交，造成 git 状态混乱。
+1. Tag 刚推送到 GitHub，需要几秒钟时间让 Git 服务器完成处理。
+2. 即使使用 `GOPROXY=direct`，某些传递依赖的测试包仍可能访问缓存。
+3. GitHub 的 CDN 可能需要时间来传播新的 tag 信息。
 
 **解决方案**：
-- 发布时**只更新 require 版本，不 tidy**。
-- go.mod 里的 require 版本是"我依赖这个模块的这个版本"。
-- go.sum 在下游用户 `go get` 时自动生成（`go get` 会自动 tidy）。
-- 本地开发时，通过 `go work` 解决依赖，不受影响。
+
+```bash
+# 使用 GOPROXY=direct + 重试机制
+max_retries=3
+retry_delay=5
+
+for attempt in $(seq 1 $max_retries); do
+    if [ $attempt -gt 1 ]; then
+        echo "Retry $attempt/$max_retries (waiting ${retry_delay}s)..."
+        sleep $retry_delay
+    fi
+    
+    if GOPROXY=direct go mod tidy 2>&1; then
+        echo "Success!"
+        break
+    fi
+done
+```
+
+**为什么这样有效**：
+- `GOPROXY=direct` 强制从 GitHub 直接拉取，绕过 proxy.golang.org
+- 重试机制给 GitHub 时间来传播 tag（通常 5-10 秒足够）
+- 失败后的警告不影响发布流程，用户 `go get` 时会自动修复
 
 这样做的好处：
-- ✅ 避免 proxy 缓存延迟问题
-- ✅ 简化发布流程
-- ✅ 用户 `go get` 时会自动处理完整的依赖树和 go.sum
-- ✅ 避免 git 状态混乱（部分修改未提交）
+- ✅ go.sum 在发布时就是正确且完整的
+- ✅ 下游用户拉取时不需要重新生成 go.sum
+- ✅ 避免因 go.sum 不一致导致的 checksum mismatch 错误
+- ✅ 符合 Go 模块的最佳实践
 
 ---
 
-## 你真正要记住的 5 句话
+## 你真正要记住的 6 句话
 
 * **`go.work` 解决"我本地要让多个模块一起跑"，不是解决"go.mod 的版本永远保持最新 HEAD"。**
 * **内部模块之间的 go.mod 版本号只在发版前才更新，平时不用追着 HEAD 改。**
 * **外部依赖的版本用 `go get` 控，再用 `go mod tidy` 清理。**
-* **不要把临时的 `replace ../core` 之类的本地 hack 提交进主分支，它们只是为了让 `tidy` 不乱拉远程。**
-* **发布时只更新 require 版本不 tidy，避免 proxy 缓存延迟导致的"unknown revision"错误。**
+* **开发期保留 `replace` 指令在 go.mod 中，它们防止 tidy 拉远程假版本，可以安全提交。**
+* **发布时 `release.sh` 会自动删除所有 replace 指令，确保发布的 go.mod 干净可复现。**
+* **发布时要 tidy，使用 `GOPROXY=direct` + 重试机制避免 GitHub tag 传播延迟。**
 
 照这个模型走，你就能：
 

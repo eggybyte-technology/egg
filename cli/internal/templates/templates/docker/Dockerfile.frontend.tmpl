@@ -1,0 +1,76 @@
+# ==============================================================================
+# EggyByte Frontend Service Image (Flutter Web + Nginx)
+# ==============================================================================
+#
+# Purpose:
+#   Package a pre-built Flutter web application with nginx for serving static assets.
+#   This Dockerfile is used by the egg CLI to create production-ready frontend images.
+#
+# Base Image:
+#   nginx:1.27.2-alpine (official nginx with Alpine Linux, minimal footprint)
+#
+# Build Process:
+#   1. Build Flutter web assets using local Flutter SDK (done before docker build)
+#   2. Run: egg build frontend <service> (handles flutter build + packaging)
+#
+# Build Args:
+#   - SERVICE_NAME: Name of the frontend service (e.g., "admin_portal", "user_app")
+#   - WEB_DIR: Path to built Flutter web assets (default: bin/frontend/${SERVICE_NAME})
+#   - HTTP_PORT: Nginx listen port (default: 3000)
+#
+# Runtime Environment:
+#   - Nginx serves static files from /usr/share/nginx/html
+#   - SPA routing: all routes fall back to index.html
+#   - GZIP compression enabled for optimal transfer
+#
+# Security:
+#   - Runs as nginx user (non-root)
+#   - Static file serving only (no code execution)
+#   - Security headers configured in nginx.conf
+#
+# Usage Example:
+#   # First, build Flutter web locally:
+#   flutter build web --release --output bin/frontend/admin_portal
+#
+#   # Then package with Docker:
+#   docker build -f docker/Dockerfile.frontend \
+#     --build-arg SERVICE_NAME=admin_portal \
+#     -t ghcr.io/myorg/myproject-admin-portal:v1.0.0 .
+#
+# ==============================================================================
+
+FROM nginx:1.27.2-alpine
+
+# Build-time arguments with defaults
+ARG SERVICE_NAME="app"
+ARG WEB_DIR="bin/frontend/${SERVICE_NAME}"
+ARG HTTP_PORT=3000
+
+# Image metadata (populated by egg CLI at build time)
+LABEL org.opencontainers.image.title="{{.ProjectName}}-${SERVICE_NAME}-frontend" \
+      org.opencontainers.image.description="EggyByte Flutter web application: ${SERVICE_NAME}" \
+      org.opencontainers.image.source="{{.ModulePrefix}}" \
+      org.opencontainers.image.vendor="EggyByte Technology" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="{{.Version}}"
+
+# Copy pre-built Flutter web assets to nginx html directory
+# Assets must be compiled with: flutter build web --release
+COPY ${WEB_DIR} /usr/share/nginx/html
+
+# Copy custom nginx configuration for SPA routing
+# Configuration includes MIME types, gzip, and SPA fallback
+COPY docker/nginx.conf /etc/nginx/nginx.conf
+
+# Expose HTTP port for web traffic
+# Default is 3000 to avoid conflicts with common development ports
+EXPOSE ${HTTP_PORT}
+
+# Health check: verify nginx is serving content
+# Checks every 30s, fails after 3 consecutive failures
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${HTTP_PORT}/ || exit 1
+
+# Run nginx in foreground mode
+# Inherited from base image: CMD ["nginx", "-g", "daemon off;"]
+

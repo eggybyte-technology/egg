@@ -80,9 +80,9 @@ func NewRenderer(fs *projectfs.ProjectFS, refParser *ref.Parser) *Renderer {
 func (r *Renderer) Render(config *configschema.Config) error {
 	ui.Info("Rendering Docker Compose configuration...")
 
-	// Create deploy directory
-	if err := r.fs.CreateDirectory("deploy"); err != nil {
-		return fmt.Errorf("failed to create deploy directory: %w", err)
+	// Create deploy/compose directory
+	if err := r.fs.CreateDirectory("deploy/compose"); err != nil {
+		return fmt.Errorf("failed to create deploy/compose directory: %w", err)
 	}
 
 	// Generate compose.yaml
@@ -92,7 +92,7 @@ func (r *Renderer) Render(config *configschema.Config) error {
 	}
 
 	// Write compose.yaml
-	if err := r.fs.WriteFile("deploy/compose.yaml", composeYAML, 0644); err != nil {
+	if err := r.fs.WriteFile("deploy/compose/compose.yaml", composeYAML, 0644); err != nil {
 		return fmt.Errorf("failed to write compose.yaml: %w", err)
 	}
 
@@ -365,7 +365,7 @@ func (r *Renderer) generateEnvFile(config *configschema.Config) error {
 	}
 
 	// Write .env file
-	if err := r.fs.WriteFile("deploy/.env", builder.String(), 0644); err != nil {
+	if err := r.fs.WriteFile("deploy/compose/.env", builder.String(), 0644); err != nil {
 		return fmt.Errorf("failed to write .env file: %w", err)
 	}
 

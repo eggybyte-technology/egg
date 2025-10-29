@@ -48,14 +48,15 @@ package generators
 //
 //	Safe for concurrent read access after initialization.
 type TemplateData struct {
-	ModulePrefix     string // Go module prefix
-	ServiceName      string // Service name (lowercase, e.g., "user")
-	ServiceNameCamel string // Service name (CamelCase, e.g., "User")
-	ServiceNameVar   string // Service name for variables (e.g., "user")
-	ProtoPackage     string // Proto package prefix (e.g., "org.project")
-	BinaryName       string // Binary name (default: "server")
-	HTTPPort         int    // HTTP port (default: 8080)
-	HealthPort       int    // Health port (default: 8081)
-	MetricsPort      int    // Metrics port (default: 9091)
+	ModulePrefix       string // Go module prefix for the project
+	ServiceModulePath  string // Full module path for this service (e.g., "github.com/org/project/backend/user")
+	ServiceName        string // Service name (lowercase, e.g., "user")
+	ServiceNameCamel   string // Service name (CamelCase, e.g., "User")
+	ServiceNameVar     string // Service name for variables (e.g., "user")
+	ProtoPackage       string // Proto package prefix (e.g., "org.project")
+	BinaryName         string // Binary name (default: "server")
+	HTTPPort           int    // HTTP port (default: 8080)
+	HealthPort         int    // Health port (default: 8081)
+	MetricsPort        int    // Metrics port (default: 9091)
 }
 

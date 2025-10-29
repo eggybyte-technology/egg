@@ -124,32 +124,56 @@ example-service/
 ### Prerequisites
 
 - Go 1.23 or later
+- Docker and Docker Compose (for deployment)
 - Buf CLI (for regenerating protobuf code): `go install github.com/bufbuild/buf/cmd/buf@latest`
 
-### Using Make
+### Quick Start with Make
 
-Each example includes a Makefile with common targets:
+From the `examples/` directory:
 
 ```bash
-make build      # Build the service binary
-make run        # Run the service
-make test       # Run tests
-make lint       # Run linter
-make generate   # Regenerate protobuf code
-make clean      # Clean build artifacts
+# Build & Deploy
+make docker-build    # Build Docker images for all examples
+make deploy-up       # Start infrastructure + services
+make deploy-status   # Check service status
+
+# Testing
+make test            # Run full integration tests
+
+# Cleanup
+make services-down   # Stop application services only
+make deploy-down     # Stop everything (including infrastructure)
 ```
 
-### Manual Build
+### Development Workflow
 
+**Build and run locally:**
 ```bash
-# Build
-go build -o bin/service main.go
+cd minimal-connect-service  # or user-service
+go run main.go              # Run directly
+```
 
-# Run
-./bin/service
+**Build Docker image:**
+```bash
+cd ..                       # Back to examples/
+make docker-build           # Build all service images
+```
 
-# Or run directly
-go run main.go
+**Deploy with Docker Compose:**
+```bash
+make infra-up              # Start infrastructure (MySQL, Jaeger, OTEL)
+make services-up           # Start application services
+```
+
+**View logs and status:**
+```bash
+make deploy-logs           # Follow all logs
+make deploy-status         # Show container status
+```
+
+**Rebuild and restart:**
+```bash
+make services-rebuild      # Rebuild images and restart services
 ```
 
 ## Configuration
@@ -170,27 +194,50 @@ ENABLE_DEBUG_LOGS=false
 SLOW_REQUEST_MILLIS=1000
 ```
 
-## Observability
+## Deployment & Observability
 
-### Health Check
+### Infrastructure Services
+
+The `examples/deploy/` directory contains Docker Compose configurations for:
+
+- **MySQL 9.4** - Database (port 3306)
+- **Jaeger** - Distributed tracing UI (port 16686)
+- **OpenTelemetry Collector** - Telemetry aggregation (ports 4317/4318)
+
+See [deploy/README.md](deploy/README.md) for detailed deployment documentation.
+
+### Accessing Services
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Minimal Service | http://localhost:8080 | Connect-RPC endpoints |
+| Minimal Health | http://localhost:8081/health | Health check |
+| Minimal Metrics | http://localhost:9091/metrics | Prometheus metrics |
+| User Service | http://localhost:8082 | Connect-RPC endpoints |
+| User Health | http://localhost:8083/health | Health check |
+| User Metrics | http://localhost:9092/metrics | Prometheus metrics |
+| Jaeger UI | http://localhost:16686 | Distributed tracing UI |
+| MySQL | localhost:3306 | Database (user: egguser, pass: eggpassword) |
+
+### Health Checks
 
 ```bash
-curl http://localhost:8081/health
+curl http://localhost:8081/health  # Minimal service
+curl http://localhost:8083/health  # User service
 ```
 
 ### Metrics
 
 ```bash
-curl http://localhost:9091/metrics
+curl http://localhost:9091/metrics  # Minimal service metrics
+curl http://localhost:9092/metrics  # User service metrics
 ```
 
 ### Tracing
 
-Configure OpenTelemetry collector:
+View traces in Jaeger UI: http://localhost:16686
 
-```bash
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-```
+Services automatically send traces to the OTEL collector at `otel-collector:4317`.
 
 ## Testing with Connect
 
@@ -227,6 +274,36 @@ See [connectrpc.com](https://connectrpc.com/) for client libraries in multiple l
 7. **Test** with `make test` and manual testing
 8. **Run** with `make run`
 
+## Makefile Targets
+
+The `examples/Makefile` provides comprehensive deployment and testing targets:
+
+### Build & Test
+- `make build` - Build all example services (Go)
+- `make test` - Run full integration tests
+- `make docker-build` - Build Docker images for all services
+- `make docker-clean` - Clean Docker images
+
+### Deployment (All Services)
+- `make deploy-up` - Start infrastructure + application services
+- `make deploy-down` - Stop all services
+- `make deploy-restart` - Restart all services
+- `make deploy-logs` - Follow service logs
+- `make deploy-status` - Show service status
+
+### Infrastructure Only
+- `make infra-up` - Start MySQL, Jaeger, OTEL Collector
+- `make infra-down` - Stop infrastructure
+- `make infra-restart` - Restart infrastructure
+- `make infra-status` - Show infrastructure status
+- `make infra-clean` - Clean infrastructure (including volumes)
+
+### Application Services Only
+- `make services-up` - Start minimal-service and user-service
+- `make services-down` - Stop application services
+- `make services-restart` - Restart application services
+- `make services-rebuild` - Rebuild images and restart
+
 ## Adding a New Example
 
 To add a new example:
@@ -237,7 +314,8 @@ To add a new example:
 4. Run `buf generate` to create Go code
 5. Implement your service logic
 6. Update README.md with your example's specifics
-7. Add Makefile targets for building and testing
+7. Add the service to `examples/deploy/docker-compose.services.yaml`
+8. Update `scripts/build.sh` to include your service
 
 ## Troubleshooting
 

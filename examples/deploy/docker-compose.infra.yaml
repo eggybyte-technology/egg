@@ -1,0 +1,41 @@
+# Docker Compose configuration for infrastructure services
+# This file defines persistent infrastructure services required by example applications
+
+networks:
+  egg-network:
+    driver: bridge
+    name: egg-network
+
+volumes:
+  mysql-data:
+    name: egg-mysql-data
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:9.4
+    container_name: egg-mysql
+    hostname: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: eggdb
+      MYSQL_USER: egguser
+      MYSQL_PASSWORD: eggpassword
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - egg-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+

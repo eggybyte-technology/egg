@@ -1,35 +1,38 @@
-version: '3.8'
-
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: {{.ProjectName}}-postgres
+{{if .DatabaseEnabled}}
+  # MySQL Database
+  mysql:
+    image: {{.DatabaseImage}}
+    container_name: {{.ProjectName}}-mysql
     environment:
-      POSTGRES_DB: {{.ProjectName}}
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: {{.DatabaseRootPassword}}
+      MYSQL_DATABASE: {{.DatabaseName}}
+      MYSQL_USER: {{.DatabaseUser}}
+      MYSQL_PASSWORD: {{.DatabasePassword}}
     ports:
-      - "5432:5432"
+      - "{{.DatabasePort}}:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d {{.ProjectName}}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p{{.DatabaseRootPassword}}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - {{.ProjectName}}-network
+{{end}}
 
   # Backend Services
 {{range $serviceName, $config := .BackendServices}}
   {{$serviceName}}:
     build:
-      context: .
-      dockerfile: build/Dockerfile.backend
+      context: ../../backend/{{$serviceName}}
+      dockerfile: ../../docker/Dockerfile.backend
     container_name: {{$.ProjectName}}-{{$serviceName}}
     environment:
-      DATABASE_DSN: postgres://user:password@postgres:5432/{{$.ProjectName}}?sslmode=disable
+{{if $.DatabaseEnabled}}
+      DATABASE_DSN: {{$.DatabaseUser}}:{{$.DatabasePassword}}@tcp(mysql:3306)/{{$.DatabaseName}}?charset=utf8mb4&parseTime=True
+{{end}}
       HTTP_PORT: {{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}
       HEALTH_PORT: {{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}
       METRICS_PORT: {{if $config.Ports}}{{$config.Ports.Metrics}}{{else}}9091{{end}}
@@ -37,15 +40,19 @@ services:
       - "{{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}:{{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}"
       - "{{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}:{{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}"
       - "{{if $config.Ports}}{{$config.Ports.Metrics}}{{else}}9091{{end}}:{{if $config.Ports}}{{$config.Ports.Metrics}}{{else}}9091{{end}}"
+{{if $.DatabaseEnabled}}
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
+{{end}}
     networks:
       - {{$.ProjectName}}-network
 {{end}}
+{{if .DatabaseEnabled}}
 
 volumes:
-  postgres_data:
+  mysql_data:
+{{end}}
 
 networks:
   {{.ProjectName}}-network:

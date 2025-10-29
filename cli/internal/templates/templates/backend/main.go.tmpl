@@ -61,11 +61,11 @@ import (
 
 	"connectrpc.com/connect"
 	{{.ServiceNameVar}}v1connect "{{.ModulePrefix}}/gen/go/{{.ServiceNameVar}}/v1/{{.ServiceNameVar}}v1connect"
-	"{{.ModulePrefix}}/internal/config"
-	"{{.ModulePrefix}}/internal/handler"
-	"{{.ModulePrefix}}/internal/model"
-	"{{.ModulePrefix}}/internal/repository"
-	"{{.ModulePrefix}}/internal/service"
+	"{{.ServiceModulePath}}/internal/config"
+	"{{.ServiceModulePath}}/internal/handler"
+	"{{.ServiceModulePath}}/internal/model"
+	"{{.ServiceModulePath}}/internal/repository"
+	"{{.ServiceModulePath}}/internal/service"
 	"go.eggybyte.com/egg/servicex"
 )
 

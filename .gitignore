@@ -7,6 +7,10 @@ build/*.tar.gz
 build/*.zip
 **/bin/
 
+# Examples build artifacts (keep .gitkeep)
+examples/bin/*
+!examples/bin/.gitkeep
+
 # Go workspace
 go.work
 go.work.sum
@@ -37,7 +41,9 @@ vendor/
 
 # Test coverage
 *.coverprofile
+coverage.out
 coverage.html
+.coverage/
 
 # Temporary files
 tmp/

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Makefile**: New `make tidy` command to clean and update dependencies for all modules
+- **Makefile**: New `make coverage` command to generate test coverage reports (HTML + terminal)
+- **Makefile**: New `make check` command for quick validation (lint + test, no coverage)
+- **Makefile**: New `make quality` command for full quality check (tidy + lint + test + coverage)
+- **base-images**: Dedicated Makefile for foundation image management (builder + runtime)
+- **base-images**: Comprehensive README.md with multi-arch build documentation
+- **docs**: `makefile-optimization.md` guide documenting build system improvements
 - **configx**: `LogLevel` field in `BaseConfig` for unified log level configuration
 - **logx**: `ParseLevel()` function to convert log level strings to `slog.Level`
 - **logx**: `NewFromEnv()` convenience function for zero-config logger creation from `LOG_LEVEL` environment variable
@@ -19,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Makefile**: All commands now use unified `scripts/logger.sh` for consistent output formatting
+- **Makefile**: Removed redundant `make build` (library modules don't need build)
+- **Makefile**: Removed redundant `make fmt` and `make vet` (already included in lint)
+- **Makefile**: Removed `make publish-modules` (merged into `make release`)
+- **Makefile**: Moved Docker foundation image builds to `base-images/Makefile`
+- **Makefile**: Shell loops now use `source $(LOGGER)` for proper function execution
+- **Makefile**: Improved error handling with better exit codes and failure tracking
+- **Project Structure**: Renamed `docker/` to `base-images/` for clearer purpose
+- **scripts/logger.sh**: Changed from `echo -e` to `printf` for better portability and reliability
+- **scripts/logger.sh**: Improved formatting functions to avoid shell interpretation issues
+- **.golangci.yml**: Simplified `gocritic` configuration to remove redundant disabled-checks
+- **.golangci.yml**: Removed warnings about already-disabled checks (`rangeValCopy`, `hugeParam`)
+- **.gitignore**: Added `.coverage/` directory and `coverage.out` file patterns
 - **servicex**: Default logger now uses console format with colors for better development experience
 - **servicex**: Logger initialization reads `LOG_LEVEL` from BaseConfig (via configx) for unified configuration management
 - **servicex**: All configuration now unified through configx (no direct environment variable reads)
@@ -31,6 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Improved
 
+- **Build System**: Unified logging format across Makefile and shell scripts using `logger.sh`
+- **Build System**: Reduced root Makefile from 367 lines to 231 lines (37% reduction)
+- **Build System**: Clearer separation of concerns (framework vs. base images vs. examples)
+- **Developer Experience**: Consistent colored output with proper formatting across all commands
+- **Developer Experience**: Better error messages with clear success/failure indicators
+- **Code Quality**: No more `/bin/sh: @echo: command not found` errors in Makefile execution
+- **Code Quality**: Cleaner `golangci-lint` output without metadata warnings
 - **Documentation**: All internal packages now have comprehensive English GoDoc comments
 - **Documentation**: Added detailed parameter, return value, concurrency, and performance notes to public APIs
 - **Documentation**: Service layer, repository layer, and model layer fully documented with usage examples
@@ -42,11 +69,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Makefile**: Removed `make build` (not needed for library modules)
+- **Makefile**: Removed `make fmt` (redundant with lint)
+- **Makefile**: Removed `make vet` (redundant with lint)
+- **Makefile**: Removed `make publish-modules` (merged into release)
+- **Makefile**: Removed `make security` from quality check (moved to optional/manual execution)
+- **Makefile**: Removed all Docker-related targets from root (moved to base-images/)
 - **examples/user-service**: Removed ~150 lines of mock repository implementation
 - **examples/user-service**: Removed fallback to in-memory storage (production best practice)
 
 ### Fixed
 
+- **Makefile**: Fixed shell script execution errors (`@echo: command not found`) by using `source $(LOGGER)`
+- **Makefile**: Fixed golangci-lint warnings about gocritic configuration
+- **Makefile**: Fixed subshell navigation using `(cd module && command)` pattern
+- **scripts/logger.sh**: Fixed `-e` flag being printed in output by switching to `printf`
+- **.golangci.yml**: Fixed unnecessary disabled-checks configuration for gocritic
 - **connectx**: Added panic protection in metrics interceptor when accessing response body
 - **connectx**: Enhanced recovery interceptor logging for better panic debugging
 - **connectx**: Protected response size recording from potential nil pointer dereferences in error scenarios

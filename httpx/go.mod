@@ -2,6 +2,14 @@ module go.eggybyte.com/egg/httpx
 
 go 1.25.1
 
+replace go.eggybyte.com/egg/core => /Users/fengguangyao/eggybyte/projects/go/egg/core
+
+replace go.eggybyte.com/egg/logx => /Users/fengguangyao/eggybyte/projects/go/egg/logx
+
+replace go.eggybyte.com/egg/configx => /Users/fengguangyao/eggybyte/projects/go/egg/configx
+
+replace go.eggybyte.com/egg/obsx => /Users/fengguangyao/eggybyte/projects/go/egg/obsx
+
 require github.com/go-playground/validator/v10 v10.28.0
 
 require (
@@ -9,6 +17,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	golang.org/x/crypto v0.42.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.29.0 // indirect

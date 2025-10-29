@@ -94,6 +94,42 @@ LOG_LEVEL=debug go run main.go
 
 ## Recent Improvements
 
+### v0.2.1 - Modern Build System & Unified Logging
+
+**Modernized Makefile with Unified Logging**
+- All Makefile commands now use unified `logger.sh` for consistent output formatting
+- Improved error handling and cleaner command execution
+- New commands for modern development workflow:
+  - `make tidy` - Clean and update dependencies for all modules
+  - `make coverage` - Generate test coverage report with HTML output
+  - `make check` - Quick validation (lint + test)
+  - `make quality` - Full quality check (tidy + lint + test + coverage)
+
+**Reorganized Docker Foundation Images**
+- Renamed `docker/` to `base-images/` for clearer purpose
+- Dedicated Makefile for base image management
+- Comprehensive documentation for multi-arch builds
+
+**Enhanced Linter Configuration**
+- Fixed `golangci-lint` warnings for `gocritic` settings
+- Cleaner lint output without metadata warnings
+- Simplified `.golangci.yml` configuration
+
+**Development Workflow:**
+```bash
+# First-time setup
+make setup       # Install tools + init workspace
+
+# Daily development
+make tidy        # Clean dependencies
+make check       # Quick validation
+make coverage    # Check test coverage
+
+# Before release
+make quality     # Full quality check
+make release VERSION=v0.3.0
+```
+
 ### v0.2.0 - Simplified Configuration & Enhanced Logging
 
 **Environment-Based Log Level Control**
@@ -441,32 +477,83 @@ make run
 ### Prerequisites
 
 - Go 1.21+
-- Docker and Docker Compose
+- Docker and Docker Compose (for examples)
 - Make
 
-### Build All Modules
+### Monorepo Structure
+
+The egg framework uses a modular monorepo with sub-projects:
 
 ```bash
-make build
+# Framework modules (root)
+make setup          # First-time setup (install tools + init workspace)
+make tidy           # Clean and update dependencies for all modules
+make test           # Run tests for all modules with race detection
+make lint           # Run linter (includes fmt + vet)
+make coverage       # Generate test coverage report (HTML + terminal)
+make check          # Quick validation (lint + test, no coverage)
+make quality        # Full quality check (tidy + lint + test + coverage)
+make clean          # Clean test artifacts and coverage files
+make tools          # Install required development tools
+
+# Release management
+make release VERSION=v0.3.0       # Release all modules with version
+make delete-all-tags              # Delete ALL version tags (DANGEROUS)
+
+# CLI tool
+cd cli && make build              # Build egg CLI
+cd cli && make test-integration   # Run CLI integration tests
+
+# Examples
+cd examples && make docker-build  # Build example Docker images
+cd examples && make deploy-up     # Start example services
+cd examples && make test          # Run integration tests
+
+# Foundation images
+cd base-images && make help       # View base image build options
+cd base-images && make build-all  # Build builder + runtime images
+cd base-images && make push-all   # Build and push to registry
 ```
 
-### Run Tests
+### Typical Development Workflow
 
 ```bash
-make test
+# 1. First-time setup
+make setup
+
+# 2. Daily development
+make tidy          # After go.mod changes
+make check         # Before git commit
+make coverage      # Check test coverage
+
+# 3. Before release
+make quality       # Full quality check
+
+# 4. Release
+make release VERSION=v0.3.0
 ```
 
-### Run Linter
+### Foundation Images
+
+Build multi-architecture foundation images for Egg services:
 
 ```bash
-make lint
+cd base-images
+
+# Build both builder and runtime (for linux/amd64 and linux/arm64)
+make build-all
+
+# Build and push to registry
+make build-all PUSH=true
+
+# Build for specific platforms
+make build-builder DOCKER_PLATFORM=linux/amd64
+
+# Build with specific Go version
+make build-all GO_VERSION=1.25.2
 ```
 
-### Generate Documentation
-
-```bash
-make docs
-```
+See [base-images/README.md](base-images/README.md) for detailed documentation.
 
 ## Project Structure
 
@@ -486,9 +573,22 @@ egg/
 ├── servicex/        # L4: Service integration
 ├── storex/          # Auxiliary: Storage
 ├── k8sx/            # Auxiliary: Kubernetes
-├── examples/        # Example services
+├── cli/             # CLI tool for project scaffolding
+│   ├── Makefile     # CLI-specific build targets
+│   └── README.md    # CLI documentation
+├── examples/        # Example services with deployment
+│   ├── Makefile     # Example-specific targets
+│   ├── deploy/      # Docker Compose configurations
+│   └── scripts/     # Integration test scripts
+├── base-images/     # Foundation Docker images
+│   ├── Makefile              # Image build targets
+│   ├── README.md             # Image documentation
+│   ├── Dockerfile.builder    # Multi-arch Go builder
+│   └── Dockerfile.runtime    # Multi-arch Alpine runtime
 ├── docs/            # Documentation
-└── scripts/         # Build and deployment scripts
+│   └── makefile-optimization.md  # Makefile optimization guide
+└── scripts/         # Build and utility scripts
+    └── logger.sh    # Unified logging for Makefile and scripts
 ```
 
 ## Code Quality Standards

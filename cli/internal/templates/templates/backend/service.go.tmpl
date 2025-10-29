@@ -19,8 +19,8 @@ import (
 	"go.eggybyte.com/egg/core/errors"
 	"go.eggybyte.com/egg/core/log"
 	{{.ServiceNameVar}}v1 "{{.ModulePrefix}}/gen/go/{{.ServiceNameVar}}/v1"
-	"{{.ModulePrefix}}/internal/model"
-	"{{.ModulePrefix}}/internal/repository"
+	"{{.ServiceModulePath}}/internal/model"
+	"{{.ServiceModulePath}}/internal/repository"
 )
 
 // {{.ServiceNameCamel}}Service defines the interface for {{.ServiceName}} business operations.
@@ -42,8 +42,8 @@ type {{.ServiceNameCamel}}Service interface {
 	List{{.ServiceNameCamel}}s(ctx context.Context, req *{{.ServiceNameVar}}v1.List{{.ServiceNameCamel}}sRequest) (*{{.ServiceNameVar}}v1.List{{.ServiceNameCamel}}sResponse, error)
 }
 
-// {{.ServiceNameVar}}Service implements the {{.ServiceNameCamel}}Service interface.
-type {{.ServiceNameVar}}Service struct {
+// {{.ServiceNameVar | ToLower}}Service implements the {{.ServiceNameCamel}}Service interface.
+type {{.ServiceNameVar | ToLower}}Service struct {
 	repo   repository.{{.ServiceNameCamel}}Repository
 	logger log.Logger
 }
@@ -81,7 +81,7 @@ func New{{.ServiceNameCamel}}Service(repo repository.{{.ServiceNameCamel}}Reposi
 		panic("New{{.ServiceNameCamel}}Service: logger cannot be nil")
 	}
 
-	return &{{.ServiceNameVar}}Service{
+	return &{{.ServiceNameVar | ToLower}}Service{
 		repo:   repo,
 		logger: logger,
 	}
@@ -113,7 +113,7 @@ func New{{.ServiceNameCamel}}Service(repo repository.{{.ServiceNameCamel}}Reposi
 // Concurrency:
 //
 //	Safe for concurrent use. Database handles race conditions with unique constraints.
-func (s *{{.ServiceNameVar}}Service) Create{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Response, error) {
+func (s *{{.ServiceNameVar | ToLower}}Service) Create{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Response, error) {
 	s.logger.Debug("Create{{.ServiceNameCamel}} started", log.Str("email", req.Email), log.Str("name", req.Name))
 
 	// Validate request fields
@@ -156,7 +156,7 @@ func (s *{{.ServiceNameVar}}Service) Create{{.ServiceNameCamel}}(ctx context.Con
 }
 
 // Get{{.ServiceNameCamel}} retrieves a {{.ServiceName}} by ID with proper error handling.
-func (s *{{.ServiceNameVar}}Service) Get{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Get{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Get{{.ServiceNameCamel}}Response, error) {
+func (s *{{.ServiceNameVar | ToLower}}Service) Get{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Get{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Get{{.ServiceNameCamel}}Response, error) {
 	s.logger.Debug("Get{{.ServiceNameCamel}} started", log.Str("{{.ServiceNameVar}}_id", req.Id))
 
 	if req.Id == "" {
@@ -182,7 +182,7 @@ func (s *{{.ServiceNameVar}}Service) Get{{.ServiceNameCamel}}(ctx context.Contex
 }
 
 // Update{{.ServiceNameCamel}} updates an existing {{.ServiceName}} with validation.
-func (s *{{.ServiceNameVar}}Service) Update{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Update{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Update{{.ServiceNameCamel}}Response, error) {
+func (s *{{.ServiceNameVar | ToLower}}Service) Update{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Update{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Update{{.ServiceNameCamel}}Response, error) {
 	s.logger.Debug("Update{{.ServiceNameCamel}} started",
 		log.Str("{{.ServiceNameVar}}_id", req.Id),
 		log.Str("email", req.Email),
@@ -242,7 +242,7 @@ func (s *{{.ServiceNameVar}}Service) Update{{.ServiceNameCamel}}(ctx context.Con
 }
 
 // Delete{{.ServiceNameCamel}} removes a {{.ServiceName}} by ID.
-func (s *{{.ServiceNameVar}}Service) Delete{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Delete{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Delete{{.ServiceNameCamel}}Response, error) {
+func (s *{{.ServiceNameVar | ToLower}}Service) Delete{{.ServiceNameCamel}}(ctx context.Context, req *{{.ServiceNameVar}}v1.Delete{{.ServiceNameCamel}}Request) (*{{.ServiceNameVar}}v1.Delete{{.ServiceNameCamel}}Response, error) {
 	s.logger.Debug("Delete{{.ServiceNameCamel}} started", log.Str("{{.ServiceNameVar}}_id", req.Id))
 
 	if req.Id == "" {
@@ -265,7 +265,7 @@ func (s *{{.ServiceNameVar}}Service) Delete{{.ServiceNameCamel}}(ctx context.Con
 }
 
 // List{{.ServiceNameCamel}}s retrieves {{.ServiceName}}s with pagination.
-func (s *{{.ServiceNameVar}}Service) List{{.ServiceNameCamel}}s(ctx context.Context, req *{{.ServiceNameVar}}v1.List{{.ServiceNameCamel}}sRequest) (*{{.ServiceNameVar}}v1.List{{.ServiceNameCamel}}sResponse, error) {
+func (s *{{.ServiceNameVar | ToLower}}Service) List{{.ServiceNameCamel}}s(ctx context.Context, req *{{.ServiceNameVar}}v1.List{{.ServiceNameCamel}}sRequest) (*{{.ServiceNameVar}}v1.List{{.ServiceNameCamel}}sResponse, error) {
 	// Normalize pagination parameters
 	page := normalizePage(int(req.Page))
 	pageSize := normalizePageSize(int(req.PageSize))

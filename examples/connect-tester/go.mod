@@ -2,6 +2,36 @@ module go.eggybyte.com/egg/examples/connect-tester
 
 go 1.25.1
 
+replace go.eggybyte.com/egg/core => /Users/fengguangyao/eggybyte/projects/go/egg/core
+
+replace go.eggybyte.com/egg/logx => /Users/fengguangyao/eggybyte/projects/go/egg/logx
+
+replace go.eggybyte.com/egg/configx => /Users/fengguangyao/eggybyte/projects/go/egg/configx
+
+replace go.eggybyte.com/egg/obsx => /Users/fengguangyao/eggybyte/projects/go/egg/obsx
+
+replace go.eggybyte.com/egg/httpx => /Users/fengguangyao/eggybyte/projects/go/egg/httpx
+
+replace go.eggybyte.com/egg/runtimex => /Users/fengguangyao/eggybyte/projects/go/egg/runtimex
+
+replace go.eggybyte.com/egg/connectx => /Users/fengguangyao/eggybyte/projects/go/egg/connectx
+
+replace go.eggybyte.com/egg/clientx => /Users/fengguangyao/eggybyte/projects/go/egg/clientx
+
+replace go.eggybyte.com/egg/storex => /Users/fengguangyao/eggybyte/projects/go/egg/storex
+
+replace go.eggybyte.com/egg/k8sx => /Users/fengguangyao/eggybyte/projects/go/egg/k8sx
+
+replace go.eggybyte.com/egg/testingx => /Users/fengguangyao/eggybyte/projects/go/egg/testingx
+
+replace go.eggybyte.com/egg/servicex => /Users/fengguangyao/eggybyte/projects/go/egg/servicex
+
+replace go.eggybyte.com/egg/cli => /Users/fengguangyao/eggybyte/projects/go/egg/cli
+
+replace go.eggybyte.com/egg/examples/minimal-connect-service => /Users/fengguangyao/eggybyte/projects/go/egg/examples/minimal-connect-service
+
+replace go.eggybyte.com/egg/examples/user-service => /Users/fengguangyao/eggybyte/projects/go/egg/examples/user-service
+
 require (
 	connectrpc.com/connect v1.19.1
 	go.eggybyte.com/egg/clientx v0.0.0-00010101000000-000000000000

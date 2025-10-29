@@ -1,7 +1,7 @@
 // Package helm provides Helm chart rendering for egg projects.
 //
 // Overview:
-//   - Responsibility: Render Helm charts from egg configuration
+//   - Responsibility: Render unified Helm chart from egg configuration
 //   - Key Types: Helm renderer, chart templates, Kubernetes manifests
 //   - Concurrency Model: Immutable rendering with atomic file writes
 //   - Error Semantics: Rendering errors with configuration validation
@@ -16,7 +16,6 @@ package helm
 import (
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"go.eggybyte.com/egg/cli/internal/configschema"
@@ -65,7 +64,7 @@ func NewRenderer(fs *projectfs.ProjectFS, refParser *ref.Parser) *Renderer {
 	}
 }
 
-// Render renders Helm charts for all services.
+// Render renders a unified Helm chart for the entire project.
 //
 // Parameters:
 //   - config: Project configuration
@@ -79,284 +78,47 @@ func NewRenderer(fs *projectfs.ProjectFS, refParser *ref.Parser) *Renderer {
 // Performance:
 //   - Template rendering and file I/O
 func (r *Renderer) Render(config *configschema.Config) error {
-	ui.Info("Rendering Helm charts...")
+	ui.Info("Rendering unified Helm chart for project: %s", config.ProjectName)
 
-	// Create helm directory structure
-	if err := r.fs.CreateDirectory("deploy/helm"); err != nil {
-		return fmt.Errorf("failed to create helm directory: %w", err)
-	}
-
-	// Render backend services
-	for name, service := range config.Backend {
-		if err := r.renderBackendService(name, service, config); err != nil {
-			return fmt.Errorf("failed to render backend service %s: %w", name, err)
-		}
-	}
-
-	// Render frontend services
-	for name, service := range config.Frontend {
-		if err := r.renderFrontendService(name, service, config); err != nil {
-			return fmt.Errorf("failed to render frontend service %s: %w", name, err)
-		}
-	}
-
-	// Render database service if enabled
-	if config.Database.Enabled {
-		if err := r.renderDatabaseService(config.Database, config); err != nil {
-			return fmt.Errorf("failed to render database service: %w", err)
-		}
-	}
-
-	// Render ConfigMaps and Secrets
-	if err := r.renderKubernetesResources(config); err != nil {
-		return fmt.Errorf("failed to render Kubernetes resources: %w", err)
-	}
-
-	ui.Success("Helm charts rendered")
-	return nil
-}
-
-// renderBackendService renders a backend service Helm chart.
-//
-// Parameters:
-//   - name: Service name
-//   - service: Service configuration
-//   - config: Project configuration
-//
-// Returns:
-//   - error: Rendering error if any
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - Template rendering and file I/O
-func (r *Renderer) renderBackendService(name string, service configschema.BackendService, config *configschema.Config) error {
-	// Create service directory
-	serviceDir := filepath.Join("deploy/helm", name)
-	if err := r.fs.CreateDirectory(serviceDir); err != nil {
-		return fmt.Errorf("failed to create service directory: %w", err)
+	// Create project-level chart directory
+	chartDir := filepath.Join("deploy/helm", config.ProjectName)
+	if err := r.fs.CreateDirectory(chartDir); err != nil {
+		return fmt.Errorf("failed to create chart directory: %w", err)
 	}
 
 	// Create templates directory
-	templatesDir := filepath.Join(serviceDir, "templates")
+	templatesDir := filepath.Join(chartDir, "templates")
 	if err := r.fs.CreateDirectory(templatesDir); err != nil {
 		return fmt.Errorf("failed to create templates directory: %w", err)
 	}
 
 	// Generate Chart.yaml
-	chartYAML := r.generateChartYAML(name, config)
-	if err := r.fs.WriteFile(filepath.Join(serviceDir, "Chart.yaml"), chartYAML, 0644); err != nil {
+	chartYAML := r.generateProjectChart(config)
+	if err := r.fs.WriteFile(filepath.Join(chartDir, "Chart.yaml"), chartYAML, 0644); err != nil {
 		return fmt.Errorf("failed to write Chart.yaml: %w", err)
 	}
 
 	// Generate values.yaml
-	valuesYAML, err := r.generateBackendValues(name, service, config)
+	valuesYAML, err := r.generateProjectValues(config)
 	if err != nil {
 		return fmt.Errorf("failed to generate values.yaml: %w", err)
 	}
-	if err := r.fs.WriteFile(filepath.Join(serviceDir, "values.yaml"), valuesYAML, 0644); err != nil {
+	if err := r.fs.WriteFile(filepath.Join(chartDir, "values.yaml"), valuesYAML, 0644); err != nil {
 		return fmt.Errorf("failed to write values.yaml: %w", err)
 	}
 
-	// Generate Deployment template
-	deploymentYAML, err := r.generateBackendDeployment(name, service, config)
-	if err != nil {
-		return fmt.Errorf("failed to generate deployment template: %w", err)
-	}
-	if err := r.fs.WriteFile(filepath.Join(templatesDir, "deployment.yaml"), deploymentYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write deployment.yaml: %w", err)
+	// Generate templates
+	if err := r.generateUnifiedTemplates(config, templatesDir); err != nil {
+		return fmt.Errorf("failed to generate templates: %w", err)
 	}
 
-	// Generate Service templates
-	if err := r.generateBackendServices(name, service, config, templatesDir); err != nil {
-		return fmt.Errorf("failed to generate service templates: %w", err)
-	}
-
-	// Generate ConfigMap template
-	configMapYAML, err := r.generateBackendConfigMap(name, service, config)
-	if err != nil {
-		return fmt.Errorf("failed to generate configmap template: %w", err)
-	}
-	if err := r.fs.WriteFile(filepath.Join(templatesDir, "configmap.yaml"), configMapYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write configmap.yaml: %w", err)
-	}
-
+	ui.Success("Helm chart rendered: %s", chartDir)
 	return nil
 }
 
-// renderFrontendService renders a frontend service Helm chart.
+// generateProjectChart generates Chart.yaml for the project.
 //
 // Parameters:
-//   - name: Service name
-//   - service: Service configuration
-//   - config: Project configuration
-//
-// Returns:
-//   - error: Rendering error if any
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - Template rendering and file I/O
-func (r *Renderer) renderFrontendService(name string, service configschema.FrontendService, config *configschema.Config) error {
-	// Create service directory
-	serviceDir := filepath.Join("deploy/helm", name)
-	if err := r.fs.CreateDirectory(serviceDir); err != nil {
-		return fmt.Errorf("failed to create service directory: %w", err)
-	}
-
-	// Create templates directory
-	templatesDir := filepath.Join(serviceDir, "templates")
-	if err := r.fs.CreateDirectory(templatesDir); err != nil {
-		return fmt.Errorf("failed to create templates directory: %w", err)
-	}
-
-	// Generate Chart.yaml
-	chartYAML := r.generateChartYAML(name, config)
-	if err := r.fs.WriteFile(filepath.Join(serviceDir, "Chart.yaml"), chartYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write Chart.yaml: %w", err)
-	}
-
-	// Generate values.yaml
-	valuesYAML := r.generateFrontendValues(name, service, config)
-	if err := r.fs.WriteFile(filepath.Join(serviceDir, "values.yaml"), valuesYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write values.yaml: %w", err)
-	}
-
-	// Generate Deployment template
-	deploymentYAML := r.generateFrontendDeployment(name, service, config)
-	if err := r.fs.WriteFile(filepath.Join(templatesDir, "deployment.yaml"), deploymentYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write deployment.yaml: %w", err)
-	}
-
-	// Generate Service template
-	serviceYAML := r.generateFrontendService(name, service, config)
-	if err := r.fs.WriteFile(filepath.Join(templatesDir, "service.yaml"), serviceYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write service.yaml: %w", err)
-	}
-
-	return nil
-}
-
-// renderDatabaseService renders the database service Helm chart.
-//
-// Parameters:
-//   - db: Database configuration
-//   - config: Project configuration
-//
-// Returns:
-//   - error: Rendering error if any
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - Template rendering and file I/O
-func (r *Renderer) renderDatabaseService(db configschema.DatabaseConfig, config *configschema.Config) error {
-	// Create service directory
-	serviceDir := filepath.Join("deploy/helm", "mysql")
-	if err := r.fs.CreateDirectory(serviceDir); err != nil {
-		return fmt.Errorf("failed to create service directory: %w", err)
-	}
-
-	// Create templates directory
-	templatesDir := filepath.Join(serviceDir, "templates")
-	if err := r.fs.CreateDirectory(templatesDir); err != nil {
-		return fmt.Errorf("failed to create templates directory: %w", err)
-	}
-
-	// Generate Chart.yaml
-	chartYAML := r.generateChartYAML("mysql", config)
-	if err := r.fs.WriteFile(filepath.Join(serviceDir, "Chart.yaml"), chartYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write Chart.yaml: %w", err)
-	}
-
-	// Generate values.yaml
-	valuesYAML := r.generateDatabaseValues(db, config)
-	if err := r.fs.WriteFile(filepath.Join(serviceDir, "values.yaml"), valuesYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write values.yaml: %w", err)
-	}
-
-	// Generate Deployment template
-	deploymentYAML := r.generateDatabaseDeployment(db, config)
-	if err := r.fs.WriteFile(filepath.Join(templatesDir, "deployment.yaml"), deploymentYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write deployment.yaml: %w", err)
-	}
-
-	// Generate Service template
-	serviceYAML := r.generateDatabaseService(db, config)
-	if err := r.fs.WriteFile(filepath.Join(templatesDir, "service.yaml"), serviceYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write service.yaml: %w", err)
-	}
-
-	// Generate Secret template
-	secretYAML := r.generateDatabaseSecret(db, config)
-	if err := r.fs.WriteFile(filepath.Join(templatesDir, "secret.yaml"), secretYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write secret.yaml: %w", err)
-	}
-
-	return nil
-}
-
-// renderKubernetesResources renders ConfigMaps and Secrets.
-//
-// Parameters:
-//   - config: Project configuration
-//
-// Returns:
-//   - error: Rendering error if any
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - Template rendering and file I/O
-func (r *Renderer) renderKubernetesResources(config *configschema.Config) error {
-	// Create resources directory
-	resourcesDir := filepath.Join("deploy/helm", "resources")
-	if err := r.fs.CreateDirectory(resourcesDir); err != nil {
-		return fmt.Errorf("failed to create resources directory: %w", err)
-	}
-
-	// Create templates directory
-	templatesDir := filepath.Join(resourcesDir, "templates")
-	if err := r.fs.CreateDirectory(templatesDir); err != nil {
-		return fmt.Errorf("failed to create templates directory: %w", err)
-	}
-
-	// Generate Chart.yaml
-	chartYAML := r.generateChartYAML("resources", config)
-	if err := r.fs.WriteFile(filepath.Join(resourcesDir, "Chart.yaml"), chartYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write Chart.yaml: %w", err)
-	}
-
-	// Generate ConfigMap templates
-	for name, data := range config.Kubernetes.Resources.ConfigMaps {
-		configMapYAML := r.generateConfigMap(name, data, config)
-		filename := fmt.Sprintf("configmap-%s.yaml", name)
-		if err := r.fs.WriteFile(filepath.Join(templatesDir, filename), configMapYAML, 0644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", filename, err)
-		}
-	}
-
-	// Generate Secret templates
-	for name, data := range config.Kubernetes.Resources.Secrets {
-		secretYAML := r.generateSecret(name, data, config)
-		filename := fmt.Sprintf("secret-%s.yaml", name)
-		if err := r.fs.WriteFile(filepath.Join(templatesDir, filename), secretYAML, 0644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", filename, err)
-		}
-	}
-
-	return nil
-}
-
-// generateChartYAML generates Chart.yaml content.
-//
-// Parameters:
-//   - name: Chart name
 //   - config: Project configuration
 //
 // Returns:
@@ -367,21 +129,19 @@ func (r *Renderer) renderKubernetesResources(config *configschema.Config) error 
 //
 // Performance:
 //   - String building
-func (r *Renderer) generateChartYAML(name string, config *configschema.Config) string {
+func (r *Renderer) generateProjectChart(config *configschema.Config) string {
 	return fmt.Sprintf(`apiVersion: v2
 name: %s
-description: A Helm chart for %s
+description: Helm chart for %s
 type: application
 version: 0.1.0
 appVersion: "%s"
-`, name, name, config.Version)
+`, config.ProjectName, config.ProjectName, config.Version)
 }
 
-// generateBackendValues generates values.yaml for backend services.
+// generateProjectValues generates values.yaml containing all services.
 //
 // Parameters:
-//   - name: Service name
-//   - service: Service configuration
 //   - config: Project configuration
 //
 // Returns:
@@ -393,362 +153,152 @@ appVersion: "%s"
 //
 // Performance:
 //   - String building and environment resolution
-func (r *Renderer) generateBackendValues(name string, service configschema.BackendService, config *configschema.Config) (string, error) {
+func (r *Renderer) generateProjectValues(config *configschema.Config) (string, error) {
 	var builder strings.Builder
 
-	builder.WriteString("replicaCount: 1\n\n")
-	builder.WriteString("image:\n")
-	// Use auto-calculated image name
-	imageName := config.GetImageName(name)
-	builder.WriteString("  repository: " + config.DockerRegistry + "/" + imageName + "\n")
-	builder.WriteString("  tag: \"\"\n")
-	builder.WriteString("  pullPolicy: IfNotPresent\n\n")
+	// Project metadata
+	builder.WriteString(fmt.Sprintf("projectName: %s\n", config.ProjectName))
+	builder.WriteString(fmt.Sprintf("dockerRegistry: %s\n", config.DockerRegistry))
+	builder.WriteString(fmt.Sprintf("version: %s\n\n", config.Version))
 
-	// Ports
-	ports := service.Ports
-	if ports == nil {
-		ports = &config.BackendDefaults.Ports
-	}
+	// Backend services
+	builder.WriteString("backend:\n")
+	for name, service := range config.Backend {
+		builder.WriteString(fmt.Sprintf("  %s:\n", name))
+		builder.WriteString("    enabled: true\n")
 
-	builder.WriteString("service:\n")
-	builder.WriteString("  type: ClusterIP\n")
-	builder.WriteString("  ports:\n")
-	builder.WriteString("    http: " + strconv.Itoa(ports.HTTP) + "\n")
-	builder.WriteString("    health: " + strconv.Itoa(ports.Health) + "\n")
-	builder.WriteString("    metrics: " + strconv.Itoa(ports.Metrics) + "\n\n")
+		// Image name
+		imageName := config.GetImageName(name)
+		builder.WriteString(fmt.Sprintf("    image: %s/%s:%s\n", config.DockerRegistry, imageName, config.Version))
 
-	// Environment variables
-	builder.WriteString("env:\n")
+		// Replicas
+		builder.WriteString("    replicas: 2\n")
 
-	// Global environment
-	for key, value := range config.Env.Global {
-		builder.WriteString("  " + key + ": \"" + value + "\"\n")
-	}
-
-	// Backend environment
-	for key, value := range config.Env.Backend {
-		builder.WriteString("  " + key + ": \"" + value + "\"\n")
-	}
-
-	// Service-specific environment
-	for key, value := range service.Env.Common {
-		builder.WriteString("  " + key + ": \"" + value + "\"\n")
-	}
-
-	// Kubernetes-specific environment
-	for key, value := range service.Env.Kubernetes {
-		// Resolve expressions for Kubernetes environment
-		resolved, err := r.refParser.ReplaceAll(value, ref.EnvironmentKubernetes, config)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve expression %s: %w", value, err)
+		// Ports
+		ports := service.Ports
+		if ports == nil {
+			ports = &config.BackendDefaults.Ports
 		}
-		builder.WriteString("  " + key + ": \"" + resolved + "\"\n")
+		builder.WriteString("    ports:\n")
+		builder.WriteString(fmt.Sprintf("      http: %d\n", ports.HTTP))
+		builder.WriteString(fmt.Sprintf("      health: %d\n", ports.Health))
+		builder.WriteString(fmt.Sprintf("      metrics: %d\n", ports.Metrics))
+
+		// Environment variables
+		builder.WriteString("    env:\n")
+
+		// Global environment
+		for key, value := range config.Env.Global {
+			builder.WriteString(fmt.Sprintf("      - name: %s\n", key))
+			builder.WriteString(fmt.Sprintf("        value: \"%s\"\n", value))
+		}
+
+		// Backend environment
+		for key, value := range config.Env.Backend {
+			builder.WriteString(fmt.Sprintf("      - name: %s\n", key))
+			builder.WriteString(fmt.Sprintf("        value: \"%s\"\n", value))
+		}
+
+		// Service-specific environment
+		for key, value := range service.Env.Common {
+			builder.WriteString(fmt.Sprintf("      - name: %s\n", key))
+			builder.WriteString(fmt.Sprintf("        value: \"%s\"\n", value))
+		}
+
+		// Kubernetes-specific environment (with expression resolution)
+		for key, value := range service.Env.Kubernetes {
+			resolved, err := r.refParser.ReplaceAll(value, ref.EnvironmentKubernetes, config)
+			if err != nil {
+				return "", fmt.Errorf("failed to resolve expression %s: %w", value, err)
+			}
+			builder.WriteString(fmt.Sprintf("      - name: %s\n", key))
+			builder.WriteString(fmt.Sprintf("        value: \"%s\"\n", resolved))
+		}
+
+		// Port environment variables
+		builder.WriteString("      - name: HTTP_PORT\n")
+		builder.WriteString(fmt.Sprintf("        value: \"%d\"\n", ports.HTTP))
+		builder.WriteString("      - name: HEALTH_PORT\n")
+		builder.WriteString(fmt.Sprintf("        value: \"%d\"\n", ports.Health))
+		builder.WriteString("      - name: METRICS_PORT\n")
+		builder.WriteString(fmt.Sprintf("        value: \"%d\"\n", ports.Metrics))
+
+		// Resources
+		builder.WriteString("    resources:\n")
+		builder.WriteString("      requests:\n")
+		builder.WriteString("        cpu: 100m\n")
+		builder.WriteString("        memory: 128Mi\n")
+		builder.WriteString("      limits:\n")
+		builder.WriteString("        cpu: 500m\n")
+		builder.WriteString("        memory: 512Mi\n")
 	}
 
-	// Port environment variables
-	builder.WriteString("  HTTP_PORT: \"" + strconv.Itoa(ports.HTTP) + "\"\n")
-	builder.WriteString("  HEALTH_PORT: \"" + strconv.Itoa(ports.Health) + "\"\n")
-	builder.WriteString("  METRICS_PORT: \"" + strconv.Itoa(ports.Metrics) + "\"\n")
+	// Frontend services
+	builder.WriteString("\nfrontend:\n")
+	for name := range config.Frontend {
+		builder.WriteString(fmt.Sprintf("  %s:\n", name))
+		builder.WriteString("    enabled: true\n")
+
+		// Image name
+		imageName := config.GetImageName(name)
+		builder.WriteString(fmt.Sprintf("    image: %s/%s:%s\n", config.DockerRegistry, imageName, config.Version))
+
+		// Replicas
+		builder.WriteString("    replicas: 1\n")
+
+		// Ports
+		builder.WriteString("    ports:\n")
+		builder.WriteString("      http: 3000\n")
+
+		// Environment variables
+		builder.WriteString("    env:\n")
+
+		// Global environment
+		for key, value := range config.Env.Global {
+			builder.WriteString(fmt.Sprintf("      - name: %s\n", key))
+			builder.WriteString(fmt.Sprintf("        value: \"%s\"\n", value))
+		}
+
+		// Frontend environment
+		for key, value := range config.Env.Frontend {
+			builder.WriteString(fmt.Sprintf("      - name: %s\n", key))
+			builder.WriteString(fmt.Sprintf("        value: \"%s\"\n", value))
+		}
+
+		// Resources
+		builder.WriteString("    resources:\n")
+		builder.WriteString("      requests:\n")
+		builder.WriteString("        cpu: 50m\n")
+		builder.WriteString("        memory: 64Mi\n")
+		builder.WriteString("      limits:\n")
+		builder.WriteString("        cpu: 200m\n")
+		builder.WriteString("        memory: 256Mi\n")
+	}
+
+	// Global ConfigMaps
+	builder.WriteString("\nglobalConfigMaps:\n")
+	for name, data := range config.Kubernetes.Resources.ConfigMaps {
+		builder.WriteString(fmt.Sprintf("  %s:\n", name))
+		for key, value := range data {
+			builder.WriteString(fmt.Sprintf("    %s: \"%s\"\n", key, value))
+		}
+	}
+
+	// Global Secrets
+	builder.WriteString("\nglobalSecrets:\n")
+	for name, data := range config.Kubernetes.Resources.Secrets {
+		builder.WriteString(fmt.Sprintf("  %s:\n", name))
+		for key, value := range data {
+			builder.WriteString(fmt.Sprintf("    %s: %s\n", key, value))
+		}
+	}
 
 	return builder.String(), nil
 }
 
-// generateFrontendValues generates values.yaml for frontend services.
+// generateUnifiedTemplates generates unified Helm templates.
 //
 // Parameters:
-//   - name: Service name
-//   - service: Service configuration
-//   - config: Project configuration
-//
-// Returns:
-//   - string: values.yaml content
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - String building
-func (r *Renderer) generateFrontendValues(name string, service configschema.FrontendService, config *configschema.Config) string {
-	var builder strings.Builder
-
-	builder.WriteString("replicaCount: 1\n\n")
-	builder.WriteString("image:\n")
-	// Use auto-calculated image name
-	imageName := config.GetImageName(name)
-	builder.WriteString("  repository: " + config.DockerRegistry + "/" + imageName + "\n")
-	builder.WriteString("  tag: \"\"\n")
-	builder.WriteString("  pullPolicy: IfNotPresent\n\n")
-
-	builder.WriteString("service:\n")
-	builder.WriteString("  type: ClusterIP\n")
-	builder.WriteString("  ports:\n")
-	builder.WriteString("    http: 3000\n\n")
-
-	// Environment variables
-	builder.WriteString("env:\n")
-
-	// Global environment
-	for key, value := range config.Env.Global {
-		builder.WriteString("  " + key + ": \"" + value + "\"\n")
-	}
-
-	// Frontend environment
-	for key, value := range config.Env.Frontend {
-		builder.WriteString("  " + key + ": \"" + value + "\"\n")
-	}
-
-	return builder.String()
-}
-
-// generateDatabaseValues generates values.yaml for database service.
-//
-// Parameters:
-//   - db: Database configuration
-//   - config: Project configuration
-//
-// Returns:
-//   - string: values.yaml content
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - String building
-func (r *Renderer) generateDatabaseValues(db configschema.DatabaseConfig, config *configschema.Config) string {
-	var builder strings.Builder
-
-	builder.WriteString("replicaCount: 1\n\n")
-	builder.WriteString("image:\n")
-	builder.WriteString("  repository: mysql\n")
-	builder.WriteString("  tag: \"9.4\"\n")
-	builder.WriteString("  pullPolicy: IfNotPresent\n\n")
-
-	builder.WriteString("service:\n")
-	builder.WriteString("  type: ClusterIP\n")
-	builder.WriteString("  ports:\n")
-	builder.WriteString("    mysql: " + strconv.Itoa(db.Port) + "\n\n")
-
-	builder.WriteString("database:\n")
-	builder.WriteString("  name: \"" + db.Database + "\"\n")
-	builder.WriteString("  user: \"" + db.User + "\"\n")
-	builder.WriteString("  password: \"" + db.Password + "\"\n")
-	builder.WriteString("  rootPassword: \"" + db.RootPassword + "\"\n")
-
-	return builder.String()
-}
-
-// generateBackendDeployment generates Deployment template for backend services.
-//
-// Parameters:
-//   - name: Service name
-//   - service: Service configuration
-//   - config: Project configuration
-//
-// Returns:
-//   - string: Deployment YAML content
-//   - error: Generation error if any
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - Template rendering
-func (r *Renderer) generateBackendDeployment(name string, service configschema.BackendService, config *configschema.Config) (string, error) {
-	ports := service.Ports
-	if ports == nil {
-		ports = &config.BackendDefaults.Ports
-	}
-
-	template := `apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ include "%s.fullname" . }}
-  labels:
-    {{- include "%s.labels" . | nindent 4 }}
-spec:
-  replicas: {{ .Values.replicaCount }}
-  selector:
-    matchLabels:
-      {{- include "%s.selectorLabels" . | nindent 6 }}
-  template:
-    metadata:
-      labels:
-        {{- include "%s.selectorLabels" . | nindent 8 }}
-    spec:
-      containers:
-        - name: {{ .Chart.Name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports:
-            - name: http
-              containerPort: {{ .Values.service.ports.http }}
-              protocol: TCP
-            - name: health
-              containerPort: {{ .Values.service.ports.health }}
-              protocol: TCP
-            - name: metrics
-              containerPort: {{ .Values.service.ports.metrics }}
-              protocol: TCP
-          env:
-            {{- range $key, $value := .Values.env }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: health
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: health
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-`
-
-	return fmt.Sprintf(template, name, name, name, name), nil
-}
-
-// generateFrontendDeployment generates Deployment template for frontend services.
-//
-// Parameters:
-//   - name: Service name
-//   - service: Service configuration
-//   - config: Project configuration
-//
-// Returns:
-//   - string: Deployment YAML content
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - Template rendering
-func (r *Renderer) generateFrontendDeployment(name string, service configschema.FrontendService, config *configschema.Config) string {
-	template := `apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ include "%s.fullname" . }}
-  labels:
-    {{- include "%s.labels" . | nindent 4 }}
-spec:
-  replicas: {{ .Values.replicaCount }}
-  selector:
-    matchLabels:
-      {{- include "%s.selectorLabels" . | nindent 6 }}
-  template:
-    metadata:
-      labels:
-        {{- include "%s.selectorLabels" . | nindent 8 }}
-    spec:
-      containers:
-        - name: {{ .Chart.Name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports:
-            - name: http
-              containerPort: {{ .Values.service.ports.http }}
-              protocol: TCP
-          env:
-            {{- range $key, $value := .Values.env }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-`
-
-	return fmt.Sprintf(template, name, name, name, name)
-}
-
-// generateDatabaseDeployment generates Deployment template for database service.
-//
-// Parameters:
-//   - db: Database configuration
-//   - config: Project configuration
-//
-// Returns:
-//   - string: Deployment YAML content
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - Template rendering
-func (r *Renderer) generateDatabaseDeployment(db configschema.DatabaseConfig, config *configschema.Config) string {
-	template := `apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ include "mysql.fullname" . }}
-  labels:
-    {{- include "mysql.labels" . | nindent 4 }}
-spec:
-  replicas: {{ .Values.replicaCount }}
-  selector:
-    matchLabels:
-      {{- include "mysql.selectorLabels" . | nindent 6 }}
-  template:
-    metadata:
-      labels:
-        {{- include "mysql.selectorLabels" . | nindent 8 }}
-    spec:
-      containers:
-        - name: mysql
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports:
-            - name: mysql
-              containerPort: {{ .Values.service.ports.mysql }}
-              protocol: TCP
-          env:
-            - name: MYSQL_ROOT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "mysql.fullname" . }}
-                  key: root-password
-            - name: MYSQL_DATABASE
-              value: {{ .Values.database.name | quote }}
-            - name: MYSQL_USER
-              value: {{ .Values.database.user | quote }}
-            - name: MYSQL_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "mysql.fullname" . }}
-                  key: password
-          livenessProbe:
-            exec:
-              command:
-                - mysqladmin
-                - ping
-                - -h
-                - localhost
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          readinessProbe:
-            exec:
-              command:
-                - mysqladmin
-                - ping
-                - -h
-                - localhost
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-`
-
-	return template
-}
-
-// generateBackendServices generates Service templates for backend services.
-//
-// Parameters:
-//   - name: Service name
-//   - service: Service configuration
 //   - config: Project configuration
 //   - templatesDir: Templates directory path
 //
@@ -760,310 +310,399 @@ spec:
 //
 // Performance:
 //   - Template rendering and file I/O
-func (r *Renderer) generateBackendServices(name string, service configschema.BackendService, config *configschema.Config, templatesDir string) error {
-	// Generate clusterIP service
-	clusterIPYAML := r.generateClusterIPService(name, service, config)
-	if err := r.fs.WriteFile(filepath.Join(templatesDir, "service-clusterip.yaml"), clusterIPYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write service-clusterip.yaml: %w", err)
+func (r *Renderer) generateUnifiedTemplates(config *configschema.Config, templatesDir string) error {
+	// Generate _helpers.tpl
+	helpersTPL := r.generateHelpersTPL(config)
+	if err := r.fs.WriteFile(filepath.Join(templatesDir, "_helpers.tpl"), helpersTPL, 0644); err != nil {
+		return fmt.Errorf("failed to write _helpers.tpl: %w", err)
 	}
 
-	// Generate headless service
-	headlessYAML := r.generateHeadlessService(name, service, config)
-	if err := r.fs.WriteFile(filepath.Join(templatesDir, "service-headless.yaml"), headlessYAML, 0644); err != nil {
-		return fmt.Errorf("failed to write service-headless.yaml: %w", err)
+	// Generate backend deployment template
+	backendDeploymentTPL := r.generateBackendDeploymentTPL(config)
+	if err := r.fs.WriteFile(filepath.Join(templatesDir, "backend-deployment.yaml"), backendDeploymentTPL, 0644); err != nil {
+		return fmt.Errorf("failed to write backend-deployment.yaml: %w", err)
+	}
+
+	// Generate backend service template
+	backendServiceTPL := r.generateBackendServiceTPL(config)
+	if err := r.fs.WriteFile(filepath.Join(templatesDir, "backend-service.yaml"), backendServiceTPL, 0644); err != nil {
+		return fmt.Errorf("failed to write backend-service.yaml: %w", err)
+	}
+
+	// Generate frontend deployment template
+	frontendDeploymentTPL := r.generateFrontendDeploymentTPL(config)
+	if err := r.fs.WriteFile(filepath.Join(templatesDir, "frontend-deployment.yaml"), frontendDeploymentTPL, 0644); err != nil {
+		return fmt.Errorf("failed to write frontend-deployment.yaml: %w", err)
+	}
+
+	// Generate frontend service template
+	frontendServiceTPL := r.generateFrontendServiceTPL(config)
+	if err := r.fs.WriteFile(filepath.Join(templatesDir, "frontend-service.yaml"), frontendServiceTPL, 0644); err != nil {
+		return fmt.Errorf("failed to write frontend-service.yaml: %w", err)
+	}
+
+	// Generate ConfigMaps template
+	configMapsTPL := r.generateConfigMapsTPL(config)
+	if err := r.fs.WriteFile(filepath.Join(templatesDir, "configmaps.yaml"), configMapsTPL, 0644); err != nil {
+		return fmt.Errorf("failed to write configmaps.yaml: %w", err)
+	}
+
+	// Generate Secrets template
+	secretsTPL := r.generateSecretsTPL(config)
+	if err := r.fs.WriteFile(filepath.Join(templatesDir, "secrets.yaml"), secretsTPL, 0644); err != nil {
+		return fmt.Errorf("failed to write secrets.yaml: %w", err)
 	}
 
 	return nil
 }
 
-// generateClusterIPService generates ClusterIP Service template.
+// generateHelpersTPL generates _helpers.tpl.
 //
 // Parameters:
-//   - name: Service name
-//   - service: Service configuration
 //   - config: Project configuration
 //
 // Returns:
-//   - string: Service YAML content
+//   - string: Template content
 //
 // Concurrency:
 //   - Single-threaded
 //
 // Performance:
-//   - Template rendering
-func (r *Renderer) generateClusterIPService(name string, service configschema.BackendService, config *configschema.Config) string {
-	template := `apiVersion: v1
+//   - String building
+func (r *Renderer) generateHelpersTPL(config *configschema.Config) string {
+	projectName := config.ProjectName
+	return fmt.Sprintf(`{{/*
+Expand the name of the chart.
+*/}}
+{{- define "%s.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Create a default fully qualified app name.
+*/}}
+{{- define "%s.fullname" -}}
+{{- if .Values.nameOverride }}
+{{- .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%%s-%%s" .Chart.Name .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create chart name and version as used by the chart label.
+*/}}
+{{- define "%s.chart" -}}
+{{- printf "%%s-%%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Common labels
+*/}}
+{{- define "%s.labels" -}}
+helm.sh/chart: {{ include "%s.chart" . }}
+{{ include "%s.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
+Selector labels
+*/}}
+{{- define "%s.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "%s.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+`, projectName, projectName, projectName, projectName, projectName, projectName, projectName, projectName)
+}
+
+// generateBackendDeploymentTPL generates backend deployment template.
+//
+// Parameters:
+//   - config: Project configuration
+//
+// Returns:
+//   - string: Template content
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - String building
+func (r *Renderer) generateBackendDeploymentTPL(config *configschema.Config) string {
+	templateName := config.ProjectName
+	return fmt.Sprintf(`{{- range $name, $service := .Values.backend }}
+{{- if $service.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "%s.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "%s.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  replicas: {{ $service.replicas | default 2 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+    spec:
+      containers:
+      - name: {{ $name }}
+        image: {{ $service.image }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: {{ $service.ports.http }}
+          protocol: TCP
+        - name: health
+          containerPort: {{ $service.ports.health }}
+          protocol: TCP
+        - name: metrics
+          containerPort: {{ $service.ports.metrics }}
+          protocol: TCP
+        env:
+        {{- range $service.env }}
+        - name: {{ .name }}
+          value: {{ .value | quote }}
+        {{- end }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: health
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          {{- toYaml $service.resources | nindent 10 }}
+{{- end }}
+{{- end }}
+`, templateName, templateName)
+}
+
+// generateBackendServiceTPL generates backend service template.
+//
+// Parameters:
+//   - config: Project configuration
+//
+// Returns:
+//   - string: Template content
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - String building
+func (r *Renderer) generateBackendServiceTPL(config *configschema.Config) string {
+	templateName := config.ProjectName
+	return fmt.Sprintf(`{{- range $name, $service := .Values.backend }}
+{{- if $service.enabled }}
+---
+apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "%s.fullname" . }}
+  name: {{ include "%s.fullname" $ }}-{{ $name }}
   labels:
-    {{- include "%s.labels" . | nindent 4 }}
+    {{- include "%s.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/name: {{ $name }}
 spec:
   type: ClusterIP
   ports:
-    - port: {{ .Values.service.ports.http }}
-      targetPort: http
-      protocol: TCP
-      name: http
-    - port: {{ .Values.service.ports.health }}
-      targetPort: health
-      protocol: TCP
-      name: health
-    - port: {{ .Values.service.ports.metrics }}
-      targetPort: metrics
-      protocol: TCP
-      name: metrics
+  - port: {{ $service.ports.http }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  - port: {{ $service.ports.health }}
+    targetPort: health
+    protocol: TCP
+    name: health
+  - port: {{ $service.ports.metrics }}
+    targetPort: metrics
+    protocol: TCP
+    name: metrics
   selector:
-    {{- include "%s.selectorLabels" . | nindent 4 }}
-`
-
-	return fmt.Sprintf(template, name, name, name)
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+{{- end }}
+{{- end }}
+`, templateName, templateName)
 }
 
-// generateHeadlessService generates Headless Service template.
+// generateFrontendDeploymentTPL generates frontend deployment template.
 //
 // Parameters:
-//   - name: Service name
-//   - service: Service configuration
 //   - config: Project configuration
 //
 // Returns:
-//   - string: Service YAML content
+//   - string: Template content
 //
 // Concurrency:
 //   - Single-threaded
 //
 // Performance:
-//   - Template rendering
-func (r *Renderer) generateHeadlessService(name string, service configschema.BackendService, config *configschema.Config) string {
-	template := `apiVersion: v1
-kind: Service
+//   - String building
+func (r *Renderer) generateFrontendDeploymentTPL(config *configschema.Config) string {
+	templateName := config.ProjectName
+	return fmt.Sprintf(`{{- range $name, $service := .Values.frontend }}
+{{- if $service.enabled }}
+{{- $safeName := $name | replace "_" "-" | lower }}
+---
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: {{ include "%s.fullname" . }}-headless
+  name: {{ include "%s.fullname" $ }}-{{ $safeName }}
   labels:
-    {{- include "%s.labels" . | nindent 4 }}
+    {{- include "%s.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/name: {{ $name }}
 spec:
-  type: ClusterIP
-  clusterIP: None
-  publishNotReadyAddresses: true
-  ports:
-    - port: {{ .Values.service.ports.http }}
-      targetPort: http
-      protocol: TCP
-      name: http
-    - port: {{ .Values.service.ports.health }}
-      targetPort: health
-      protocol: TCP
-      name: health
-    - port: {{ .Values.service.ports.metrics }}
-      targetPort: metrics
-      protocol: TCP
-      name: metrics
+  replicas: {{ $service.replicas | default 1 }}
   selector:
-    {{- include "%s.selectorLabels" . | nindent 4 }}
-`
-
-	return fmt.Sprintf(template, name, name, name)
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+    spec:
+      containers:
+      - name: {{ $name }}
+        image: {{ $service.image }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: {{ $service.ports.http }}
+          protocol: TCP
+        env:
+        {{- range $service.env }}
+        - name: {{ .name }}
+          value: {{ .value | quote }}
+        {{- end }}
+        resources:
+          {{- toYaml $service.resources | nindent 10 }}
+{{- end }}
+{{- end }}
+`, templateName, templateName)
 }
 
-// generateFrontendService generates Service template for frontend services.
+// generateFrontendServiceTPL generates frontend service template.
 //
 // Parameters:
-//   - name: Service name
-//   - service: Service configuration
 //   - config: Project configuration
 //
 // Returns:
-//   - string: Service YAML content
+//   - string: Template content
 //
 // Concurrency:
 //   - Single-threaded
 //
 // Performance:
-//   - Template rendering
-func (r *Renderer) generateFrontendService(name string, service configschema.FrontendService, config *configschema.Config) string {
-	template := `apiVersion: v1
+//   - String building
+func (r *Renderer) generateFrontendServiceTPL(config *configschema.Config) string {
+	templateName := config.ProjectName
+	return fmt.Sprintf(`{{- range $name, $service := .Values.frontend }}
+{{- if $service.enabled }}
+{{- $safeName := $name | replace "_" "-" | lower }}
+---
+apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "%s.fullname" . }}
+  name: {{ include "%s.fullname" $ }}-{{ $safeName }}
   labels:
-    {{- include "%s.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: {{ .Values.service.ports.http }}
-      targetPort: http
-      protocol: TCP
-      name: http
-  selector:
-    {{- include "%s.selectorLabels" . | nindent 4 }}
-`
-
-	return fmt.Sprintf(template, name, name, name)
-}
-
-// generateDatabaseService generates Service template for database service.
-//
-// Parameters:
-//   - db: Database configuration
-//   - config: Project configuration
-//
-// Returns:
-//   - string: Service YAML content
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - Template rendering
-func (r *Renderer) generateDatabaseService(db configschema.DatabaseConfig, config *configschema.Config) string {
-	template := `apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "mysql.fullname" . }}
-  labels:
-    {{- include "mysql.labels" . | nindent 4 }}
+    {{- include "%s.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/name: {{ $name }}
 spec:
   type: ClusterIP
   ports:
-    - port: {{ .Values.service.ports.mysql }}
-      targetPort: mysql
-      protocol: TCP
-      name: mysql
+  - port: {{ $service.ports.http }}
+    targetPort: http
+    protocol: TCP
+    name: http
   selector:
-    {{- include "mysql.selectorLabels" . | nindent 4 }}
-`
-
-	return template
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+{{- end }}
+{{- end }}
+`, templateName, templateName)
 }
 
-// generateBackendConfigMap generates ConfigMap template for backend services.
+// generateConfigMapsTPL generates ConfigMaps template.
 //
 // Parameters:
-//   - name: Service name
-//   - service: Service configuration
 //   - config: Project configuration
 //
 // Returns:
-//   - string: ConfigMap YAML content
-//   - error: Generation error if any
+//   - string: Template content
 //
 // Concurrency:
 //   - Single-threaded
 //
 // Performance:
-//   - Template rendering
-func (r *Renderer) generateBackendConfigMap(name string, service configschema.BackendService, config *configschema.Config) (string, error) {
-	template := `apiVersion: v1
+//   - String building
+func (r *Renderer) generateConfigMapsTPL(config *configschema.Config) string {
+	templateName := config.ProjectName
+	return fmt.Sprintf(`{{- range $name, $data := .Values.globalConfigMaps }}
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "%s.fullname" . }}-config
+  name: {{ $name }}
   labels:
-    {{- include "%s.labels" . | nindent 4 }}
+    {{- include "%s.labels" $ | nindent 4 }}
 data:
-  {{- range $key, $value := .Values.env }}
+  {{- range $key, $value := $data }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}
-`
-
-	return fmt.Sprintf(template, name, name), nil
+{{- end }}
+`, templateName)
 }
 
-// generateDatabaseSecret generates Secret template for database service.
+// generateSecretsTPL generates Secrets template.
 //
 // Parameters:
-//   - db: Database configuration
 //   - config: Project configuration
 //
 // Returns:
-//   - string: Secret YAML content
+//   - string: Template content
 //
 // Concurrency:
 //   - Single-threaded
 //
 // Performance:
-//   - Template rendering
-func (r *Renderer) generateDatabaseSecret(db configschema.DatabaseConfig, config *configschema.Config) string {
-	template := `apiVersion: v1
+//   - String building
+func (r *Renderer) generateSecretsTPL(config *configschema.Config) string {
+	templateName := config.ProjectName
+	return fmt.Sprintf(`{{- range $name, $data := .Values.globalSecrets }}
+---
+apiVersion: v1
 kind: Secret
 metadata:
-  name: {{ include "mysql.fullname" . }}
+  name: {{ $name }}
   labels:
-    {{- include "mysql.labels" . | nindent 4 }}
+    {{- include "%s.labels" $ | nindent 4 }}
 type: Opaque
 data:
-  root-password: {{ .Values.database.rootPassword | b64enc }}
-  password: {{ .Values.database.password | b64enc }}
-`
-
-	return template
-}
-
-// generateConfigMap generates ConfigMap template.
-//
-// Parameters:
-//   - name: ConfigMap name
-//   - data: ConfigMap data
-//   - config: Project configuration
-//
-// Returns:
-//   - string: ConfigMap YAML content
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - Template rendering
-func (r *Renderer) generateConfigMap(name string, data map[string]string, config *configschema.Config) string {
-	var builder strings.Builder
-
-	builder.WriteString("apiVersion: v1\n")
-	builder.WriteString("kind: ConfigMap\n")
-	builder.WriteString("metadata:\n")
-	builder.WriteString("  name: " + name + "\n")
-	builder.WriteString("  labels:\n")
-	builder.WriteString("    app.kubernetes.io/name: resources\n")
-	builder.WriteString("    app.kubernetes.io/instance: " + config.ProjectName + "\n")
-	builder.WriteString("data:\n")
-
-	for key, value := range data {
-		builder.WriteString("  " + key + ": \"" + value + "\"\n")
-	}
-
-	return builder.String()
-}
-
-// generateSecret generates Secret template.
-//
-// Parameters:
-//   - name: Secret name
-//   - data: Secret data
-//   - config: Project configuration
-//
-// Returns:
-//   - string: Secret YAML content
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - Template rendering
-func (r *Renderer) generateSecret(name string, data map[string]string, config *configschema.Config) string {
-	var builder strings.Builder
-
-	builder.WriteString("apiVersion: v1\n")
-	builder.WriteString("kind: Secret\n")
-	builder.WriteString("metadata:\n")
-	builder.WriteString("  name: " + name + "\n")
-	builder.WriteString("  labels:\n")
-	builder.WriteString("    app.kubernetes.io/name: resources\n")
-	builder.WriteString("    app.kubernetes.io/instance: " + config.ProjectName + "\n")
-	builder.WriteString("type: Opaque\n")
-	builder.WriteString("data:\n")
-
-	for key, value := range data {
-		builder.WriteString("  " + key + ": " + value + "\n")
-	}
-
-	return builder.String()
+  {{- range $key, $value := $data }}
+  {{ $key }}: {{ $value }}
+  {{- end }}
+{{- end }}
+`, templateName)
 }

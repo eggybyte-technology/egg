@@ -1,0 +1,104 @@
+# ==============================================================================
+# Nginx Configuration for EggyByte Flutter Web Applications
+# ==============================================================================
+#
+# Purpose:
+#   Optimized nginx configuration for serving Flutter web SPAs with:
+#   - Single Page Application (SPA) routing support
+#   - GZIP compression for optimal transfer
+#   - Security headers
+#   - Efficient worker configuration
+#
+# ==============================================================================
+
+# Worker process configuration
+# Auto: nginx will detect available CPU cores
+worker_processes auto;
+
+# Error log location (stderr for container visibility)
+error_log /var/log/nginx/error.log warn;
+
+# Events block: connection handling
+events {
+    # Maximum concurrent connections per worker
+    worker_connections 1024;
+    
+    # Use efficient connection processing method
+    use epoll;
+}
+
+# HTTP server configuration
+http {
+    # Include standard MIME type definitions
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    
+    # Logging format and location
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+    access_log /var/log/nginx/access.log main;
+    
+    # Performance optimizations
+    sendfile on;              # Efficient file transfer
+    tcp_nopush on;            # Optimize packet sending
+    tcp_nodelay on;           # Disable Nagle's algorithm for low latency
+    keepalive_timeout 65;     # Keep connections alive for reuse
+    
+    # GZIP compression configuration
+    gzip on;                  # Enable compression
+    gzip_vary on;             # Add Vary: Accept-Encoding header
+    gzip_proxied any;         # Compress proxied responses
+    gzip_comp_level 6;        # Compression level (1-9, 6 is balanced)
+    gzip_types                # Compress these MIME types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/json
+        application/javascript
+        application/xml+rss
+        application/x-javascript
+        application/wasm;
+    
+    # Server block: main web server
+    server {
+        # Listen on configured port
+        listen 3000;
+        server_name localhost;
+        
+        # Document root: Flutter web build output
+        root /usr/share/nginx/html;
+        index index.html;
+        
+        # Security headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        
+        # SPA routing: serve index.html for all non-file routes
+        # This enables client-side routing (e.g., /users, /settings)
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+        
+        # Cache static assets aggressively (immutable files with hashes)
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+        
+        # No caching for index.html (ensures users get latest version)
+        location = /index.html {
+            add_header Cache-Control "no-cache, no-store, must-revalidate";
+        }
+        
+        # Error pages
+        error_page 404 /index.html;  # SPA handles 404s
+        error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+            root /usr/share/nginx/html;
+        }
+    }
+}
+

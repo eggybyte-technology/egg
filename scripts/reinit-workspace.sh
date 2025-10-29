@@ -5,10 +5,16 @@
 # 1. Delete all go.mod, go.sum, go.work, and go.work.sum files
 # 2. Reinitialize each module with correct module path (go mod init)
 # 3. Create new go.work and add all modules (go work init)
-# 4. Run go mod tidy for each module (workspace auto-resolves local dependencies)
+# 4. Add replace directives for all internal module dependencies (kept in go.mod)
+# 5. Run go mod tidy for each module with replace directives in place
+#
+# Important: Replace directives are KEPT in go.mod after this script runs.
+# - They are essential for local development (prevent fetching non-existent remote versions)
+# - They should be committed to the repository
+# - They will be automatically removed during release by release.sh
 #
 # Note: We don't run 'go work sync' because it tries to fetch from remote.
-# Instead, we let 'go mod tidy' resolve dependencies using the workspace.
+# Instead, we let 'go mod tidy' resolve dependencies using the workspace + replace.
 
 set -euo pipefail
 
@@ -174,8 +180,11 @@ for layer in "${MODULE_LAYERS[@]}"; do
         log_info "  → Processing $module..."
         cd "$module_dir"
         
-        # Step 1: Add temporary replace directives for ALL processed modules
-        # This ensures that go mod tidy won't try to download fake versions from remote
+        # Step 1: Add replace directives for ALL processed modules (kept for development)
+        # These replace directives are permanent for development and should be committed:
+        # - They allow go.work to resolve internal module dependencies correctly
+        # - They prevent go mod tidy from trying to fetch non-existent remote versions
+        # - They will be automatically removed during release by release.sh
         declare -a replace_args=()
         declare -a require_args=()
         
@@ -186,7 +195,7 @@ for layer in "${MODULE_LAYERS[@]}"; do
                 
                 # Only add require directive if this module actually imports it
                 if grep -r "\"$MODULE_BASE/$dep" . --include="*.go" --exclude-dir=vendor --exclude-dir=gen 2>/dev/null | head -1 > /dev/null; then
-                    log_info "    ↳ Adding temporary dependency: $dep"
+                    log_info "    ↳ Adding development dependency: $dep"
                     require_args+=("-require=$MODULE_BASE/$dep@v0.0.0-00010101000000-000000000000")
                 fi
             done
@@ -201,12 +210,12 @@ for layer in "${MODULE_LAYERS[@]}"; do
             fi
             
             if [ ${#all_args[@]} -gt 0 ]; then
-                log_info "    ↳ Adding temporary replace directives..."
+                log_info "    ↳ Adding replace directives for development..."
                 go mod edit "${all_args[@]}" 2>/dev/null || true
             fi
         fi
         
-        # Step 2: Run go mod tidy with temporary replace directives in place
+        # Step 2: Run go mod tidy with replace directives in place
         log_info "    ↳ Running go mod tidy..."
         tidy_success=false
         if go mod tidy 2>&1; then
@@ -215,14 +224,12 @@ for layer in "${MODULE_LAYERS[@]}"; do
             log_warning "    ⚠ Tidy failed for $module (continuing anyway)"
         fi
         
-        # Step 3: Remove ALL replace directives after tidy (critical!)
-        # This ensures go.mod stays clean for release and doesn't have local paths
-        if [ ${#PROCESSED_MODULES[@]} -gt 0 ]; then
-            log_info "    ↳ Removing temporary replace directives..."
-            for dep in "${PROCESSED_MODULES[@]}"; do
-                go mod edit -dropreplace="$MODULE_BASE/$dep" 2>/dev/null || true
-            done
-        fi
+        # Step 3: Keep replace directives for development (DO NOT REMOVE!)
+        # These replace directives are essential for local development:
+        # - They allow go.work to resolve internal module dependencies correctly
+        # - They prevent go mod tidy from trying to fetch non-existent remote versions
+        # - They will be automatically removed during release by release.sh
+        log_info "    ↳ Keeping replace directives for development workspace"
         
         # Step 4: Mark as processed
         if [ "$tidy_success" = true ]; then
@@ -246,11 +253,17 @@ log_success "=========================================="
 log_info "Summary:"
 log_info "  - All modules have been reinitialized"
 log_info "  - Workspace has been recreated"
-log_info "  - Local dependencies are resolved via workspace"
+log_info "  - Replace directives have been added to all go.mod files"
+log_info "  - Local dependencies are resolved via workspace + replace"
+echo ""
+log_info "Important notes:"
+log_info "  1. Replace directives are KEPT in go.mod (they should be committed)"
+log_info "  2. These replace directives are essential for local development"
+log_info "  3. They will be automatically removed during release by release.sh"
 echo ""
 log_info "Next steps:"
 log_info "  1. Review any errors above"
-log_info "  2. If there were errors, they may be due to missing external dependencies"
-log_info "  3. Run 'go test ./...' to verify everything works"
-log_info "  4. Run 'go work sync' only if you need to sync with remote versions"
+log_info "  2. Run 'go test ./...' to verify everything works"
+log_info "  3. Commit the go.mod files with their replace directives"
+log_info "  4. Never manually remove replace directives (let release.sh handle it)"
 

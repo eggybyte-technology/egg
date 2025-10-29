@@ -1,0 +1,93 @@
+# Docker Compose configuration for application services
+# This file defines the example microservices that depend on infrastructure
+# Note: 'version' field is obsolete in Compose V2 and has been removed
+#
+# Architecture:
+#   - Infrastructure services (MySQL) are defined in docker-compose.infra.yaml
+#   - Application services (minimal-service, user-service) are defined here
+#   - Both share the same external network (egg-network)
+#   - The "orphan containers" warning about egg-mysql is expected and can be ignored
+
+networks:
+  egg-network:
+    external: true
+    name: egg-network
+
+services:
+  # Minimal Connect Service
+  minimal-connect-service:
+    image: minimal-connect-service:latest
+    container_name: egg-minimal-service
+    hostname: minimal-service
+    restart: unless-stopped
+    environment:
+      # Service Identity (servicex standard)
+      SERVICE_NAME: minimal-connect-service
+      SERVICE_VERSION: "0.1.0"
+      APP_ENV: development
+      
+      # Logging Configuration
+      LOG_LEVEL: info
+      
+      # Port Configuration (servicex BaseConfig)
+      HTTP_PORT: "8080"
+      HEALTH_PORT: "8081"
+      METRICS_PORT: "9091"
+    ports:
+      - "8080:8080"       # HTTP service port
+      - "8081:8081"       # Health check port
+      - "9091:9091"       # Metrics port
+    networks:
+      - egg-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # User Service
+  user-service:
+    image: user-service:latest
+    container_name: egg-user-service
+    hostname: user-service
+    restart: unless-stopped
+    environment:
+      # Service Identity (servicex standard)
+      SERVICE_NAME: user-service
+      SERVICE_VERSION: "0.1.0"
+      APP_ENV: development
+      
+      # Logging Configuration
+      LOG_LEVEL: info
+      
+      # Port Configuration (servicex BaseConfig)
+      HTTP_PORT: "8082"
+      HEALTH_PORT: "8083"
+      METRICS_PORT: "9092"
+      
+      # Database Configuration (servicex BaseConfig.Database)
+      DB_DSN: "egguser:eggpassword@tcp(mysql:3306)/eggdb?charset=utf8mb4&parseTime=True&loc=Local"
+      DB_DRIVER: mysql
+      # DB_HOST: mysql
+      # DB_PORT: "3306"
+      # DB_USER: egguser
+      # DB_PASSWORD: eggpassword
+      # DB_NAME: eggdb
+      DB_MAX_IDLE: "10"
+      DB_MAX_OPEN: "100"
+      DB_MAX_LIFETIME: "1h"
+    ports:
+      - "8082:8082"       # HTTP service port
+      - "8083:8083"       # Health check port
+      - "9092:9092"       # Metrics port
+    networks:
+      - egg-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8083/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+

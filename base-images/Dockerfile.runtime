@@ -1,0 +1,77 @@
+# ==============================================================================
+# EggyByte Go Runtime Image (Minimal Alpine)
+# ==============================================================================
+#
+# Purpose:
+#   Minimal runtime container for running pre-compiled Go microservice binaries.
+#   This image contains only essential runtime dependencies, no compiler or build tools.
+#
+# Base Image:
+#   alpine:3.22 (minimal Linux distribution, ~5MB base size)
+#
+# Key Features:
+#   - CA certificates for outbound HTTPS connections
+#   - Timezone data for accurate time handling
+#   - Non-root user (app:app) for security
+#   - No shell utilities beyond busybox (minimal attack surface)
+#
+# Usage:
+#   Copy a pre-built Go binary into this image. The binary should be statically
+#   linked (CGO_ENABLED=0) to avoid runtime library dependencies.
+#
+#   Example Dockerfile:
+#     FROM ghcr.io/eggybyte-technology/eggybyte-go-alpine:go1.25.1-alpine3.22
+#     COPY --chmod=755 bin/service /app/app
+#     ENTRYPOINT ["/app/app"]
+#
+# Security:
+#   - Runs as non-root user 'app' (UID auto-assigned by Alpine)
+#   - Minimal installed packages reduce attack surface
+#   - No compilers, interpreters, or package managers
+#   - Read-only root filesystem compatible (application dependent)
+#
+# Build Args:
+#   None (pinned base image version)
+#
+# Exposed Ports:
+#   None (application-specific; define in derived images)
+#
+# Health Check:
+#   None (application-specific; define in derived images)
+#
+# Maintenance:
+#   - Alpine version: 3.22 (update quarterly or as security patches require)
+#   - Review apk packages annually for deprecations
+#
+# ==============================================================================
+
+FROM alpine:3.22
+
+# Image metadata (OCI standard labels)
+LABEL org.opencontainers.image.title="EggyByte Go Runtime" \
+      org.opencontainers.image.description="Minimal runtime for EggyByte Go microservices (no compiler, just CA and TZ)." \
+      org.opencontainers.image.source="https://github.com/eggybyte-technology/egg" \
+      org.opencontainers.image.vendor="EggyByte Technology" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="go1.25.1-alpine3.22"
+
+# Install minimal runtime dependencies and create non-root user
+# - ca-certificates: Trusted CA roots for HTTPS (e.g., calling external APIs)
+# - tzdata: Timezone database for time.LoadLocation() and time.Local
+# - addgroup/adduser: Create 'app' user and group (non-root for security)
+RUN apk add --no-cache \
+      ca-certificates \
+      tzdata && \
+    addgroup -S app && adduser -S -G app app
+
+# Set working directory where application binary will reside
+WORKDIR /app
+
+# Switch to non-root user for runtime security
+# Application binary must have execute permissions for this user
+USER app
+
+# Default entrypoint: expects application binary at /app/app
+# Derived images should COPY their binary to /app/app or override this
+ENTRYPOINT ["/app/app"]
+

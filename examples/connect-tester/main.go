@@ -969,6 +969,39 @@ func testMetricsEndpoint(ctx context.Context, logger log.Logger, metricsURL stri
 		}
 	}
 
+	// Verify Database metrics (if service uses database)
+	// Only check for user-service which has database integration
+	if strings.Contains(serviceName, "user") {
+		dbMetricsChecks := []string{
+			"db_pool_open_connections",
+			"db_pool_in_use",
+			"db_pool_idle",
+			"db_pool_max_open",
+			"db_pool_wait_count_total",
+			"db_pool_wait_duration_seconds",
+		}
+		for _, metricName := range dbMetricsChecks {
+			if _, exists := metrics[metricName]; exists {
+				suite.add("Metrics_Database_"+metricName, duration, nil, "metric exists")
+				logger.Info(fmt.Sprintf("✓ PASS Metrics_Database_%s - metric exists", metricName))
+			} else {
+				// Database metrics are optional, so we just log without failing
+				logger.Info(fmt.Sprintf("⚠ SKIP Metrics_Database_%s - metric not enabled", metricName))
+			}
+		}
+
+		// Verify database pool has active connections
+		openConnections, found := findMetricValue(metrics, "db_pool_open_connections", map[string]string{})
+		if found && openConnections > 0 {
+			suite.add("Metrics_Database_ConnectionsActive", duration, nil, fmt.Sprintf("open_connections=%.0f", openConnections))
+			logger.Info("✓ PASS Metrics_Database_ConnectionsActive",
+				log.Float64("open_connections", openConnections))
+		} else if found {
+			logger.Info("⚠ WARN Metrics_Database_ConnectionsActive - no active connections",
+				log.Float64("open_connections", openConnections))
+		}
+	}
+
 	// Count number of metrics (lines that don't start with #)
 	lines := strings.Split(bodyStr, "\n")
 	metricCount := 0

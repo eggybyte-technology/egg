@@ -17,7 +17,7 @@ import (
 	"context"
 
 	"go.eggybyte.com/egg/core/errors"
-	"{{.ModulePrefix}}/internal/model"
+	"{{.ServiceModulePath}}/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -49,8 +49,8 @@ type {{.ServiceNameCamel}}Repository interface {
 	List(ctx context.Context, page, pageSize int) ([]*model.{{.ServiceNameCamel}}, int64, error)
 }
 
-// {{.ServiceNameVar}}Repository implements the {{.ServiceNameCamel}}Repository interface using GORM.
-type {{.ServiceNameVar}}Repository struct {
+// {{.ServiceNameVar | ToLower}}Repository implements the {{.ServiceNameCamel}}Repository interface using GORM.
+type {{.ServiceNameVar | ToLower}}Repository struct {
 	db *gorm.DB
 }
 
@@ -75,7 +75,7 @@ func New{{.ServiceNameCamel}}Repository(db *gorm.DB) {{.ServiceNameCamel}}Reposi
 		panic("New{{.ServiceNameCamel}}Repository: database cannot be nil")
 	}
 
-	return &{{.ServiceNameVar}}Repository{db: db}
+	return &{{.ServiceNameVar | ToLower}}Repository{db: db}
 }
 
 // Create creates a new {{.ServiceName}} in the database with validation and duplicate checking.
@@ -100,7 +100,7 @@ func New{{.ServiceNameCamel}}Repository(db *gorm.DB) {{.ServiceNameCamel}}Reposi
 // Concurrency:
 //
 //	Safe for concurrent use. Database handles constraint violations atomically.
-func (r *{{.ServiceNameVar}}Repository) Create(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error) {
+func (r *{{.ServiceNameVar | ToLower}}Repository) Create(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error) {
 	if err := {{.ServiceNameVar}}.Validate(); err != nil {
 		return nil, errors.Wrap(errors.CodeInvalidArgument, "{{.ServiceName}} validation", err)
 	}
@@ -135,7 +135,7 @@ func (r *{{.ServiceNameVar}}Repository) Create(ctx context.Context, {{.ServiceNa
 // Concurrency:
 //
 //	Safe for concurrent use. Read-only operation with context support.
-func (r *{{.ServiceNameVar}}Repository) GetByID(ctx context.Context, id string) (*model.{{.ServiceNameCamel}}, error) {
+func (r *{{.ServiceNameVar | ToLower}}Repository) GetByID(ctx context.Context, id string) (*model.{{.ServiceNameCamel}}, error) {
 	var {{.ServiceNameVar}} model.{{.ServiceNameCamel}}
 	if err := r.db.WithContext(ctx).First(&{{.ServiceNameVar}}, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -148,7 +148,7 @@ func (r *{{.ServiceNameVar}}Repository) GetByID(ctx context.Context, id string) 
 }
 
 // GetByEmail retrieves a {{.ServiceName}} by their email address.
-func (r *{{.ServiceNameVar}}Repository) GetByEmail(ctx context.Context, email string) (*model.{{.ServiceNameCamel}}, error) {
+func (r *{{.ServiceNameVar | ToLower}}Repository) GetByEmail(ctx context.Context, email string) (*model.{{.ServiceNameCamel}}, error) {
 	var {{.ServiceNameVar}} model.{{.ServiceNameCamel}}
 	if err := r.db.WithContext(ctx).Where("email = ?", email).First(&{{.ServiceNameVar}}).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -161,7 +161,7 @@ func (r *{{.ServiceNameVar}}Repository) GetByEmail(ctx context.Context, email st
 }
 
 // Update updates an existing {{.ServiceName}} in the database.
-func (r *{{.ServiceNameVar}}Repository) Update(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error) {
+func (r *{{.ServiceNameVar | ToLower}}Repository) Update(ctx context.Context, {{.ServiceNameVar}} *model.{{.ServiceNameCamel}}) (*model.{{.ServiceNameCamel}}, error) {
 	if err := {{.ServiceNameVar}}.Validate(); err != nil {
 		return nil, errors.Wrap(errors.CodeInvalidArgument, "{{.ServiceName}} validation", err)
 	}
@@ -193,7 +193,7 @@ func (r *{{.ServiceNameVar}}Repository) Update(ctx context.Context, {{.ServiceNa
 }
 
 // Delete removes a {{.ServiceName}} from the database by ID.
-func (r *{{.ServiceNameVar}}Repository) Delete(ctx context.Context, id string) error {
+func (r *{{.ServiceNameVar | ToLower}}Repository) Delete(ctx context.Context, id string) error {
 	result := r.db.WithContext(ctx).Delete(&model.{{.ServiceNameCamel}}{}, "id = ?", id)
 	if result.Error != nil {
 		return errors.Wrap(errors.CodeInternal, "delete {{.ServiceName}}", result.Error)
@@ -237,7 +237,7 @@ func (r *{{.ServiceNameVar}}Repository) Delete(ctx context.Context, id string) e
 // Concurrency:
 //
 //	Safe for concurrent use. Read-only operations with context support.
-func (r *{{.ServiceNameVar}}Repository) List(ctx context.Context, page, pageSize int) ([]*model.{{.ServiceNameCamel}}, int64, error) {
+func (r *{{.ServiceNameVar | ToLower}}Repository) List(ctx context.Context, page, pageSize int) ([]*model.{{.ServiceNameCamel}}, int64, error) {
 	if page < 1 {
 		page = 1
 	}

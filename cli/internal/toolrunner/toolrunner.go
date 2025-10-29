@@ -160,11 +160,25 @@ func (r *Runner) execute(ctx context.Context, name string, args ...string) (*Com
 
 	// Handle errors
 	if err != nil {
-		return result, fmt.Errorf("command failed: %w", err)
+		errorMsg := fmt.Sprintf("command failed: %w", err)
+		if result.Stderr != "" {
+			errorMsg += fmt.Sprintf("\nstderr: %s", result.Stderr)
+		}
+		if result.Stdout != "" {
+			errorMsg += fmt.Sprintf("\nstdout: %s", result.Stdout)
+		}
+		return result, fmt.Errorf(errorMsg)
 	}
 
 	if result.ExitCode != 0 {
-		return result, fmt.Errorf("command exited with code %d: %s", result.ExitCode, result.Stderr)
+		errorMsg := fmt.Sprintf("command exited with code %d", result.ExitCode)
+		if result.Stderr != "" {
+			errorMsg += fmt.Sprintf("\nstderr: %s", result.Stderr)
+		}
+		if result.Stdout != "" {
+			errorMsg += fmt.Sprintf("\nstdout: %s", result.Stdout)
+		}
+		return result, fmt.Errorf(errorMsg)
 	}
 
 	return result, nil
@@ -434,7 +448,15 @@ func (r *Runner) GoWorkUse(ctx context.Context, modules ...string) error {
 func (r *Runner) BufGenerate(ctx context.Context) error {
 	result, err := r.Buf(ctx, "generate")
 	if err != nil {
-		return fmt.Errorf("failed to generate code with buf: %w", err)
+		// Provide detailed error information
+		errorMsg := fmt.Sprintf("failed to generate code with buf: %w", err)
+		if result != nil && result.Stderr != "" {
+			errorMsg += fmt.Sprintf("\nstderr: %s", result.Stderr)
+		}
+		if result != nil && result.Stdout != "" {
+			errorMsg += fmt.Sprintf("\nstdout: %s", result.Stdout)
+		}
+		return fmt.Errorf(errorMsg)
 	}
 
 	if r.verbose {

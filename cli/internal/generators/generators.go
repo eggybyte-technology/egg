@@ -223,7 +223,224 @@ func (g *APIGenerator) Generate(ctx context.Context) error {
 		return fmt.Errorf("failed to generate code with buf: %w", err)
 	}
 
+	// Initialize gen/go/go.mod for generated code if it doesn't exist
+	if err := g.ensureGenGoMod(ctx); err != nil {
+		return fmt.Errorf("failed to initialize gen/go module: %w", err)
+	}
+
+	// Add gen/go module to backend workspace
+	if err := g.addGenGoToBackendWorkspace(ctx); err != nil {
+		return fmt.Errorf("failed to add gen/go to backend workspace: %w", err)
+	}
+
+	// Update existing backend services with gen/go replace directive
+	if err := g.updateBackendServicesWithGenGo(ctx); err != nil {
+		ui.Warning("Failed to update backend services with gen/go: %v", err)
+	}
+
 	ui.Success("Code generation completed")
+	return nil
+}
+
+// ensureGenGoMod initializes gen/go/go.mod if it doesn't exist.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//
+// Returns:
+//   - error: Initialization error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - File system check and go mod init
+func (g *APIGenerator) ensureGenGoMod(ctx context.Context) error {
+	genGoDir := filepath.Join(g.fs.GetRootDir(), "gen", "go")
+	goModPath := filepath.Join(genGoDir, "go.mod")
+
+	// Check if gen/go/go.mod already exists
+	if _, err := os.Stat(goModPath); err == nil {
+		// go.mod already exists, just tidy it
+		genGoRunner := toolrunner.NewRunner(genGoDir)
+		genGoRunner.SetVerbose(false)
+		if err := genGoRunner.GoModTidy(ctx); err != nil {
+			ui.Warning("Failed to tidy gen/go/go.mod: %v", err)
+		}
+		return nil
+	}
+
+	// Check if gen/go directory exists (created by buf generate)
+	if _, err := os.Stat(genGoDir); os.IsNotExist(err) {
+		// No generated code yet, skip
+		ui.Info("No generated code yet, skipping gen/go/go.mod creation")
+		return nil
+	}
+
+	// Load egg.yaml to get module prefix
+	configPath := filepath.Join(g.fs.GetRootDir(), "egg.yaml")
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read egg.yaml: %w", err)
+	}
+
+	// Extract module_prefix from yaml (simple string search)
+	modulePrefix := ""
+	lines := strings.Split(string(configData), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module_prefix:") {
+			modulePrefix = strings.TrimSpace(strings.TrimPrefix(line, "module_prefix:"))
+			modulePrefix = strings.Trim(modulePrefix, `"`)
+			break
+		}
+	}
+	if modulePrefix == "" {
+		return fmt.Errorf("module_prefix not found in egg.yaml")
+	}
+
+	// Initialize gen/go/go.mod
+	ui.Info("Initializing gen/go/go.mod for generated code...")
+	genGoRunner := toolrunner.NewRunner(genGoDir)
+	genGoRunner.SetVerbose(true)
+	genGoModulePath := modulePrefix + "/gen/go"
+	if err := genGoRunner.GoModInit(ctx, genGoModulePath); err != nil {
+		return fmt.Errorf("failed to initialize gen/go/go.mod: %w", err)
+	}
+
+	// Tidy to add dependencies from generated code
+	if err := genGoRunner.GoModTidy(ctx); err != nil {
+		ui.Warning("Failed to tidy gen/go/go.mod: %v", err)
+	}
+
+	ui.Success("gen/go module initialized: %s", genGoModulePath)
+	return nil
+}
+
+// addGenGoToBackendWorkspace adds gen/go module to backend/go.work.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//
+// Returns:
+//   - error: Addition error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - File system check and go work use
+func (g *APIGenerator) addGenGoToBackendWorkspace(ctx context.Context) error {
+	// Check if backend/go.work exists
+	goWorkPath := filepath.Join(g.fs.GetRootDir(), "backend", "go.work")
+	if _, err := os.Stat(goWorkPath); err != nil {
+		// go.work doesn't exist yet, skip
+		ui.Info("backend/go.work not found, skipping workspace update")
+		return nil
+	}
+
+	// Check if gen/go/go.mod exists
+	genGoModPath := filepath.Join(g.fs.GetRootDir(), "gen", "go", "go.mod")
+	if _, err := os.Stat(genGoModPath); err != nil {
+		// gen/go/go.mod doesn't exist yet, skip
+		return nil
+	}
+
+	// Add ../gen/go to backend workspace
+	ui.Info("Adding gen/go to backend workspace...")
+	backendRunner := toolrunner.NewRunner(filepath.Join(g.fs.GetRootDir(), "backend"))
+	backendRunner.SetVerbose(false)
+	if _, err := backendRunner.Go(ctx, "work", "use", "../gen/go"); err != nil {
+		ui.Warning("Failed to add gen/go to workspace: %v", err)
+	}
+
+	return nil
+}
+
+// updateBackendServicesWithGenGo adds gen/go replace directive to all existing backend services.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//
+// Returns:
+//   - error: Update error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Iterates through backend directory and updates each service
+func (g *APIGenerator) updateBackendServicesWithGenGo(ctx context.Context) error {
+	// Get module prefix from egg.yaml
+	configPath := filepath.Join(g.fs.GetRootDir(), "egg.yaml")
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read egg.yaml: %w", err)
+	}
+
+	modulePrefix := ""
+	lines := strings.Split(string(configData), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module_prefix:") {
+			modulePrefix = strings.TrimSpace(strings.TrimPrefix(line, "module_prefix:"))
+			modulePrefix = strings.Trim(modulePrefix, `"`)
+			break
+		}
+	}
+	if modulePrefix == "" {
+		return fmt.Errorf("module_prefix not found in egg.yaml")
+	}
+
+	// Get gen/go absolute path (relative to service directory)
+	genGoModulePath := fmt.Sprintf("%s/gen/go", modulePrefix)
+
+	// Check if gen/go exists
+	genGoModPath := filepath.Join(g.fs.GetRootDir(), "gen", "go", "go.mod")
+	if _, err := os.Stat(genGoModPath); err != nil {
+		// gen/go doesn't exist yet, skip
+		return nil
+	}
+
+	// Find all backend services
+	backendDir := filepath.Join(g.fs.GetRootDir(), "backend")
+	entries, err := os.ReadDir(backendDir)
+	if err != nil {
+		// backend directory doesn't exist, skip
+		return nil
+	}
+
+	// Update each backend service
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		serviceDir := filepath.Join(backendDir, entry.Name())
+		goModPath := filepath.Join(serviceDir, "go.mod")
+		if _, err := os.Stat(goModPath); err != nil {
+			// No go.mod in this directory, skip
+			continue
+		}
+
+		// Calculate relative path from service directory to gen/go
+		// backend/user -> ../../gen/go
+		genGoRelPath := "../../gen/go"
+
+		// Add replace directive with relative path
+		serviceRunner := toolrunner.NewRunner(serviceDir)
+		serviceRunner.SetVerbose(false)
+		if _, err := serviceRunner.Go(ctx, "mod", "edit", "-replace", fmt.Sprintf("%s=%s", genGoModulePath, genGoRelPath)); err != nil {
+			ui.Warning("Failed to add gen/go replace directive for service %s: %v", entry.Name(), err)
+			continue
+		}
+
+		// Run go mod tidy to apply changes
+		if err := serviceRunner.GoModTidy(ctx); err != nil {
+			ui.Warning("Failed to tidy service %s after adding gen/go replace: %v", entry.Name(), err)
+		}
+	}
+
 	return nil
 }
 
@@ -339,7 +556,8 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 		}
 		for _, dep := range requiredDeps {
 			if _, err := serviceRunner.Go(ctx, "get", dep); err != nil {
-				return fmt.Errorf("failed to add dependency %s: %w", dep, err)
+				ui.Warning("Failed to add dependency %s: %v", dep, err)
+				continue
 			}
 		}
 	} else {
@@ -361,8 +579,23 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 		}
 		for _, dep := range eggDeps {
 			if _, err := serviceRunner.Go(ctx, "get", dep); err != nil {
-				return fmt.Errorf("failed to add dependency %s: %w", dep, err)
+				ui.Warning("Failed to add dependency %s: %v", dep, err)
+				continue
 			}
+		}
+	}
+
+	// Add gen/go replace directive if it exists (should exist after proto generation)
+	genGoModPath := filepath.Join(g.fs.GetRootDir(), "gen", "go", "go.mod")
+	if _, err := os.Stat(genGoModPath); err == nil {
+		// gen/go exists, add replace directive with relative path
+		// backend/user -> ../../gen/go
+		genGoRelPath := "../../gen/go"
+		genGoModulePath := fmt.Sprintf("%s/gen/go", config.ModulePrefix)
+		if _, err := serviceRunner.Go(ctx, "mod", "edit", "-replace", fmt.Sprintf("%s=%s", genGoModulePath, genGoRelPath)); err != nil {
+			ui.Warning("Failed to add replace directive for gen/go: %v", err)
+		} else {
+			ui.Info("Added gen/go replace directive to service go.mod")
 		}
 	}
 
@@ -381,19 +614,69 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 		return fmt.Errorf("failed to generate service files: %w", err)
 	}
 
-	// Generate Makefile
-	if err := g.generateMakefile(serviceDir, templateData); err != nil {
-		return fmt.Errorf("failed to generate Makefile: %w", err)
+	// Note: Makefile generation removed - use egg CLI build commands instead
+
+	// Update backend go.work first (needed for tidy to resolve local modules)
+	if err := g.updateBackendWorkspace(ctx, name, config); err != nil {
+		return fmt.Errorf("failed to update workspace: %w", err)
+	}
+
+	// Generate proto code if proto file was created
+	if protoTemplate != "none" {
+		ui.Info("Generating code from proto definitions...")
+		apiRunner := toolrunner.NewRunner(filepath.Join(g.fs.GetRootDir(), "api"))
+		apiRunner.SetVerbose(true)
+		if err := apiRunner.BufGenerate(ctx); err != nil {
+			ui.Warning("buf generate failed: %v", err)
+			ui.Warning("Proto code generation failed - some services may have missing imports")
+			// Continue anyway - service might not need proto code yet
+			// Note: This may result in compilation errors if proto code is required
+		} else {
+			ui.Success("Proto code generated successfully")
+
+			// Initialize gen/go/go.mod if it doesn't exist
+			genGoDir := filepath.Join(g.fs.GetRootDir(), "gen", "go")
+			goModPath := filepath.Join(genGoDir, "go.mod")
+			if _, err := os.Stat(goModPath); os.IsNotExist(err) {
+				// gen/go directory should exist after buf generate
+				if _, err := os.Stat(genGoDir); err == nil {
+					ui.Info("Initializing gen/go/go.mod for generated code...")
+					genGoRunner := toolrunner.NewRunner(genGoDir)
+					genGoRunner.SetVerbose(false)
+					genGoModulePath := fmt.Sprintf("%s/gen/go", config.ModulePrefix)
+					if err := genGoRunner.GoModInit(ctx, genGoModulePath); err != nil {
+						ui.Warning("Failed to initialize gen/go/go.mod: %v", err)
+					} else {
+						// Tidy to add dependencies from generated code
+						if err := genGoRunner.GoModTidy(ctx); err != nil {
+							ui.Warning("Failed to tidy gen/go/go.mod: %v", err)
+						} else {
+							ui.Success("gen/go module initialized: %s", genGoModulePath)
+						}
+					}
+				}
+			}
+
+			// Add gen/go replace directive to service go.mod after initialization
+			if _, err := os.Stat(goModPath); err == nil {
+				genGoRelPath := "../../gen/go"
+				genGoModulePath := fmt.Sprintf("%s/gen/go", config.ModulePrefix)
+				if _, err := serviceRunner.Go(ctx, "mod", "edit", "-replace", fmt.Sprintf("%s=%s", genGoModulePath, genGoRelPath)); err != nil {
+					ui.Warning("Failed to add replace directive for gen/go: %v", err)
+				} else {
+					ui.Info("Added gen/go replace directive to service go.mod")
+				}
+			}
+		}
 	}
 
 	// Tidy module after generating files with imports
+	// Note: This may fail if proto-generated imports are missing, but we continue
 	if err := serviceRunner.GoModTidy(ctx); err != nil {
-		return fmt.Errorf("failed to tidy module: %w", err)
-	}
-
-	// Update backend go.work using go commands
-	if err := g.updateBackendWorkspace(ctx, name, config); err != nil {
-		return fmt.Errorf("failed to update workspace: %w", err)
+		ui.Warning("go mod tidy failed: %v", err)
+		ui.Warning("This may indicate missing proto-generated code or import issues")
+		ui.Warning("Try running 'egg api generate' manually if needed")
+		// Don't fail - service structure is created, user can fix imports
 	}
 
 	ui.Success("Backend service created: %s", name)
@@ -419,15 +702,16 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 func (g *BackendGenerator) generateBackendFiles(name string, serviceConfig configschema.BackendService, config *configschema.Config, templateData *TemplateData) error {
 	// Convert TemplateData to map for compatibility with loader.LoadAndRender
 	data := map[string]interface{}{
-		"ModulePrefix":     templateData.ModulePrefix,
-		"ServiceName":      templateData.ServiceName,
-		"ServiceNameCamel": templateData.ServiceNameCamel,
-		"ServiceNameVar":   templateData.ServiceNameVar,
-		"ProtoPackage":     templateData.ProtoPackage,
-		"BinaryName":       templateData.BinaryName,
-		"HTTPPort":         templateData.HTTPPort,
-		"HealthPort":       templateData.HealthPort,
-		"MetricsPort":      templateData.MetricsPort,
+		"ModulePrefix":      templateData.ModulePrefix,
+		"ServiceModulePath": templateData.ServiceModulePath,
+		"ServiceName":       templateData.ServiceName,
+		"ServiceNameCamel":  templateData.ServiceNameCamel,
+		"ServiceNameVar":    templateData.ServiceNameVar,
+		"ProtoPackage":      templateData.ProtoPackage,
+		"BinaryName":        templateData.BinaryName,
+		"HTTPPort":          templateData.HTTPPort,
+		"HealthPort":        templateData.HealthPort,
+		"MetricsPort":       templateData.MetricsPort,
 	}
 
 	// Generate main.go from template
@@ -604,8 +888,15 @@ func (g *BackendGenerator) GenerateCompose(ctx context.Context, config *configsc
 	ui.Info("Generating docker-compose configuration...")
 
 	data := map[string]interface{}{
-		"ProjectName":     config.ProjectName,
-		"BackendServices": config.Backend,
+		"ProjectName":          config.ProjectName,
+		"BackendServices":      config.Backend,
+		"DatabaseEnabled":      config.Database.Enabled,
+		"DatabaseImage":        config.Database.Image,
+		"DatabasePort":         config.Database.Port,
+		"DatabaseName":         config.Database.Database,
+		"DatabaseUser":         config.Database.User,
+		"DatabasePassword":     config.Database.Password,
+		"DatabaseRootPassword": config.Database.RootPassword,
 	}
 
 	// Generate docker-compose.yaml from template
@@ -617,16 +908,79 @@ func (g *BackendGenerator) GenerateCompose(ctx context.Context, config *configsc
 		return fmt.Errorf("failed to write compose configuration: %w", err)
 	}
 
+	// Generate .env file
+	if err := g.generateComposeEnvFile(config); err != nil {
+		return fmt.Errorf("failed to generate .env file: %w", err)
+	}
+
 	// Generate Dockerfile.backend from template
-	dockerfileBackend, err := g.loader.LoadAndRender("build/Dockerfile.backend.tmpl", data)
+	dockerfileBackend, err := g.loader.LoadAndRender("docker/Dockerfile.backend.tmpl", data)
 	if err != nil {
 		return fmt.Errorf("failed to load and render Dockerfile.backend template: %w", err)
 	}
-	if err := g.fs.WriteFile("build/Dockerfile.backend", dockerfileBackend, 0644); err != nil {
+	if err := g.fs.WriteFile("docker/Dockerfile.backend", dockerfileBackend, 0644); err != nil {
 		return fmt.Errorf("failed to write Dockerfile.backend: %w", err)
 	}
 
 	ui.Success("docker-compose configuration generated: deploy/compose/compose.yaml")
+	return nil
+}
+
+// generateComposeEnvFile generates .env file for Docker Compose.
+//
+// Parameters:
+//   - config: Project configuration
+//
+// Returns:
+//   - error: Generation error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - File I/O operation
+func (g *BackendGenerator) generateComposeEnvFile(config *configschema.Config) error {
+	var builder strings.Builder
+
+	// Compose project name
+	builder.WriteString("COMPOSE_PROJECT_NAME=" + config.ProjectName + "\n")
+	builder.WriteString("\n# Global Environment\n")
+
+	// Global environment
+	for key, value := range config.Env.Global {
+		builder.WriteString(key + "=" + value + "\n")
+	}
+
+	// Backend environment
+	if len(config.Env.Backend) > 0 {
+		builder.WriteString("\n# Backend Environment\n")
+		for key, value := range config.Env.Backend {
+			builder.WriteString(key + "=" + value + "\n")
+		}
+	}
+
+	// Frontend environment
+	if len(config.Env.Frontend) > 0 {
+		builder.WriteString("\n# Frontend Environment\n")
+		for key, value := range config.Env.Frontend {
+			builder.WriteString(key + "=" + value + "\n")
+		}
+	}
+
+	// Database environment
+	if config.Database.Enabled {
+		builder.WriteString("\n# Database Environment\n")
+		builder.WriteString("MYSQL_ROOT_PASSWORD=" + config.Database.RootPassword + "\n")
+		builder.WriteString("MYSQL_DATABASE=" + config.Database.Database + "\n")
+		builder.WriteString("MYSQL_USER=" + config.Database.User + "\n")
+		builder.WriteString("MYSQL_PASSWORD=" + config.Database.Password + "\n")
+	}
+
+	// Write .env file
+	if err := g.fs.WriteFile("deploy/compose/.env", builder.String(), 0644); err != nil {
+		return fmt.Errorf("failed to write .env file: %w", err)
+	}
+
 	return nil
 }
 
@@ -900,16 +1254,21 @@ func (g *BackendGenerator) prepareTemplateData(name string, serviceConfig config
 	// e.g., "github.com/org/project" -> "org.project"
 	protoPackage := computeProtoPackage(config.ModulePrefix)
 
+	// Compute service module path
+	// e.g., "github.com/org/project" + "user" -> "github.com/org/project/backend/user"
+	serviceModulePath := config.ModulePrefix + "/backend/" + name
+
 	return &TemplateData{
-		ModulePrefix:     config.ModulePrefix,
-		ServiceName:      name,
-		ServiceNameCamel: camelCaseServiceName(name),
-		ServiceNameVar:   serviceNameToVar(name),
-		ProtoPackage:     protoPackage,
-		BinaryName:       "server",
-		HTTPPort:         httpPort,
-		HealthPort:       healthPort,
-		MetricsPort:      metricsPort,
+		ModulePrefix:      config.ModulePrefix,
+		ServiceModulePath: serviceModulePath,
+		ServiceName:       name,
+		ServiceNameCamel:  camelCaseServiceName(name),
+		ServiceNameVar:    serviceNameToVar(name),
+		ProtoPackage:      protoPackage,
+		BinaryName:        "server",
+		HTTPPort:          httpPort,
+		HealthPort:        healthPort,
+		MetricsPort:       metricsPort,
 	}
 }
 
@@ -971,45 +1330,11 @@ func (g *BackendGenerator) generateProtoFile(name string, protoTemplate string, 
 	return nil
 }
 
-// generateMakefile generates a Makefile for the service.
-//
-// Parameters:
-//   - serviceDir: Service directory path
-//   - templateData: Template data for rendering
-//
-// Returns:
-//   - error: Generation error if any
-//
-// Concurrency:
-//   - Single-threaded
-//
-// Performance:
-//   - Template rendering and file I/O
-func (g *BackendGenerator) generateMakefile(serviceDir string, templateData *TemplateData) error {
-	ui.Info("Generating Makefile")
-
-	// Convert TemplateData to map
-	data := map[string]interface{}{
-		"ServiceName":      templateData.ServiceName,
-		"ServiceNameCamel": templateData.ServiceNameCamel,
-		"ServiceNameVar":   templateData.ServiceNameVar,
-	}
-
-	// Load and render template
-	makefileContent, err := g.loader.LoadAndRender("build/Makefile.backend.tmpl", data)
-	if err != nil {
-		return fmt.Errorf("failed to render Makefile template: %w", err)
-	}
-
-	// Write Makefile
-	makefilePath := filepath.Join(serviceDir, "Makefile")
-	if err := g.fs.WriteFile(makefilePath, makefileContent, 0644); err != nil {
-		return fmt.Errorf("failed to write Makefile: %w", err)
-	}
-
-	ui.Success("Makefile generated: %s", makefilePath)
-	return nil
-}
+// Note: generateMakefile has been removed.
+// Backend services are now built using egg CLI commands:
+//   - egg build backend <service>  # Compile binary + build image
+//   - egg build all                # Build all services
+// No Makefiles are generated in new projects.
 
 // computeProtoPackage computes the proto package name from module prefix.
 // e.g., "github.com/org/project" -> "org.project"
@@ -1033,6 +1358,9 @@ func computeProtoPackage(modulePrefix string) string {
 
 	// Replace slashes with dots
 	protoPackage := strings.ReplaceAll(modulePrefix, "/", ".")
+
+	// Replace hyphens with underscores (protobuf package names don't allow hyphens)
+	protoPackage = strings.ReplaceAll(protoPackage, "-", "_")
 
 	// Convert to lowercase
 	protoPackage = strings.ToLower(protoPackage)

@@ -27,38 +27,38 @@ RESET='\033[0m'
 # Usage: print_header "My Header Title"
 print_header() {
     local title="$1"
-    echo ""
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-    echo -e "${BLUE}▶ ${BOLD}$title${RESET}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    printf "\n"
+    printf "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+    printf "${BLUE}▶ ${BOLD}%s${RESET}\n" "$title"
+    printf "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
 }
 
 # Print a success message
 # Usage: print_success "Operation completed successfully"
 print_success() {
     local message="$1"
-    echo -e "${GREEN}[✓] SUCCESS:${RESET} $message"
+    printf "${GREEN}[✓] SUCCESS:${RESET} %s\n" "$message"
 }
 
 # Print an error message
 # Usage: print_error "Something went wrong"
 print_error() {
     local message="$1"
-    echo -e "${RED}[✗] ERROR:${RESET} $message" >&2
+    printf "${RED}[✗] ERROR:${RESET} %s\n" "$message" >&2
 }
 
 # Print an info message
 # Usage: print_info "Information here"
 print_info() {
     local message="$1"
-    echo -e "${CYAN}[i] INFO:${RESET} $message"
+    printf "${CYAN}[i] INFO:${RESET} %s\n" "$message"
 }
 
 # Print a warning message
 # Usage: print_warning "This might be a problem"
 print_warning() {
     local message="$1"
-    echo -e "${YELLOW}[!] WARNING:${RESET} $message"
+    printf "${YELLOW}[!] WARNING:${RESET} %s\n" "$message"
 }
 
 # Print a debug message (only if DEBUG is set)
@@ -66,7 +66,7 @@ print_warning() {
 print_debug() {
     local message="$1"
     if [ "${DEBUG:-false}" = "true" ]; then
-        echo -e "${MAGENTA}[DEBUG]:${RESET} $message"
+        printf "${MAGENTA}[DEBUG]:${RESET} %s\n" "$message"
     fi
 }
 
@@ -75,22 +75,22 @@ print_debug() {
 print_step() {
     local step="$1"
     local description="$2"
-    echo -e "${BOLD}${step}${RESET}: ${description}"
+    printf "${BOLD}%s${RESET}: %s\n" "$step" "$description"
 }
 
 # Print a section divider
 # Usage: print_section "Section Name"
 print_section() {
     local section="$1"
-    echo ""
-    echo -e "${BLUE}┌─ ${BOLD}$section${RESET} ${BLUE}────────────────────────────────────────────────────────────${RESET}"
+    printf "\n"
+    printf "${BLUE}┌─ ${BOLD}%s${RESET} ${BLUE}────────────────────────────────────────────────────────────${RESET}\n" "$section"
 }
 
 # Print a command being executed (for transparency)
 # Usage: print_command "make build"
 print_command() {
     local command="$1"
-    echo -e "${CYAN}[CMD]${RESET} $command"
+    printf "${CYAN}[CMD]${RESET} %s\n" "$command"
 }
 
 # Exit with error message
