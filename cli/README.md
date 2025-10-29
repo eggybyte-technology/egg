@@ -140,8 +140,7 @@ egg create backend <service-name> [flags]
 
 **Flags:**
 - `--proto` - Proto template type: `echo`, `crud`, or `none` (default: echo)
-- `--local-modules` - Use local egg modules (required for development)
-- `--force` - Overwrite existing service
+- `--local-modules` - Use local egg modules with v0.0.0-dev versions (required for development)
 
 **Example:**
 ```bash
@@ -181,9 +180,15 @@ egg create frontend <service-name> [flags]
 **Flags:**
 - `--platforms` - Target platforms: `web`, `android`, `ios`, `macos`, `windows`, `linux`
 
+**Service Naming Rules:**
+- Must use underscores (`_`) not hyphens (`-`) - Flutter package name requirement
+- Example: `admin_portal`, `user_app` (not `admin-portal`, `user-app`)
+- Docker images automatically convert to hyphens: `admin_portal` → `admin-portal-frontend`
+
 **Example:**
 ```bash
-egg create frontend admin-portal --platforms web
+egg create frontend admin_portal --platforms web
+egg create frontend user_app --platforms web,android,ios
 ```
 
 ### API Management
@@ -251,55 +256,71 @@ plugins:
 
 #### `egg build` - Build Docker images
 
-Build backend services and frontend applications using containerized build environments.
+Build backend services and frontend applications using containerized build environments with multi-platform support.
 
 ```bash
-egg build backend <service>       # Build backend service (multi-arch: amd64, arm64)
-egg build frontend <service>      # Build frontend service
+egg build backend <service>       # Build backend service
+egg build frontend <service>      # Build frontend service  
 egg build all                     # Build all services
 ```
 
+**Multi-Platform Support:**
+
+- **Default platforms**: `linux/amd64,linux/arm64`
+- **Multi-platform builds MUST use `--push`** (Docker buildx limitation)
+- Single platform builds can be local (no push required)
+
 **Backend Build Process:**
 
-1. Compile binary using builder container (multi-arch support)
-2. Package binary into runtime image (multi-arch support)
+1. Package service code into Docker image using buildx
+2. Support for multiple architectures with automatic platform detection
 
 ```bash
-# Build backend service (default: linux/amd64,linux/arm64)
-egg build backend user
+# Single platform build (local, no push)
+egg build backend user --platform linux/amd64
 
-# Custom tag and platform
-egg build backend user --tag v1.0.0 --platform linux/amd64
+# Multi-platform build and push (REQUIRED for multi-arch)
+egg build backend user --platform linux/amd64,linux/arm64 --push
 
-# Build and push to registry
+# Default multi-platform build with push
 egg build backend user --push
 ```
 
 **Frontend Build Process:**
 
-1. Build Flutter web assets using local Flutter SDK
-2. Package assets into nginx image
+1. Build Flutter web assets using local Flutter SDK (outputs to `build/web/`)
+2. Copy assets to `bin/frontend/<service>/`
+3. Package assets into nginx image
 
 ```bash
-# Build frontend service
-egg build frontend admin_portal
+# Single platform build
+egg build frontend admin_portal --platform linux/amd64
 
-# Custom tag
-egg build frontend admin_portal --tag v1.0.0
+# Multi-platform build and push
+egg build frontend admin_portal --platform linux/amd64,linux/arm64 --push
 
-# Build and push to registry
-egg build frontend admin_portal --push
+# Note: Frontend images are platform-agnostic (static files)
+# but multi-platform is supported for consistency
 ```
 
 **Build All Services:**
 
 ```bash
-# Build all backend and frontend services
-egg build all
+# Build all services (single platform, local)
+egg build all --platform linux/amd64
 
-# Build and push all (multi-arch for backend)
-egg build all --push
+# Build and push all (multi-platform)
+egg build all --platform linux/amd64,linux/arm64 --push
+
+# Default: single platform local build
+egg build all
 ```
+
+**Build Flags:**
+
+- `--tag` - Custom image tag (default: version from egg.yaml)
+- `--platform` - Target platform(s) (default: linux/amd64,linux/arm64)
+- `--push` - Push to registry (required for multi-platform)
 
 **Output Structure:**
 
@@ -623,9 +644,21 @@ egg compose up
 
 ### 1. Service Naming
 
-- Use lowercase with hyphens: `user-service`, `order-service`
-- No `-service` suffix (CLI validates this)
-- Consistent patterns across services
+**Backend Services:**
+- Use lowercase with hyphens: `user`, `order`, `product`
+- No `-service` suffix (CLI validates and rejects this)
+- Service names must be unique across all types (backend and frontend)
+
+**Frontend Services:**
+- Use lowercase with underscores: `admin_portal`, `user_app`, `mobile_client`
+- **MUST use underscores** (Flutter package name requirement)
+- Hyphens are automatically rejected by CLI validation
+- Docker images auto-convert to hyphens: `admin_portal` → `admin-portal-frontend`
+
+**Uniqueness:**
+- Service names must be unique across all types
+- Cannot create backend service `user` if frontend service `user` exists
+- Cannot create frontend service `admin` if backend service `admin` exists
 
 ### 2. Proto Templates
 
@@ -635,16 +668,46 @@ egg compose up
 
 ### 3. Local Development
 
-- Always use `--local-modules` flag for backend services
-- Ensures compatibility with local egg framework modules
+- Always use `--local-modules` flag for backend services during development
+- Uses `v0.0.0-dev` versions with `GOPROXY=direct` and `GOSUMDB=off`
+- **No replace directives** - ensures Docker build compatibility
+- Works in both local development and containerized builds
 - CLI automatically manages gen/go module references
+
+**Why v0.0.0-dev instead of replace directives:**
+- Replace directives break Docker builds (local paths not available in container)
+- v0.0.0-dev with GOPROXY=direct works everywhere
+- Cleaner go.mod files without absolute paths
+- Better for CI/CD pipelines
 
 ### 4. Version Management
 
 - Use semantic versioning: `v1.0.0`, `v1.1.0`, `v2.0.0`
 - Update version in egg.yaml for releases
 
-### 5. Plugin Management
+### 5. Multi-Platform Builds
+
+**For Production:**
+```bash
+# Build and push multi-platform images
+egg build backend user --platform linux/amd64,linux/arm64 --push
+egg build all --push  # Uses default platforms
+```
+
+**For Local Development:**
+```bash
+# Build for current architecture only
+egg build backend user --platform linux/amd64
+egg build all --platform linux/arm64
+```
+
+**Important Notes:**
+- Multi-platform builds REQUIRE `--push` flag (Docker buildx limitation)
+- Single platform builds can be kept local (no push needed)
+- Default platforms: `linux/amd64,linux/arm64`
+- CLI will warn and downgrade to single platform if `--push` is missing
+
+### 6. Plugin Management
 
 - Run `egg doctor` before starting development
 - Use `egg doctor --install` to set up local plugins

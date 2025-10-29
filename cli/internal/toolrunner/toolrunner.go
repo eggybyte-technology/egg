@@ -160,25 +160,111 @@ func (r *Runner) execute(ctx context.Context, name string, args ...string) (*Com
 
 	// Handle errors
 	if err != nil {
-		errorMsg := fmt.Sprintf("command failed: %w", err)
-		if result.Stderr != "" {
-			errorMsg += fmt.Sprintf("\nstderr: %s", result.Stderr)
+		if result.Stderr != "" && result.Stdout != "" {
+			return result, fmt.Errorf("command failed: %w\nstderr: %s\nstdout: %s", err, result.Stderr, result.Stdout)
+		} else if result.Stderr != "" {
+			return result, fmt.Errorf("command failed: %w\nstderr: %s", err, result.Stderr)
+		} else if result.Stdout != "" {
+			return result, fmt.Errorf("command failed: %w\nstdout: %s", err, result.Stdout)
 		}
-		if result.Stdout != "" {
-			errorMsg += fmt.Sprintf("\nstdout: %s", result.Stdout)
-		}
-		return result, fmt.Errorf(errorMsg)
+		return result, fmt.Errorf("command failed: %w", err)
 	}
 
 	if result.ExitCode != 0 {
-		errorMsg := fmt.Sprintf("command exited with code %d", result.ExitCode)
-		if result.Stderr != "" {
-			errorMsg += fmt.Sprintf("\nstderr: %s", result.Stderr)
+		if result.Stderr != "" && result.Stdout != "" {
+			return result, fmt.Errorf("command exited with code %d\nstderr: %s\nstdout: %s", result.ExitCode, result.Stderr, result.Stdout)
+		} else if result.Stderr != "" {
+			return result, fmt.Errorf("command exited with code %d\nstderr: %s", result.ExitCode, result.Stderr)
+		} else if result.Stdout != "" {
+			return result, fmt.Errorf("command exited with code %d\nstdout: %s", result.ExitCode, result.Stdout)
 		}
-		if result.Stdout != "" {
-			errorMsg += fmt.Sprintf("\nstdout: %s", result.Stdout)
+		return result, fmt.Errorf("command exited with code %d", result.ExitCode)
+	}
+
+	return result, nil
+}
+
+// executeWithEnv runs a command with custom environment variables.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - env: Environment variables to set
+//   - name: Command name
+//   - args: Command arguments
+//
+// Returns:
+//   - *CommandResult: Command execution result
+//   - error: Execution error if any
+//
+// Concurrency:
+//   - Single-threaded per command
+//
+// Performance:
+//   - Streaming output capture
+func (r *Runner) executeWithEnv(ctx context.Context, env map[string]string, name string, args ...string) (*CommandResult, error) {
+	start := time.Now()
+
+	// Create command
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = r.workDir
+
+	// Set environment variables
+	cmd.Env = os.Environ()
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	// Special handling for 'go work init' to avoid parent workspace conflicts
+	if name == "go" && len(args) >= 2 && args[0] == "work" && args[1] == "init" {
+		cmd.Env = append(cmd.Env, "GOWORK=off")
+	}
+
+	// Show command if verbose
+	if r.verbose {
+		envStr := ""
+		for k, v := range env {
+			envStr += fmt.Sprintf("%s=%s ", k, v)
 		}
-		return result, fmt.Errorf(errorMsg)
+		ui.Debug("Running: %s%s %s", envStr, name, strings.Join(args, " "))
+	}
+
+	// Capture output
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Run command
+	err := cmd.Run()
+	duration := time.Since(start)
+
+	result := &CommandResult{
+		ExitCode: cmd.ProcessState.ExitCode(),
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+		Duration: duration,
+	}
+
+	// Handle errors
+	if err != nil {
+		if result.Stderr != "" && result.Stdout != "" {
+			return result, fmt.Errorf("command failed: %w\nstderr: %s\nstdout: %s", err, result.Stderr, result.Stdout)
+		} else if result.Stderr != "" {
+			return result, fmt.Errorf("command failed: %w\nstderr: %s", err, result.Stderr)
+		} else if result.Stdout != "" {
+			return result, fmt.Errorf("command failed: %w\nstdout: %s", err, result.Stdout)
+		}
+		return result, fmt.Errorf("command failed: %w", err)
+	}
+
+	if result.ExitCode != 0 {
+		if result.Stderr != "" && result.Stdout != "" {
+			return result, fmt.Errorf("command exited with code %d\nstderr: %s\nstdout: %s", result.ExitCode, result.Stderr, result.Stdout)
+		} else if result.Stderr != "" {
+			return result, fmt.Errorf("command exited with code %d\nstderr: %s", result.ExitCode, result.Stderr)
+		} else if result.Stdout != "" {
+			return result, fmt.Errorf("command exited with code %d\nstdout: %s", result.ExitCode, result.Stdout)
+		}
+		return result, fmt.Errorf("command exited with code %d", result.ExitCode)
 	}
 
 	return result, nil
@@ -201,6 +287,26 @@ func (r *Runner) execute(ctx context.Context, name string, args ...string) (*Com
 //   - Streaming output capture
 func (r *Runner) Go(ctx context.Context, args ...string) (*CommandResult, error) {
 	return r.execute(ctx, "go", args...)
+}
+
+// GoWithEnv runs go commands with custom environment variables.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - env: Environment variables to set
+//   - args: Go command arguments
+//
+// Returns:
+//   - *CommandResult: Command execution result
+//   - error: Execution error if any
+//
+// Concurrency:
+//   - Single-threaded per command
+//
+// Performance:
+//   - Streaming output capture
+func (r *Runner) GoWithEnv(ctx context.Context, env map[string]string, args ...string) (*CommandResult, error) {
+	return r.executeWithEnv(ctx, env, "go", args...)
 }
 
 // Buf runs buf commands.
@@ -449,14 +555,14 @@ func (r *Runner) BufGenerate(ctx context.Context) error {
 	result, err := r.Buf(ctx, "generate")
 	if err != nil {
 		// Provide detailed error information
-		errorMsg := fmt.Sprintf("failed to generate code with buf: %w", err)
-		if result != nil && result.Stderr != "" {
-			errorMsg += fmt.Sprintf("\nstderr: %s", result.Stderr)
+		if result != nil && result.Stderr != "" && result.Stdout != "" {
+			return fmt.Errorf("failed to generate code with buf: %w\nstderr: %s\nstdout: %s", err, result.Stderr, result.Stdout)
+		} else if result != nil && result.Stderr != "" {
+			return fmt.Errorf("failed to generate code with buf: %w\nstderr: %s", err, result.Stderr)
+		} else if result != nil && result.Stdout != "" {
+			return fmt.Errorf("failed to generate code with buf: %w\nstdout: %s", err, result.Stdout)
 		}
-		if result != nil && result.Stdout != "" {
-			errorMsg += fmt.Sprintf("\nstdout: %s", result.Stdout)
-		}
-		return fmt.Errorf(errorMsg)
+		return fmt.Errorf("failed to generate code with buf: %w", err)
 	}
 
 	if r.verbose {

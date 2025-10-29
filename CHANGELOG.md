@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CLI**: Multi-platform Docker image build support with `docker buildx` (linux/amd64, linux/arm64)
+- **CLI**: `buildMultiPlatformImage()` function for automated multi-arch builds with push
+- **CLI**: Frontend service name validation enforcing underscore usage (Flutter requirement)
+- **CLI**: Automatic service name conversion for Docker images (underscores to hyphens)
+- **CLI**: Cross-type service name conflict detection (backend vs frontend)
+- **CLI**: Comprehensive service name uniqueness validation
+- **CLI**: Local dev version support (v0.0.0-dev) with GOPROXY=direct and GOSUMDB=off
+- **CLI**: `GoWithEnv()` method in toolrunner for environment-specific command execution
 - **Makefile**: New `make tidy` command to clean and update dependencies for all modules
 - **Makefile**: New `make coverage` command to generate test coverage reports (HTML + terminal)
 - **Makefile**: New `make check` command for quick validation (lint + test, no coverage)
@@ -31,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CLI**: Flutter web build now correctly copies from `build/web` to output directory
+- **CLI**: Backend service creation now uses version-based dependencies (v0.0.0-dev) instead of replace directives for Docker compatibility
+- **CLI**: Frontend service names in Docker images use hyphens (e.g., `admin-portal`) while source uses underscores (e.g., `admin_portal`)
+- **CLI**: Service creation no longer supports `--force` flag; duplicate names are rejected
+- **CLI**: Multi-platform builds automatically use `--push` flag (buildx limitation)
+- **CLI**: Build commands provide clear guidance when multi-platform requires push
+- **toolrunner**: Error formatting improved with proper wrapping and cleaner output
 - **Makefile**: All commands now use unified `scripts/logger.sh` for consistent output formatting
 - **Makefile**: Removed redundant `make build` (library modules don't need build)
 - **Makefile**: Removed redundant `make fmt` and `make vet` (already included in lint)
@@ -61,6 +76,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Improved
 
+- **CLI**: Multi-platform Docker builds with automatic platform detection and buildx support
+- **CLI**: Service name validation prevents conflicts across all service types (backend/frontend)
+- **CLI**: Flutter web build reliability with correct output path handling
+- **CLI**: Docker image naming consistency (hyphens for images, underscores for Flutter packages)
+- **CLI**: Better error messages for multi-platform builds without push flag
+- **CLI**: Development workflow with v0.0.0-dev versions works in both local and Docker environments
 - **Build System**: Unified logging format across Makefile and shell scripts using `logger.sh`
 - **Build System**: Reduced root Makefile from 367 lines to 231 lines (37% reduction)
 - **Build System**: Clearer separation of concerns (framework vs. base images vs. examples)
@@ -82,6 +103,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **CLI**: Removed `--force` flag from service creation commands (enforces unique service names)
+- **CLI**: Removed replace directives for egg modules in generated go.mod files (use v0.0.0-dev versions)
 - **Makefile**: Removed `make build` (not needed for library modules)
 - **Makefile**: Removed `make fmt` (redundant with lint)
 - **Makefile**: Removed `make vet` (redundant with lint)
@@ -93,6 +116,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CLI**: Fixed Flutter web build output path (now correctly copies from `build/web/`)
+- **CLI**: Fixed Docker builds failing with replace directives by using version-based dependencies
+- **CLI**: Fixed service name conflicts not being detected across backend/frontend types
+- **CLI**: Fixed frontend service creation allowing invalid hyphenated names (now enforces underscores)
+- **CLI**: Fixed Docker image names not following naming conventions (now converts underscores to hyphens)
+- **CLI**: Fixed multi-platform builds failing without proper --push handling
+- **toolrunner**: Fixed error message formatting with proper fmt.Errorf wrapping
 - **Makefile**: Fixed shell script execution errors (`@echo: command not found`) by using `source $(LOGGER)`
 - **Makefile**: Fixed golangci-lint warnings about gocritic configuration
 - **Makefile**: Fixed subshell navigation using `(cd module && command)` pattern

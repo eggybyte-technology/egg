@@ -512,57 +512,31 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 
 	// Add egg dependencies
 	if useLocalModules {
-		// Use local modules for development
+		// Use local dev versions for development (no replace directives for Docker compatibility)
 		ui.Info("Adding local egg modules for development...")
 
-		// Get the egg project root (assuming we're running from within the egg project)
-		eggRoot, err := g.findEggProjectRoot()
-		if err != nil {
-			return fmt.Errorf("failed to find egg project root: %w", err)
-		}
-
-		// Calculate relative path from service directory to egg modules
-		// This is critical for Docker builds to work
-		serviceAbsPath, err := filepath.Abs(serviceDir)
-		if err != nil {
-			return fmt.Errorf("failed to get absolute path for service: %w", err)
-		}
-
-		// Define egg modules with their paths
-		eggModules := []string{"core", "logx", "configx", "obsx", "connectx", "runtimex", "servicex", "storex"}
-		
-		for _, module := range eggModules {
-			moduleAbsPath := filepath.Join(eggRoot, module)
-			
-			// Calculate relative path from service dir to egg module
-			relPath, err := filepath.Rel(serviceAbsPath, moduleAbsPath)
-			if err != nil {
-				return fmt.Errorf("failed to calculate relative path for %s: %w", module, err)
-			}
-			
-			modulePath := fmt.Sprintf("go.eggybyte.com/egg/%s", module)
-			if _, err := serviceRunner.Go(ctx, "mod", "edit", "-replace", fmt.Sprintf("%s=%s", modulePath, relPath)); err != nil {
-				return fmt.Errorf("failed to add replace directive for %s: %w", modulePath, err)
-			}
-		}
-
-		// Add required dependencies explicitly
+		// Use v0.0.0-dev version which will resolve from local workspace
+		// This works both locally and in Docker builds
 		requiredDeps := []string{
-			"go.eggybyte.com/egg/core@latest",
-			"go.eggybyte.com/egg/logx@latest",
-			"go.eggybyte.com/egg/configx@latest",
-			"go.eggybyte.com/egg/obsx@latest",
-			"go.eggybyte.com/egg/connectx@latest",
-			"go.eggybyte.com/egg/runtimex@latest",
-			"go.eggybyte.com/egg/servicex@latest",
-			"go.eggybyte.com/egg/storex@latest",
+			"go.eggybyte.com/egg/core@v0.0.0-dev",
+			"go.eggybyte.com/egg/logx@v0.0.0-dev",
+			"go.eggybyte.com/egg/configx@v0.0.0-dev",
+			"go.eggybyte.com/egg/obsx@v0.0.0-dev",
+			"go.eggybyte.com/egg/connectx@v0.0.0-dev",
+			"go.eggybyte.com/egg/runtimex@v0.0.0-dev",
+			"go.eggybyte.com/egg/servicex@v0.0.0-dev",
+			"go.eggybyte.com/egg/storex@v0.0.0-dev",
 			"connectrpc.com/connect@latest",
 			"gorm.io/gorm@latest",
 			"gorm.io/driver/mysql@latest",
 			"github.com/google/uuid@latest",
 		}
 		for _, dep := range requiredDeps {
-			if _, err := serviceRunner.Go(ctx, "get", dep); err != nil {
+			// Use GOPROXY=direct GOSUMDB=off to fetch from local modules
+			if _, err := serviceRunner.GoWithEnv(ctx, map[string]string{
+				"GOPROXY": "direct",
+				"GOSUMDB": "off",
+			}, "get", dep); err != nil {
 				ui.Warning("Failed to add dependency %s: %v", dep, err)
 				continue
 			}
@@ -679,11 +653,24 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 
 	// Tidy module after generating files with imports
 	// Note: This may fail if proto-generated imports are missing, but we continue
-	if err := serviceRunner.GoModTidy(ctx); err != nil {
-		ui.Warning("go mod tidy failed: %v", err)
-		ui.Warning("This may indicate missing proto-generated code or import issues")
-		ui.Warning("Try running 'egg api generate' manually if needed")
-		// Don't fail - service structure is created, user can fix imports
+	if useLocalModules {
+		// Use GOPROXY=direct GOSUMDB=off for local development
+		if _, err := serviceRunner.GoWithEnv(ctx, map[string]string{
+			"GOPROXY": "direct",
+			"GOSUMDB": "off",
+		}, "mod", "tidy"); err != nil {
+			ui.Warning("go mod tidy failed: %v", err)
+			ui.Warning("This may indicate missing proto-generated code or import issues")
+			ui.Warning("Try running 'egg api generate' manually if needed")
+			// Don't fail - service structure is created, user can fix imports
+		}
+	} else {
+		if err := serviceRunner.GoModTidy(ctx); err != nil {
+			ui.Warning("go mod tidy failed: %v", err)
+			ui.Warning("This may indicate missing proto-generated code or import issues")
+			ui.Warning("Try running 'egg api generate' manually if needed")
+			// Don't fail - service structure is created, user can fix imports
+		}
 	}
 
 	ui.Success("Backend service created: %s", name)

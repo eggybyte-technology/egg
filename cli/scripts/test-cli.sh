@@ -400,13 +400,22 @@ print_section "Validating proto file generation (crud)"
 check_file "api/$BACKEND_SERVICE/v1/$BACKEND_SERVICE.proto"
 check_file_content "api/$BACKEND_SERVICE/v1/$BACKEND_SERVICE.proto" "rpc Create" "CRUD create RPC"
 
-# Validate go.mod contains local replace directives
-print_section "Validating go.mod has local replace directives"
-check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace go.eggybyte.com/egg/servicex" "Servicex replace directive"
-check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace go.eggybyte.com/egg/runtimex" "Runtimex replace directive"
-check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace go.eggybyte.com/egg/connectx" "Connectx replace directive"
-check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace go.eggybyte.com/egg/configx" "Configx replace directive"
-check_file_content "backend/$BACKEND_SERVICE/go.mod" "replace go.eggybyte.com/egg/core" "Core replace directive"
+# Validate go.mod uses v0.0.0-dev versions (not replace directives)
+print_section "Validating go.mod uses v0.0.0-dev versions"
+check_file_content "backend/$BACKEND_SERVICE/go.mod" "go.eggybyte.com/egg/servicex v0.0.0-dev" "Servicex dev version"
+check_file_content "backend/$BACKEND_SERVICE/go.mod" "go.eggybyte.com/egg/runtimex v0.0.0-dev" "Runtimex dev version"
+check_file_content "backend/$BACKEND_SERVICE/go.mod" "go.eggybyte.com/egg/connectx v0.0.0-dev" "Connectx dev version"
+check_file_content "backend/$BACKEND_SERVICE/go.mod" "go.eggybyte.com/egg/configx v0.0.0-dev" "Configx dev version"
+check_file_content "backend/$BACKEND_SERVICE/go.mod" "go.eggybyte.com/egg/core v0.0.0-dev" "Core dev version"
+
+# Verify NO replace directives exist for egg modules (Docker compatibility)
+if grep "^replace go.eggybyte.com/egg/" "backend/$BACKEND_SERVICE/go.mod" 2>/dev/null | grep -v "gen/go"; then
+    print_error "Found replace directives for egg modules - these break Docker builds"
+    print_info "Use v0.0.0-dev versions instead for Docker compatibility"
+    exit 1
+else
+    print_success "No replace directives for egg modules (Docker-compatible)"
+fi
 
 # Validate main.go imports egg packages
 print_section "Validating main.go imports"
@@ -448,36 +457,36 @@ else
 fi
 
 # ==============================================================================
-# Test 2.3: Validate force flag (recreate existing service)
+# Test 2.3: Duplicate Service Name Prevention
 # ==============================================================================
 
-print_cli_section "Test 2.3: Force Flag Test"
-print_info "Testing --force flag to recreate existing service"
+print_cli_section "Test 2.3: Duplicate Service Name Prevention"
+print_info "Testing that duplicate service names are rejected"
 
-# Try to create the same service again without --force (should fail)
+# Try to create the same backend service again (should fail)
+print_info "Attempting to create duplicate backend service..."
 if $EGG_CLI create backend "$BACKEND_SERVICE" --local-modules 2>&1 | grep -q "already exists"; then
-    print_success "Correctly prevents duplicate service creation without --force"
+    print_success "Correctly prevents duplicate backend service creation"
 else
-    print_error "Should prevent duplicate service creation without --force flag"
+    print_error "Should prevent duplicate backend service creation"
     exit 1
 fi
 
-# Now try with --force flag (keep same proto type: crud)
-print_cli_section "Recreate service with --force flag"
-if run_egg_command "Recreate service with --force flag" \
-    create backend "$BACKEND_SERVICE" --force --proto crud --local-modules; then
-    print_success "Service successfully recreated with --force flag"
-    
-    # Validate the service was recreated properly
-    print_section "Validating recreated service"
-    check_dir "backend/$BACKEND_SERVICE"
-    check_file "backend/$BACKEND_SERVICE/go.mod"
-    check_file "backend/$BACKEND_SERVICE/cmd/server/main.go"
-    
-    # Note: We explicitly use --proto crud to keep the same proto type
-    # This ensures the generated service.go template matches the proto file
+# Try to create a frontend service with the same name as existing backend service (should fail)
+print_info "Attempting to create frontend service with same name as backend service..."
+if $EGG_CLI create frontend "$BACKEND_SERVICE" --platforms web 2>&1 | grep -q "conflicts"; then
+    print_success "Correctly prevents cross-type service name conflicts"
 else
-    print_error "Force recreation failed"
+    print_error "Should prevent cross-type service name conflicts"
+    exit 1
+fi
+
+# Try to create duplicate frontend service (should fail)
+print_info "Attempting to create duplicate frontend service..."
+if $EGG_CLI create frontend "$FRONTEND_SERVICE" --platforms web 2>&1 | grep -q "already exists"; then
+    print_success "Correctly prevents duplicate frontend service creation"
+else
+    print_error "Should prevent duplicate frontend service creation"
     exit 1
 fi
 
@@ -1044,7 +1053,7 @@ printf "  ${GREEN}[✓]${RESET} egg init                             - Project i
 printf "  ${GREEN}[✓]${RESET} egg create backend                   - Backend service with local modules\n"
 printf "  ${GREEN}[✓]${RESET} egg create backend --proto crud      - Backend with CRUD proto (user)\n"
 printf "  ${GREEN}[✓]${RESET} egg create backend --proto crud      - Backend with CRUD proto (ping)\n"
-printf "  ${GREEN}[✓]${RESET} egg create backend --force           - Force recreate existing service\n"
+printf "  ${GREEN}[✓]${RESET} Duplicate service prevention         - Backend, frontend, cross-type\n"
 printf "  ${GREEN}[✓]${RESET} egg create frontend                  - Frontend service (Flutter with Dart naming)\n"
 printf "  ${GREEN}[✓]${RESET} egg api init                         - API definition initialization\n"
 printf "  ${GREEN}[✓]${RESET} egg api generate                     - Code generation from protobuf\n"
@@ -1068,8 +1077,7 @@ printf "  ${GREEN}[✓]${RESET} Image name auto-calculation (no image_name in co
 printf "  ${GREEN}[✓]${RESET} Backend-scoped workspace (backend/go.work with ../gen/go)\n"
 printf "  ${GREEN}[✓]${RESET} gen/go independent module (module_prefix/gen/go)\n"
 printf "  ${GREEN}[✓]${RESET} Automatic workspace integration for generated code\n"
-printf "  ${GREEN}[✓]${RESET} Force flag for service recreation\n"
-printf "  ${GREEN}[✓]${RESET} Duplicate service prevention\n"
+printf "  ${GREEN}[✓]${RESET} Duplicate service name prevention (backend/frontend/cross-type)\n"
 printf "  ${GREEN}[✓]${RESET} Frontend service generation (Flutter)\n"
 printf "  ${GREEN}[✓]${RESET} Service registration in egg.yaml\n"
 printf "  ${GREEN}[✓]${RESET} Infrastructure configuration (MySQL, etc.)\n"
@@ -1116,8 +1124,8 @@ printf "  ${GREEN}[✓]${RESET} Proto templates correctly generated (echo, crud,
 printf "  ${GREEN}[✓]${RESET} Docker configuration for containerized builds\n"
 printf "  ${GREEN}[✓]${RESET} Service name validation prevents -service suffix\n"
 printf "  ${GREEN}[✓]${RESET} Custom port configuration works correctly\n"
-printf "  ${GREEN}[✓]${RESET} Force flag allows service recreation\n"
-printf "  ${GREEN}[✓]${RESET} Duplicate service prevention without force flag\n"
+printf "  ${GREEN}[✓]${RESET} Service name uniqueness across all types (backend/frontend)\n"
+printf "  ${GREEN}[✓]${RESET} Duplicate service prevention (no force flag)\n"
 printf "  ${GREEN}[✓]${RESET} Image names automatically calculated (project-service pattern)\n"
 printf "  ${GREEN}[✓]${RESET} Connect service properly implements business logic\n"
 printf "  ${GREEN}[✓]${RESET} Database DSN correctly configured for compose\n"
