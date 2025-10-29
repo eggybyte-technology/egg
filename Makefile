@@ -1,6 +1,6 @@
 # Makefile for egg framework (monorepo root)
 .PHONY: help test lint clean tools setup tidy coverage check quality \
-	release delete-all-tags
+	release delete-all-tags git-large-files git-large-objects
 
 # Logger script for unified output
 LOGGER := ./scripts/logger.sh
@@ -68,6 +68,10 @@ help:
 	@echo "$(BOLD)Release Management:$(RESET)"
 	@echo "  $(CYAN)release$(RESET)          - Release all modules (Usage: make release VERSION=v0.3.0)"
 	@echo "  $(RED)delete-all-tags$(RESET)  - $(RED)$(BOLD)[DANGEROUS]$(RESET) Delete ALL version tags"
+	@echo ""
+	@echo "$(BOLD)Git Utilities:$(RESET)"
+	@echo "  $(CYAN)git-large-files$(RESET)    - Check large files tracked by git (current working directory)"
+	@echo "  $(CYAN)git-large-objects$(RESET)  - Check large objects in git history"
 	@echo ""
 	@echo "$(BOLD)Typical Workflow:$(RESET)"
 	@echo "  1. $(CYAN)make setup$(RESET)       # First-time setup"
@@ -228,3 +232,41 @@ delete-all-tags:
 	@echo "$(RED)$(BOLD)⚠️  This operation is IRREVERSIBLE!$(RESET)"
 	@echo ""
 	@./scripts/release.sh --delete-all-tags
+
+# ==============================================================================
+# Git Utilities
+# ==============================================================================
+
+# Check large files tracked by git in current working directory
+# Shows top 20 largest files currently tracked by git
+git-large-files:
+	$(call print_header,Checking large files tracked by git)
+	@echo ""
+	@echo "$(CYAN)Top 20 largest files in git working directory:$(RESET)"
+	@echo ""
+	@git ls-files -z | xargs -0 du -h 2>/dev/null | sort -hr | head -n 20 | \
+		awk '{printf "  %8s  %s\n", $$1, substr($$0, index($$0,$$2))}' || \
+		(echo "$(YELLOW)No tracked files found or git not initialized$(RESET)" && exit 0)
+	@echo ""
+	$(call print_info,To check files larger than a specific size, use:)
+	@echo "  git ls-files -z | xargs -0 du -h | awk '\$$1 > \"10M\"'"
+
+# Check large objects in git history
+# Shows top 20 largest objects ever committed to git repository
+git-large-objects:
+	$(call print_header,Checking large objects in git history)
+	@echo ""
+	@echo "$(CYAN)Top 20 largest objects in git history:$(RESET)"
+	@echo ""
+	@git rev-list --objects --all 2>/dev/null | \
+		git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' 2>/dev/null | \
+		awk '/^blob/ {print substr($$0,6)}' | \
+		sort --numeric-sort --key=2 -r | \
+		head -n 20 | \
+		awk '{size=$$2; if(size>1073741824) printf "  %8.2f GB  %s\n", size/1073741824, substr($$0,index($$0,$$3)); \
+		     else if(size>1048576) printf "  %8.2f MB  %s\n", size/1048576, substr($$0,index($$0,$$3)); \
+		     else if(size>1024) printf "  %8.2f KB  %s\n", size/1024, substr($$0,index($$0,$$3)); \
+		     else printf "  %8d B   %s\n", size, substr($$0,index($$0,$$3))}' || \
+		(echo "$(YELLOW)Git repository not initialized or no history found$(RESET)" && exit 0)
+	@echo ""
+	$(call print_info,To remove large files from git history, use git-filter-repo or BFG Repo-Cleaner)
