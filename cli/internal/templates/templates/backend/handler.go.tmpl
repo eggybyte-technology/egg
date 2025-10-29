@@ -18,7 +18,9 @@ package handler
 
 import (
 	"context"
+{{if not .HasDatabase}}
 	"time"
+{{end}}
 
 	"connectrpc.com/connect"
 	"go.eggybyte.com/egg/core/log"

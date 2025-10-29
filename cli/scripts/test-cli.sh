@@ -53,7 +53,7 @@ PROJECT_NAME="test-project"
 TEST_WORKSPACE="$CLI_ROOT/tmp"  # Tests run in cli/tmp/
 TEST_DIR="$TEST_WORKSPACE/$PROJECT_NAME"  # Full path to test project
 BACKEND_SERVICE="user"  # Main service with CRUD proto
-BACKEND_PING_SERVICE="ping"  # Secondary service with CRUD proto
+BACKEND_PING_SERVICE="ping"  # Secondary service with echo proto
 FRONTEND_SERVICE="admin_portal"  # Use underscore for Dart compatibility
 KEEP_TEST_DIR=true  # Default to keep test directory
 
@@ -432,17 +432,17 @@ check_file_content "egg.yaml" "backend:" "Backend section"
 check_file_content "egg.yaml" "$BACKEND_SERVICE:" "Service entry"
 
 # ==============================================================================
-# Test 2.1: Create second service (ping with CRUD)
+# Test 2.1: Create second service (ping with echo)
 # ==============================================================================
 
-run_egg_command "Backend service (ping with CRUD proto)" \
-    create backend "$BACKEND_PING_SERVICE" --proto crud --local-modules
+run_egg_command "Backend service (ping with echo proto)" \
+    create backend "$BACKEND_PING_SERVICE" --proto echo --local-modules
 
 # Validate ping service structure
 print_section "Validating ping service structure"
 check_dir "backend/$BACKEND_PING_SERVICE"
 check_file "api/$BACKEND_PING_SERVICE/v1/$BACKEND_PING_SERVICE.proto"
-check_file_content "api/$BACKEND_PING_SERVICE/v1/$BACKEND_PING_SERVICE.proto" "rpc Create" "CRUD create RPC"
+check_file_content "api/$BACKEND_PING_SERVICE/v1/$BACKEND_PING_SERVICE.proto" "rpc Ping" "Echo Ping RPC"
 
 # ==============================================================================
 # Test 2.2: Validate image_name field removed from config
@@ -1064,7 +1064,7 @@ printf "  ${GREEN}[✓]${RESET} egg doctor                           - Environme
 printf "  ${GREEN}[✓]${RESET} egg init                             - Project initialization\n"
 printf "  ${GREEN}[✓]${RESET} egg create backend                   - Backend service with local modules\n"
 printf "  ${GREEN}[✓]${RESET} egg create backend --proto crud      - Backend with CRUD proto (user)\n"
-printf "  ${GREEN}[✓]${RESET} egg create backend --proto crud      - Backend with CRUD proto (ping)\n"
+printf "  ${GREEN}[✓]${RESET} egg create backend --proto echo     - Backend with echo proto (ping)\n"
 printf "  ${GREEN}[✓]${RESET} Duplicate service prevention         - Backend, frontend, cross-type\n"
 printf "  ${GREEN}[✓]${RESET} egg create frontend                  - Frontend service (Flutter with Dart naming)\n"
 printf "  ${GREEN}[✓]${RESET} egg api init                         - API definition initialization\n"
