@@ -19,7 +19,7 @@ replace go.eggybyte.com/egg/connectx => /Users/fengguangyao/eggybyte/projects/go
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/sony/gobreaker v1.0.0
-	go.eggybyte.com/egg/obsx v0.0.0-00010101000000-000000000000
+	go.eggybyte.com/egg/obsx v0.0.0-dev
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/metric v1.38.0
 	go.opentelemetry.io/otel/trace v1.38.0
