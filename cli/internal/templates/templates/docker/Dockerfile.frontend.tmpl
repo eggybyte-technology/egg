@@ -15,7 +15,10 @@
 #
 # Build Args:
 #   - SERVICE_NAME: Name of the frontend service (e.g., "admin_portal", "user_app")
-#   - WEB_DIR: Path to built Flutter web assets (default: bin/frontend/${SERVICE_NAME})
+#   - WEB_DIR: Path to built Flutter web assets (default: frontend/${SERVICE_NAME}/build/web)
+#   - PROJECT_NAME: Project name (required)
+#   - MODULE_PREFIX: Module prefix (required)
+#   - VERSION: Version (required)
 #   - HTTP_PORT: Nginx listen port (default: 3000)
 #
 # Runtime Environment:
@@ -30,11 +33,15 @@
 #
 # Usage Example:
 #   # First, build Flutter web locally:
-#   flutter build web --release --output bin/frontend/admin_portal
+#   cd frontend/admin_portal && flutter build web --release
 #
 #   # Then package with Docker:
 #   docker build -f docker/Dockerfile.frontend \
 #     --build-arg SERVICE_NAME=admin_portal \
+#     --build-arg WEB_DIR=frontend/admin_portal/build/web \
+#     --build-arg PROJECT_NAME=myproject \
+#     --build-arg MODULE_PREFIX=github.com/myorg/myproject \
+#     --build-arg VERSION=v1.0.0 \
 #     -t ghcr.io/myorg/myproject-admin-portal:v1.0.0 .
 #
 # ==============================================================================
@@ -43,16 +50,19 @@ FROM nginx:1.27.2-alpine
 
 # Build-time arguments with defaults
 ARG SERVICE_NAME="app"
-ARG WEB_DIR="bin/frontend/${SERVICE_NAME}"
+ARG WEB_DIR="frontend/${SERVICE_NAME}/build/web"
+ARG PROJECT_NAME
+ARG MODULE_PREFIX
+ARG VERSION
 ARG HTTP_PORT=3000
 
 # Image metadata (populated by egg CLI at build time)
-LABEL org.opencontainers.image.title="{{.ProjectName}}-${SERVICE_NAME}-frontend" \
+LABEL org.opencontainers.image.title="${PROJECT_NAME}-${SERVICE_NAME}-frontend" \
       org.opencontainers.image.description="EggyByte Flutter web application: ${SERVICE_NAME}" \
-      org.opencontainers.image.source="{{.ModulePrefix}}" \
+      org.opencontainers.image.source="${MODULE_PREFIX}" \
       org.opencontainers.image.vendor="EggyByte Technology" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="{{.Version}}"
+      org.opencontainers.image.version="${VERSION}"
 
 # Copy pre-built Flutter web assets to nginx html directory
 # Assets must be compiled with: flutter build web --release
@@ -73,4 +83,3 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Run nginx in foreground mode
 # Inherited from base image: CMD ["nginx", "-g", "daemon off;"]
-

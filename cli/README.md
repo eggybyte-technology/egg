@@ -348,18 +348,32 @@ bin/
 
 #### `egg compose generate` - Generate Docker Compose configuration
 
-Creates `deploy/compose/compose.yaml` and `.env` files.
+Creates `deploy/compose/compose.yaml` and `.env` files with pre-built image references.
+
+**Important:** Docker Compose uses pre-built images. You must build images first:
 
 ```bash
+# Build images first
+egg build all --local
+
+# Then generate compose configuration
 egg compose generate
+
+# Start services
+docker compose -f deploy/compose/compose.yaml up -d
 ```
 
 **Output:**
 ```
 deploy/compose/
-├── compose.yaml  # Service definitions
+├── compose.yaml  # Service definitions with image references
 └── .env          # Environment variables
 ```
+
+**Environment Variables:**
+- `SERVICE_NAME`, `SERVICE_VERSION`, `APP_ENV`, `LOG_LEVEL` - Service identity and logging
+- `HTTP_PORT`, `HEALTH_PORT`, `METRICS_PORT` - Port configuration
+- `DB_DSN`, `DB_DRIVER` - Database configuration (when database enabled)
 
 #### `egg compose up` - Start services
 
@@ -464,8 +478,13 @@ frontend:
     platforms: ["web"]
 
 database:
-  enabled: false
-  dsn: "mysql://user:pass@tidb.example.com:4000/db"
+  enabled: true
+  image: "mysql:9.4"
+  port: 3306
+  root_password: "rootpass"
+  database: "app"
+  user: "user"
+  password: "pass"
 
 infrastructure:
   observability:
@@ -662,9 +681,15 @@ egg compose up
 
 ### 2. Proto Templates
 
-- Use `echo` for simple echo/ping services
-- Use `crud` for services with Create/Read/Update/Delete operations
-- Use `none` to skip proto generation
+- **`echo`**: Simple echo/ping services without database dependency
+  - Generates only `Ping` RPC method
+  - No database required - service can start without DB_DSN
+  - Minimal service structure (handler only, no repository/service layers)
+- **`crud`**: Full CRUD services with database integration
+  - Generates Create/Read/Update/Delete/List RPC methods
+  - Database required - service will fail to start without DB_DSN
+  - Complete layered architecture (handler/service/repository/model)
+- **`none`**: Skip proto generation (advanced use cases)
 
 ### 3. Local Development
 

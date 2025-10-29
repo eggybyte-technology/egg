@@ -8,19 +8,25 @@
 //   - Performance Notes: Optimized for high-throughput Connect requests
 //
 // Usage:
-//
-//	handler := New{{.ServiceNameCamel}}Handler(service)
+{{if .HasDatabase}}
+//	handler := New{{.ServiceNameCamel}}Handler(service, logger)
+{{else}}
+//	handler := New{{.ServiceNameCamel}}Handler(logger)
+{{end}}
 //	connectHandler := {{.ServiceNameVar}}v1connect.New{{.ServiceNameCamel}}ServiceHandler(handler)
 package handler
 
 import (
 	"context"
+	"time"
 
 	"connectrpc.com/connect"
 	"go.eggybyte.com/egg/core/log"
 	{{.ServiceNameVar}}v1 "{{.ModulePrefix}}/gen/go/{{.ServiceNameVar}}/v1"
 	{{.ServiceNameVar}}v1connect "{{.ModulePrefix}}/gen/go/{{.ServiceNameVar}}/v1/{{.ServiceNameVar}}v1connect"
+{{if .HasDatabase}}
 	"{{.ServiceModulePath}}/internal/service"
+{{end}}
 )
 
 // {{.ServiceNameCamel}}Handler implements the Connect protocol for the {{.ServiceName}} service.
@@ -28,28 +34,41 @@ import (
 type {{.ServiceNameCamel}}Handler struct {
 	{{.ServiceNameVar}}v1connect.Unimplemented{{.ServiceNameCamel}}ServiceHandler
 
+{{if .HasDatabase}}
 	service service.{{.ServiceNameCamel}}Service
 	logger  log.Logger
+{{else}}
+	logger log.Logger
+{{end}}
 }
 
 // New{{.ServiceNameCamel}}Handler creates a new {{.ServiceNameCamel}}Handler instance.
 // The returned handler is safe for concurrent use.
 //
 // Parameters:
+{{if .HasDatabase}}
 //   - service: {{.ServiceNameCamel}}Service implementation (must not be nil)
 //   - logger: Logger instance (must not be nil)
+{{else}}
+//   - logger: Logger instance (must not be nil)
+{{end}}
 //
 // Returns:
 //   - *{{.ServiceNameCamel}}Handler: The created handler instance
 //
 // Panics:
+{{if .HasDatabase}}
 //   - If service is nil (fail-fast at startup)
 //   - If logger is nil (fail-fast at startup)
+{{else}}
+//   - If logger is nil (fail-fast at startup)
+{{end}}
 //
 // Rationale:
 // This function panics on nil dependencies rather than returning an error
 // because these are startup-time issues that should never occur in production.
 // If dependencies are nil, the handler cannot function and should not start.
+{{if .HasDatabase}}
 func New{{.ServiceNameCamel}}Handler(service service.{{.ServiceNameCamel}}Service, logger log.Logger) *{{.ServiceNameCamel}}Handler {
 	if service == nil {
 		panic("New{{.ServiceNameCamel}}Handler: service cannot be nil")
@@ -63,7 +82,19 @@ func New{{.ServiceNameCamel}}Handler(service service.{{.ServiceNameCamel}}Servic
 		logger:  logger,
 	}
 }
+{{else}}
+func New{{.ServiceNameCamel}}Handler(logger log.Logger) *{{.ServiceNameCamel}}Handler {
+	if logger == nil {
+		panic("New{{.ServiceNameCamel}}Handler: logger cannot be nil")
+	}
 
+	return &{{.ServiceNameCamel}}Handler{
+		logger: logger,
+	}
+}
+{{end}}
+
+{{if .HasDatabase}}
 // Create{{.ServiceNameCamel}} handles Create{{.ServiceNameCamel}} Connect requests.
 // It validates the request and delegates to the business service.
 func (h *{{.ServiceNameCamel}}Handler) Create{{.ServiceNameCamel}}(ctx context.Context, req *connect.Request[{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Request]) (*connect.Response[{{.ServiceNameVar}}v1.Create{{.ServiceNameCamel}}Response], error) {
@@ -172,3 +203,24 @@ func (h *{{.ServiceNameCamel}}Handler) List{{.ServiceNameCamel}}s(ctx context.Co
 
 	return connect.NewResponse(response), nil
 }
+{{else}}
+// Ping handles Ping Connect requests.
+// It responds with the service name and current timestamp.
+func (h *{{.ServiceNameCamel}}Handler) Ping(ctx context.Context, req *connect.Request[{{.ServiceNameVar}}v1.PingRequest]) (*connect.Response[{{.ServiceNameVar}}v1.PingResponse], error) {
+	h.logger.Debug("Ping processing",
+		log.Str("message", req.Msg.Message))
+
+	// Echo the message and return service info
+	response := &{{.ServiceNameVar}}v1.PingResponse{
+		Message:  req.Msg.Message,
+		Service:   "{{.ServiceNameVar}}",
+		TsUnix:   time.Now().Unix(),
+	}
+
+	h.logger.Debug("Ping completed",
+		log.Str("service", response.Service),
+		log.Int64("ts_unix", response.TsUnix))
+
+	return connect.NewResponse(response), nil
+}
+{{end}}

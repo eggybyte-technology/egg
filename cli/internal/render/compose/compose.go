@@ -182,9 +182,9 @@ func (r *Renderer) renderBackendService(name string, service configschema.Backen
 
 	// Service header
 	builder.WriteString("  " + name + ":\n")
-	builder.WriteString("    build:\n")
-	builder.WriteString("      context: ../backend/" + name + "\n")
-	builder.WriteString("      dockerfile: ../build/Dockerfile.backend\n")
+	// Use pre-built image instead of building
+	imageName := fmt.Sprintf("%s/%s-%s:%s", config.DockerRegistry, config.ProjectName, name, config.Version)
+	builder.WriteString("    image: " + imageName + "\n")
 
 	// Ports
 	ports := service.Ports
@@ -267,9 +267,11 @@ func (r *Renderer) renderFrontendService(name string, service configschema.Front
 
 	// Service header
 	builder.WriteString("  " + name + ":\n")
-	builder.WriteString("    build:\n")
-	builder.WriteString("      context: ../frontend/" + name + "\n")
-	builder.WriteString("      dockerfile: ../build/Dockerfile.frontend\n")
+	// Use pre-built image instead of building
+	// Frontend image names use hyphens instead of underscores
+	dockerServiceName := strings.ReplaceAll(name, "_", "-")
+	imageName := fmt.Sprintf("%s/%s-%s-frontend:%s", config.DockerRegistry, config.ProjectName, dockerServiceName, config.Version)
+	builder.WriteString("    image: " + imageName + "\n")
 
 	// Ports (default for frontend)
 	builder.WriteString("    ports:\n")

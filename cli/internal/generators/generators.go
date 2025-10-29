@@ -581,7 +581,7 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 	}
 
 	// Prepare template data
-	templateData := g.prepareTemplateData(name, serviceConfig, config)
+	templateData := g.prepareTemplateData(name, serviceConfig, config, protoTemplate)
 
 	// Generate proto file if requested
 	if protoTemplate != "none" {
@@ -706,6 +706,8 @@ func (g *BackendGenerator) generateBackendFiles(name string, serviceConfig confi
 		"HTTPPort":          templateData.HTTPPort,
 		"HealthPort":        templateData.HealthPort,
 		"MetricsPort":       templateData.MetricsPort,
+		"ProtoTemplate":     templateData.ProtoTemplate,
+		"HasDatabase":       templateData.ProtoTemplate == "crud",
 	}
 
 	// Generate main.go from template
@@ -726,15 +728,6 @@ func (g *BackendGenerator) generateBackendFiles(name string, serviceConfig confi
 		return fmt.Errorf("failed to write app_config.go: %w", err)
 	}
 
-	// Generate service placeholder from template
-	serviceGo, err := g.loader.LoadAndRender("backend/service.go.tmpl", data)
-	if err != nil {
-		return fmt.Errorf("failed to load and render service.go template: %w", err)
-	}
-	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "service", "service.go"), serviceGo, 0644); err != nil {
-		return fmt.Errorf("failed to write service.go: %w", err)
-	}
-
 	// Generate handler placeholder from template
 	handlerGo, err := g.loader.LoadAndRender("backend/handler.go.tmpl", data)
 	if err != nil {
@@ -744,31 +737,43 @@ func (g *BackendGenerator) generateBackendFiles(name string, serviceConfig confi
 		return fmt.Errorf("failed to write handler.go: %w", err)
 	}
 
-	// Generate model from template
-	modelGo, err := g.loader.LoadAndRender("backend/model.go.tmpl", data)
-	if err != nil {
-		return fmt.Errorf("failed to load and render model.go template: %w", err)
-	}
-	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "model", "model.go"), modelGo, 0644); err != nil {
-		return fmt.Errorf("failed to write model.go: %w", err)
-	}
+	// Generate model, repository, service, and errors only for CRUD templates
+	if templateData.ProtoTemplate == "crud" {
+		// Generate service placeholder from template
+		serviceGo, err := g.loader.LoadAndRender("backend/service.go.tmpl", data)
+		if err != nil {
+			return fmt.Errorf("failed to load and render service.go template: %w", err)
+		}
+		if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "service", "service.go"), serviceGo, 0644); err != nil {
+			return fmt.Errorf("failed to write service.go: %w", err)
+		}
 
-	// Generate repository from template
-	repositoryGo, err := g.loader.LoadAndRender("backend/repository.go.tmpl", data)
-	if err != nil {
-		return fmt.Errorf("failed to load and render repository.go template: %w", err)
-	}
-	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "repository", "repository.go"), repositoryGo, 0644); err != nil {
-		return fmt.Errorf("failed to write repository.go: %w", err)
-	}
+		// Generate model from template
+		modelGo, err := g.loader.LoadAndRender("backend/model.go.tmpl", data)
+		if err != nil {
+			return fmt.Errorf("failed to load and render model.go template: %w", err)
+		}
+		if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "model", "model.go"), modelGo, 0644); err != nil {
+			return fmt.Errorf("failed to write model.go: %w", err)
+		}
 
-	// Generate errors from template
-	errorsGo, err := g.loader.LoadAndRender("backend/errors.go.tmpl", data)
-	if err != nil {
-		return fmt.Errorf("failed to load and render errors.go template: %w", err)
-	}
-	if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "model", "errors.go"), errorsGo, 0644); err != nil {
-		return fmt.Errorf("failed to write errors.go: %w", err)
+		// Generate repository from template
+		repositoryGo, err := g.loader.LoadAndRender("backend/repository.go.tmpl", data)
+		if err != nil {
+			return fmt.Errorf("failed to load and render repository.go template: %w", err)
+		}
+		if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "repository", "repository.go"), repositoryGo, 0644); err != nil {
+			return fmt.Errorf("failed to write repository.go: %w", err)
+		}
+
+		// Generate errors from template
+		errorsGo, err := g.loader.LoadAndRender("backend/errors.go.tmpl", data)
+		if err != nil {
+			return fmt.Errorf("failed to load and render errors.go template: %w", err)
+		}
+		if err := g.fs.WriteFile(filepath.Join("backend", name, "internal", "model", "errors.go"), errorsGo, 0644); err != nil {
+			return fmt.Errorf("failed to write errors.go: %w", err)
+		}
 	}
 
 	return nil
@@ -883,6 +888,8 @@ func (g *BackendGenerator) GenerateCompose(ctx context.Context, config *configsc
 
 	data := map[string]interface{}{
 		"ProjectName":          config.ProjectName,
+		"DockerRegistry":       config.DockerRegistry,
+		"Version":              config.Version,
 		"BackendServices":      config.Backend,
 		"DatabaseEnabled":      config.Database.Enabled,
 		"DatabaseImage":        config.Database.Image,
@@ -1226,7 +1233,7 @@ func serviceNameToVar(name string) string {
 //
 // Performance:
 //   - O(1) data preparation
-func (g *BackendGenerator) prepareTemplateData(name string, serviceConfig configschema.BackendService, config *configschema.Config) *TemplateData {
+func (g *BackendGenerator) prepareTemplateData(name string, serviceConfig configschema.BackendService, config *configschema.Config, protoTemplate string) *TemplateData {
 	// Get ports with defaults
 	httpPort := 8080
 	healthPort := 8081
@@ -1263,6 +1270,7 @@ func (g *BackendGenerator) prepareTemplateData(name string, serviceConfig config
 		HTTPPort:          httpPort,
 		HealthPort:        healthPort,
 		MetricsPort:       metricsPort,
+		ProtoTemplate:     protoTemplate,
 	}
 }
 

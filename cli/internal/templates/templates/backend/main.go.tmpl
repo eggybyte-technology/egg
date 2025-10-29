@@ -1,7 +1,7 @@
 // Package main provides the main entry point for the {{.ServiceName}} service.
 //
 // Overview:
-//
+{{if .HasDatabase}}
 //	This service demonstrates a production-ready CRUD service using the egg
 //	framework. It showcases proper layering (handler/service/repository),
 //	database integration with GORM, and comprehensive error handling.
@@ -30,6 +30,31 @@
 //
 //	Database is required. Configure via environment variable:
 //	  DB_DSN="user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local" ./{{.ServiceNameVar}}-service
+{{else}}
+//	This service demonstrates a minimal echo/ping service using the egg
+//	framework. It provides basic connectivity testing without database dependencies.
+//
+// Key Features:
+//   - Simple Ping operation: Test service health and connectivity
+//   - No database required: Minimal service with no persistent storage
+//   - Connect RPC: Modern HTTP/2-based RPC with streaming support
+//   - Structured logging: All operations logged with context
+//   - Automatic health checks: Basic service connectivity verification
+//   - Automatic metrics: Request counts, latencies, error rates
+//
+// Architecture:
+//
+//   - Handler layer: Connect RPC protocol implementation (thin adapter)
+//   - Service layer: Business logic (minimal, no persistence)
+//
+// This demonstrates the egg framework's minimal service pattern for
+// lightweight services that don't require database persistence.
+//
+// Usage:
+//
+//	No database required. Service can start immediately:
+//	  SERVICE_NAME={{.ServiceNameVar}}-service HTTP_PORT=8080 HEALTH_PORT=8081 ./{{.ServiceNameVar}}-service
+{{end}}
 //
 //	Additional configuration via environment:
 //	  SERVICE_NAME={{.ServiceNameVar}}-service HTTP_PORT=8080 HEALTH_PORT=8081 ./{{.ServiceNameVar}}-service
@@ -38,21 +63,25 @@
 //   - HTTP: 8080 (configurable via HTTP_PORT)
 //   - Health: 8081 (configurable via HEALTH_PORT)
 //   - Metrics: 9091 (configurable via METRICS_PORT)
+{{if .HasDatabase}}
 //
 // Database:
 //
 //	The service auto-migrates the schema on startup. Database connection is
 //	mandatory - the service will fail to start if DB_DSN is not configured.
 //	Supported databases: MySQL, PostgreSQL, SQLite (via GORM).
+{{end}}
 //
 // Dependencies:
 //   - servicex: unified service initialization (L4)
 //   - configx: configuration management (L2)
 //   - logx: structured logging (L1)
 //   - connectx: Connect interceptor stack (L3)
+{{if .HasDatabase}}
 //   - storex: database connection and transaction management (附属)
 //   - core/errors: error codes and wrapping (L0)
 //   - GORM: database ORM
+{{end}}
 package main
 
 import (
@@ -63,9 +92,11 @@ import (
 	{{.ServiceNameVar}}v1connect "{{.ModulePrefix}}/gen/go/{{.ServiceNameVar}}/v1/{{.ServiceNameVar}}v1connect"
 	"{{.ServiceModulePath}}/internal/config"
 	"{{.ServiceModulePath}}/internal/handler"
+{{if .HasDatabase}}
 	"{{.ServiceModulePath}}/internal/model"
 	"{{.ServiceModulePath}}/internal/repository"
 	"{{.ServiceModulePath}}/internal/service"
+{{end}}
 	"go.eggybyte.com/egg/servicex"
 )
 
@@ -76,16 +107,27 @@ func main() {
 	// Initialize configuration - will be populated by servicex
 	cfg := &config.AppConfig{}
 
-	// Run the service using servicex with database integration
+	// Run the service using servicex{{if .HasDatabase}} with database integration{{end}}
 	// servicex automatically creates a logger with LOG_LEVEL from environment
+{{if .HasDatabase}}
 	// WithAppConfig automatically detects BaseConfig and uses Database configuration
-	err := servicex.Run(ctx,
+	opts := []servicex.Option{
 		servicex.WithService("{{.ServiceNameVar}}", "0.1.0"),
 		servicex.WithAppConfig(cfg), // Auto-detects database config from BaseConfig
 		servicex.WithAutoMigrate(&model.{{.ServiceNameCamel}}{}),
 		servicex.WithMetricsConfig(true, true, true, false), // Enable runtime, process, and DB metrics
 		servicex.WithRegister(registerServices),
-	)
+	}
+{{else}}
+	// Minimal service without database - WithAppConfig still works but database is optional
+	opts := []servicex.Option{
+		servicex.WithService("{{.ServiceNameVar}}", "0.1.0"),
+		servicex.WithAppConfig(cfg),
+		servicex.WithMetricsConfig(true, true, false, false), // Enable runtime and process metrics (no DB)
+		servicex.WithRegister(registerServices),
+	}
+{{end}}
+	err := servicex.Run(ctx, opts...)
 	if err != nil {
 		// Logger is not available here if service fails, use panic
 		panic(fmt.Sprintf("service failed to start: %v", err))
@@ -93,7 +135,7 @@ func main() {
 }
 
 // registerServices registers all service handlers with the application.
-//
+{{if .HasDatabase}}
 // This function is called by servicex during initialization. It demonstrates
 // production-ready service registration with mandatory database dependency.
 //
@@ -108,11 +150,27 @@ func main() {
 //   - Fails fast if database is not available (production best practice)
 //   - Registers Connect handler with full interceptor stack
 //   - Logs registration progress for observability
+{{else}}
+// This function is called by servicex during initialization. It demonstrates
+// minimal service registration without database dependency.
+//
+// Parameters:
+//   - app: servicex application instance providing logger, mux, and interceptors
+//
+// Returns:
+//   - error: nil on success; error if registration fails
+//
+// Behavior:
+//   - No database required - service can start without DB_DSN
+//   - Registers Connect handler with full interceptor stack
+//   - Logs registration progress for observability
+{{end}}
 //
 // Concurrency:
 //
 //	Called once during service startup, not safe for concurrent use.
 func registerServices(app *servicex.App) error {
+{{if .HasDatabase}}
 	// Ensure database is configured (production requirement)
 	db := app.DB()
 	if db == nil {
@@ -127,6 +185,12 @@ func registerServices(app *servicex.App) error {
 	// Initialize service and handler layers
 	{{.ServiceNameVar}}Service := service.New{{.ServiceNameCamel}}Service({{.ServiceNameVar}}Repo, app.Logger())
 	{{.ServiceNameVar}}Handler := handler.New{{.ServiceNameCamel}}Handler({{.ServiceNameVar}}Service, app.Logger())
+{{else}}
+	app.Logger().Info("initializing {{.ServiceNameVar}} service (minimal echo/ping service)")
+
+	// Initialize handler directly (no service/repository layers needed for ping)
+	{{.ServiceNameVar}}Handler := handler.New{{.ServiceNameCamel}}Handler(app.Logger())
+{{end}}
 
 	// Register Connect handler with interceptors
 	path, connectHandler := {{.ServiceNameVar}}v1connect.New{{.ServiceNameCamel}}ServiceHandler(

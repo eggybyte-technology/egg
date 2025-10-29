@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CLI**: Support for optional database dependency based on proto template type
+  - `echo` template services can start without database (no DB_DSN required)
+  - `crud` template services require database (DB_DSN mandatory)
+  - Handler templates adapt based on template type (Ping only vs full CRUD)
+- **CLI**: Conditional file generation - only CRUD templates generate model/repository/service files
+- **CLI**: Enhanced Docker Compose configuration with servicex-standard environment variables
+  - `SERVICE_NAME`, `SERVICE_VERSION`, `APP_ENV`, `LOG_LEVEL` automatically configured
+  - Database configuration (`DB_DSN`, `DB_DRIVER`) included when database enabled
+  - Health checks and restart policies added to all services
+- **CLI**: `--local` flag for `build backend` and `build frontend` commands
+  - Builds for local platform only (no push)
+  - Automatically detects platform (linux/amd64 or linux/arm64)
+- **CLI**: Default database enabled in new projects (`database.enabled: true`)
+
+### Changed
+
+- **CLI**: Docker Compose now uses pre-built images instead of building during compose
+  - Services reference images built via `egg build all --local` or `egg build all --push`
+  - Image names follow pattern: `<docker_registry>/<project_name>-<service_name>:<version>`
+- **CLI**: `egg build all` defaults to multi-platform build with push
+  - Use `--local` flag to build for local platform only (no push)
+- **CLI**: Frontend build process simplified
+  - Flutter web assets now copied directly from `frontend/<service>/build/web`
+  - Removed intermediate copy step to `bin/frontend/<service>`
+- **CLI**: `ping` service default uses `echo` template (simplest Ping RPC only)
+- **CLI**: Backend service templates now conditionally generate code based on proto type
+  - Echo services: handler only (no database dependency)
+  - CRUD services: full stack (handler/service/repository/model with database)
+- **CLI**: Test integration script defaults to keeping test directory (`--keep` behavior)
+  - Use `--remove` flag to clean up test directory after completion
+
+### Fixed
+
+- **CLI**: Fixed Docker Compose attempting to build images instead of using pre-built ones
+- **CLI**: Fixed database DSN requirement error for echo/ping services
+- **CLI**: Fixed service registration failing when database not configured for echo services
+- **CLI**: Fixed frontend build copying assets to wrong location
+
+### Improved
+
+- **CLI**: Better separation between minimal services (echo) and full services (crud)
+- **CLI**: Docker Compose configuration aligned with servicex environment variable standards
+- **CLI**: Default project configuration enables database for easier development setup
+
+### Added
+
 - **CLI**: Multi-platform Docker image build support with `docker buildx` (linux/amd64, linux/arm64)
 - **CLI**: `buildMultiPlatformImage()` function for automated multi-arch builds with push
 - **CLI**: Frontend service name validation enforcing underscore usage (Flutter requirement)

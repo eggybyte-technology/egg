@@ -1,79 +1,101 @@
 # ==============================================================================
-# EggyByte Backend Service Image
-# ==============================================================================
-#
+# EggyByte Enterprise Go Service Dockerfile (Builder + Runtime)
+# ------------------------------------------------------------------------------
+# Version: v1.0.1
+# Language: Go 1.25.1
+# Base OS: Alpine 3.22
+# ------------------------------------------------------------------------------
 # Purpose:
-#   Package a pre-compiled Go microservice binary into a minimal runtime container.
-#   This Dockerfile is used by the egg CLI to create production-ready service images.
-#
-# Base Image:
-#   ghcr.io/eggybyte-technology/eggybyte-go-alpine:go1.25.1-alpine3.22
-#   (minimal Alpine runtime with CA certificates and timezone data)
-#
-# Build Process:
-#   1. Compile binary using eggybyte-go-builder (done before docker build)
-#   2. Run: egg build backend <service> (handles compilation + packaging)
-#
-# Build Args:
-#   - SERVICE_NAME: Name of the service (e.g., "user", "order")
-#   - BINARY_PATH: Path to pre-built binary (default: bin/backend/${SERVICE_NAME}/server)
-#   - HTTP_PORT: Main HTTP service port (default: 8080)
-#   - HEALTH_PORT: Health check endpoint port (default: 8081)
-#   - METRICS_PORT: Prometheus metrics port (default: 9091)
-#
-# Runtime Environment:
-#   - HTTP_PORT: Service listens on this port for requests
-#   - HEALTH_PORT: Health check endpoint (GET /health)
-#   - METRICS_PORT: Prometheus metrics endpoint (GET /metrics)
-#
-# Security:
-#   - Runs as non-root user 'app' (inherited from base image)
-#   - Static binary with no runtime dependencies
-#   - Minimal attack surface (no shell, no package manager)
-#
-# Usage Example:
-#   docker build -f docker/Dockerfile.backend \
-#     --build-arg SERVICE_NAME=user \
-#     --build-arg BINARY_PATH=bin/backend/user/server \
-#     -t ghcr.io/myorg/myproject-user:v1.0.0 .
-#
+#   - Unified, enterprise-grade multi-platform Dockerfile
+#   - Supports builder/runtime separation in a single file
+#   - Allows fully configurable OUT_DIR across all stages
+# ------------------------------------------------------------------------------
+# Directory layout:
+#   backend/go.work
+#   backend/<service>/cmd/server
+#   gen/go/   (buf-generated Go code)
 # ==============================================================================
 
-FROM ghcr.io/eggybyte-technology/eggybyte-go-alpine:go1.25.1-alpine3.22
-
-# Build-time arguments with defaults
-ARG SERVICE_NAME="service"
-ARG BINARY_PATH="bin/backend/${SERVICE_NAME}/server"
+# ------------------------------------------------------------------------------
+# Global build arguments (visible in all stages)
+# ------------------------------------------------------------------------------
+ARG GO_VERSION=1.25.1
+ARG OUT_DIR=/out                # Unified output directory across all stages
+ARG SERVICE_NAME=user           # Default service
+ARG PROJECT_NAME                # Project name (required)
+ARG MODULE_PREFIX               # Module prefix (required)
+ARG VERSION                     # Version (required)
 ARG HTTP_PORT=8080
 ARG HEALTH_PORT=8081
 ARG METRICS_PORT=9091
 
-# Image metadata (populated by egg CLI at build time)
-LABEL org.opencontainers.image.title="{{.ProjectName}}-${SERVICE_NAME}" \
+# ------------------------------------------------------------------------------
+# 1️⃣ Builder Stage
+# ------------------------------------------------------------------------------
+FROM ghcr.io/eggybyte-technology/eggybyte-go-builder:go${GO_VERSION}-alpine3.22 AS builder
+
+LABEL org.opencontainers.image.title="EggyByte Builder" \
+      org.opencontainers.image.description="Build stage for EggyByte Go microservices" \
+      org.opencontainers.image.vendor="EggyByte Technology"
+
+# Inherit global args
+ARG SERVICE_NAME
+ARG OUT_DIR
+ARG HTTP_PORT
+ARG HEALTH_PORT
+ARG METRICS_PORT
+ARG TARGETOS TARGETARCH
+
+WORKDIR /src
+
+# Copy only necessary files to ensure build cache efficiency
+COPY gen/go gen/go
+COPY backend backend
+
+# Build the service binary
+RUN echo "Building service '${SERVICE_NAME}' for ${TARGETOS}/${TARGETARCH}" && \
+    mkdir -p ${OUT_DIR}/${SERVICE_NAME} && \
+    cd backend/${SERVICE_NAME} && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" \
+    -o ${OUT_DIR}/${SERVICE_NAME}/server ./cmd/server && \
+    echo "Binary built at ${OUT_DIR}/${SERVICE_NAME}/server"
+
+# ------------------------------------------------------------------------------
+# 2️⃣ Runtime Stage
+# ------------------------------------------------------------------------------
+FROM ghcr.io/eggybyte-technology/eggybyte-go-alpine:go${GO_VERSION}-alpine3.22 AS runtime
+
+LABEL org.opencontainers.image.title="${PROJECT_NAME}-${SERVICE_NAME}" \
       org.opencontainers.image.description="EggyByte microservice: ${SERVICE_NAME}" \
-      org.opencontainers.image.source="{{.ModulePrefix}}" \
+      org.opencontainers.image.source="${MODULE_PREFIX}" \
       org.opencontainers.image.vendor="EggyByte Technology" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="{{.Version}}"
+      org.opencontainers.image.version="${VERSION}"
 
-# Set working directory (inherited from base, explicit for clarity)
+# Inherit same args to maintain global consistency
+ARG SERVICE_NAME
+ARG OUT_DIR
+ARG HTTP_PORT
+ARG HEALTH_PORT
+ARG METRICS_PORT
+ARG PROJECT_NAME
+ARG MODULE_PREFIX
+ARG VERSION
+
 WORKDIR /app
 
-# Copy pre-built binary with execute permissions
-# Binary must be compiled with CGO_ENABLED=0 for static linking
-COPY --chmod=755 ${BINARY_PATH} /app/app
+# Copy the binary from builder using the unified OUT_DIR path
+COPY --from=builder ${OUT_DIR}/${SERVICE_NAME}/server /app/app
 
-# Configure runtime environment variables
-# Services should read these to determine which ports to bind
-ENV HTTP_PORT=${HTTP_PORT} \
+# Set standard runtime environment
+ENV SERVICE_NAME=${SERVICE_NAME} \
+    OUT_DIR=${OUT_DIR} \
+    HTTP_PORT=${HTTP_PORT} \
     HEALTH_PORT=${HEALTH_PORT} \
     METRICS_PORT=${METRICS_PORT}
 
-# Expose service ports for documentation and inter-container communication
-# Note: These don't actually publish ports; use -p flag at runtime
+# Expose standard EggyByte service ports
 EXPOSE ${HTTP_PORT} ${HEALTH_PORT} ${METRICS_PORT}
 
-# Run the service binary
-# Inherits ENTRYPOINT ["/app/app"] from base image
-# Override with CMD if service requires arguments
-
+ENTRYPOINT ["/app/app"]

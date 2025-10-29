@@ -25,17 +25,27 @@ services:
   # Backend Services
 {{range $serviceName, $config := .BackendServices}}
   {{$serviceName}}:
-    build:
-      context: ../../backend/{{$serviceName}}
-      dockerfile: ../../docker/Dockerfile.backend
+    image: {{$.DockerRegistry}}/{{$.ProjectName}}-{{$serviceName}}:{{$.Version}}
     container_name: {{$.ProjectName}}-{{$serviceName}}
+    restart: unless-stopped
     environment:
-{{if $.DatabaseEnabled}}
-      DATABASE_DSN: {{$.DatabaseUser}}:{{$.DatabasePassword}}@tcp(mysql:3306)/{{$.DatabaseName}}?charset=utf8mb4&parseTime=True
-{{end}}
+      # Service Identity (servicex standard)
+      SERVICE_NAME: {{$serviceName}}
+      SERVICE_VERSION: {{$.Version}}
+      APP_ENV: production
+      
+      # Logging Configuration
+      LOG_LEVEL: info
+      
+      # Port Configuration (servicex BaseConfig)
       HTTP_PORT: {{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}
       HEALTH_PORT: {{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}
       METRICS_PORT: {{if $config.Ports}}{{$config.Ports.Metrics}}{{else}}9091{{end}}
+{{if $.DatabaseEnabled}}
+      # Database Configuration (servicex BaseConfig.Database)
+      DB_DSN: {{$.DatabaseUser}}:{{$.DatabasePassword}}@tcp(mysql:3306)/{{$.DatabaseName}}?charset=utf8mb4&parseTime=True&loc=Local
+      DB_DRIVER: mysql
+{{end}}
     ports:
       - "{{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}:{{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}"
       - "{{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}:{{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}"
@@ -47,6 +57,12 @@ services:
 {{end}}
     networks:
       - {{$.ProjectName}}-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:{{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 {{end}}
 {{if .DatabaseEnabled}}
 

@@ -56,6 +56,12 @@ test-integration: build
 	@./scripts/test-cli.sh
 	$(call print_success,CLI integration tests passed)
 
+# Run CLI integration tests with local modules (remove test directory)
+test-integration-remove: build
+	$(call print_header,Running CLI integration tests with local modules)
+	@./scripts/test-cli.sh --remove
+	$(call print_success,CLI integration tests passed)
+
 # Run CLI integration tests with remote modules (production)
 test-production: build
 	$(call print_header,Running CLI integration tests with remote modules)
