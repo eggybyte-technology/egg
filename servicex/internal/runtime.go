@@ -56,6 +56,7 @@ func (r *ServiceRuntime) Run(ctx context.Context) error {
 	r.logger.Info("starting service",
 		"service", r.config.ServiceName,
 		"version", r.config.ServiceVersion,
+		"build_time", BuildTime,
 	)
 
 	// Initialize full configuration with manager

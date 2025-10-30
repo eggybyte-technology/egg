@@ -274,14 +274,47 @@ release_single_module() {
         done
     ) || return 1
     
-    # Step 2: Commit changes (go.mod and go.sum updates)
+    # Step 2: Update BuildTime for servicex module
+    if [[ "$mod" == "servicex" ]]; then
+        print_info "  → Updating BuildTime for servicex..."
+        local build_time
+        build_time=$(date +"%Y%m%d%H%M%S")
+        local version_file="$mod_path/internal/version.go"
+        
+        if [ -f "$version_file" ]; then
+            # Update BuildTime in version.go (works on both macOS and Linux)
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                # macOS uses BSD sed
+                sed -i '' "s/var BuildTime = \".*\"/var BuildTime = \"$build_time\"/" "$version_file"
+            else
+                # Linux uses GNU sed
+                sed -i "s/var BuildTime = \".*\"/var BuildTime = \"$build_time\"/" "$version_file"
+            fi
+            
+            if [ $? -eq 0 ]; then
+                print_success "    ↳ BuildTime updated to $build_time"
+            else
+                print_warning "    ↳ Failed to update BuildTime"
+            fi
+        else
+            print_warning "    ↳ version.go not found: $version_file"
+        fi
+    fi
+    
+    # Step 3: Commit changes (go.mod, go.sum, and version.go updates)
     # Check for unstaged changes in the module directory
     cd "$PROJECT_ROOT"
     if ! git diff --quiet -- "$mod/" 2>/dev/null; then
         print_info "  → Committing dependency updates for $mod..."
-        # Stage all changes in this module directory (go.mod and go.sum if exists)
+        # Stage all changes in this module directory (go.mod, go.sum, and version.go if exists)
         git add "$mod/" 2>/dev/null || true
-        if git commit -m "chore($mod): update dependencies to $version" 2>/dev/null; then
+        
+        local commit_msg="chore($mod): update dependencies to $version"
+        if [[ "$mod" == "servicex" ]]; then
+            commit_msg="chore($mod): update dependencies to $version and build time"
+        fi
+        
+        if git commit -m "$commit_msg" 2>/dev/null; then
             print_info "    ↳ Changes committed"
         else
             print_warning "    ↳ No changes to commit or commit failed"
@@ -290,7 +323,7 @@ release_single_module() {
         print_info "  → No dependency changes for $mod"
     fi
     
-    # Step 3: Create and push tag
+    # Step 4: Create and push tag
     local tag="${mod}/${version}"
     print_info "  → Creating tag: $tag"
     

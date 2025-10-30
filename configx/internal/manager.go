@@ -4,6 +4,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -80,6 +81,9 @@ func (m *ManagerImpl) loadInitial(ctx context.Context) error {
 			return fmt.Errorf("source %d load failed: %w", i, err)
 		}
 
+		// Log each source's configuration at DEBUG level for debugging
+		m.logSourceConfiguration(i, source, snapshot)
+
 		// Merge with later sources taking precedence
 		// Only set values that are non-empty to avoid overriding env vars with empty ConfigMap values
 		for k, v := range snapshot {
@@ -93,7 +97,7 @@ func (m *ManagerImpl) loadInitial(ctx context.Context) error {
 	m.snapshot = merged
 	m.mu.Unlock()
 
-	// Log configuration details for debugging
+	// Log merged configuration details at DEBUG level
 	m.logConfigurationDetails(merged)
 
 	m.logger.Info("configuration loaded", log.Int("keys", len(merged)))
@@ -243,15 +247,14 @@ func (m *ManagerImpl) OnUpdate(fn func(snapshot map[string]string)) func() {
 	}
 }
 
-// logConfigurationDetails logs configuration details with sensitive data masking.
-// This helps debug configuration issues without exposing secrets.
+// logConfigurationDetails logs merged configuration details at DEBUG level
+// with sensitive data masking. This helps debug configuration issues without exposing secrets.
 //
 // Logs:
-//   - INFO level: Summary of all configuration keys with masked sensitive values
-//   - DEBUG level: Detailed key-value pairs for each configuration variable
+//   - DEBUG level: All configuration variables (one per line) with masked sensitive values
 func (m *ManagerImpl) logConfigurationDetails(config map[string]string) {
 	if len(config) == 0 {
-		m.logger.Info("configuration details", log.Str("status", "empty"))
+		m.logger.Debug("merged configuration", log.Str("status", "empty"))
 		return
 	}
 
@@ -262,20 +265,10 @@ func (m *ManagerImpl) logConfigurationDetails(config map[string]string) {
 	}
 	sort.Strings(keys)
 
-	// Build summary message for INFO level
-	var summaryParts []string
-	for _, key := range keys {
-		value := config[key]
-		maskedValue := maskSensitiveValue(key, value)
-		summaryParts = append(summaryParts, fmt.Sprintf("%s=%s", key, maskedValue))
-	}
+	// Log all configuration variables at DEBUG level
+	m.logger.Debug("merged configuration loaded",
+		log.Int("total_keys", len(config)))
 
-	// Log summary at INFO level for easy debugging
-	m.logger.Info("configuration variables",
-		log.Int("count", len(config)),
-		log.Str("summary", strings.Join(summaryParts, ", ")))
-
-	// Log detailed key-value pairs at DEBUG level
 	for _, key := range keys {
 		value := config[key]
 		maskedValue := maskSensitiveValue(key, value)
@@ -283,6 +276,96 @@ func (m *ManagerImpl) logConfigurationDetails(config map[string]string) {
 			log.Str("key", key),
 			log.Str("value", maskedValue))
 	}
+}
+
+// logSourceConfiguration logs configuration loaded from a specific source at DEBUG level.
+// This helps debug which source provided which configuration values.
+// For EnvSource, it also logs all environment variables (before filtering).
+func (m *ManagerImpl) logSourceConfiguration(sourceIndex int, source Source, snapshot map[string]string) {
+	// Get source type name for logging
+	sourceType := m.getSourceTypeName(source)
+
+	// Special handling for EnvSource: log all environment variables
+	if sourceType == "EnvSource" {
+		m.logAllEnvironmentVariables(sourceIndex)
+	}
+
+	if len(snapshot) == 0 {
+		m.logger.Debug("source configuration loaded",
+			log.Int("source_index", sourceIndex),
+			log.Str("source_type", sourceType),
+			log.Str("status", "empty"))
+		return
+	}
+
+	// Sort keys for consistent output
+	keys := make([]string, 0, len(snapshot))
+	for k := range snapshot {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// Log source summary
+	m.logger.Debug("source configuration loaded",
+		log.Int("source_index", sourceIndex),
+		log.Str("source_type", sourceType),
+		log.Int("key_count", len(snapshot)))
+
+	// Log each configuration variable from this source
+	for _, key := range keys {
+		value := snapshot[key]
+		maskedValue := maskSensitiveValue(key, value)
+		m.logger.Debug("source configuration variable",
+			log.Int("source_index", sourceIndex),
+			log.Str("source_type", sourceType),
+			log.Str("key", key),
+			log.Str("value", maskedValue))
+	}
+}
+
+// logAllEnvironmentVariables logs all environment variables at DEBUG level.
+// This provides complete visibility into the runtime environment for debugging.
+func (m *ManagerImpl) logAllEnvironmentVariables(sourceIndex int) {
+	allEnvs := os.Environ()
+	if len(allEnvs) == 0 {
+		m.logger.Debug("environment variables", log.Int("source_index", sourceIndex), log.Str("status", "empty"))
+		return
+	}
+
+	// Sort for consistent output
+	sort.Strings(allEnvs)
+
+	// Log summary
+	m.logger.Debug("environment variables loaded",
+		log.Int("source_index", sourceIndex),
+		log.Int("total_count", len(allEnvs)))
+
+	// Log each environment variable
+	for _, env := range allEnvs {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := parts[0]
+		value := parts[1]
+		maskedValue := maskSensitiveValue(key, value)
+
+		m.logger.Debug("environment variable",
+			log.Int("source_index", sourceIndex),
+			log.Str("key", key),
+			log.Str("value", maskedValue))
+	}
+}
+
+// getSourceTypeName returns a human-readable type name for the source.
+func (m *ManagerImpl) getSourceTypeName(source Source) string {
+	typeName := fmt.Sprintf("%T", source)
+	// Remove package prefixes for cleaner output
+	if idx := strings.LastIndex(typeName, "."); idx >= 0 {
+		typeName = typeName[idx+1:]
+	}
+	return typeName
 }
 
 // maskSensitiveValue masks sensitive configuration values.
