@@ -21,11 +21,11 @@ set -e
 
 # Source the unified logger
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/logger.sh"
 
 # Get the examples root directory (parent of scripts/)
 EXAMPLES_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_ROOT="$(cd "$EXAMPLES_ROOT/.." && pwd)"
+source "$PROJECT_ROOT/scripts/logger.sh"
 
 # Check if Docker is running
 check_docker() {

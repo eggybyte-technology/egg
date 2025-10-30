@@ -3,7 +3,7 @@
 ## Overview
 
 `servicex` is the unified microservice initialization framework for egg. It provides
-a one-line service startup with integrated configuration, logging, database, tracing,
+a one-line service startup with integrated configuration, logging, database, metrics,
 and Connect RPC support. This is the highest-level integration layer that brings all
 egg components together.
 
@@ -13,7 +13,7 @@ egg components together.
 - Integrated configuration management (configx)
 - Automatic logging setup (logx)
 - Optional database support with migrations (storex)
-- OpenTelemetry tracing integration (obsx)
+- **Prometheus metrics collection** (obsx) - lightweight metrics without tracing overhead
 - Connect RPC interceptors (connectx)
 - Health check endpoints
 - **Prometheus metrics endpoint** (automatically exposed on port 9091)
@@ -110,8 +110,8 @@ DB_DRIVER=mysql DB_DSN=user:pass@tcp(localhost:3306)/mydb go run main.go
 | `WithConfig(cfg)`         | Set configuration struct (use `WithAppConfig` for BaseConfig) |
 | `WithAppConfig(cfg)`      | **Recommended**: Set config + auto-detect database from BaseConfig |
 | `WithLogger(logger)`      | Set custom logger (optional, creates default if not provided) |
-| `WithTracing(enabled)`    | Enable OpenTelemetry tracing                     |
-| `WithMetrics(enabled)`    | Enable metrics collection                        |
+| `WithMetrics(enabled)`    | Enable Prometheus metrics collection (default: true) |
+| `WithMetricsConfig(runtime, process, db, client)` | Fine-grained metrics configuration |
 | `WithRegister(fn)`        | Set service registration function                |
 | `WithTimeout(ms)`         | Set default RPC timeout in milliseconds          |
 | `WithSlowRequestThreshold(ms)` | Set slow request warning threshold          |
@@ -125,18 +125,21 @@ DB_DRIVER=mysql DB_DSN=user:pass@tcp(localhost:3306)/mydb go run main.go
 | Variable              | Description                          | Default  | Example                    |
 | --------------------- | ------------------------------------ | -------- | -------------------------- |
 | `LOG_LEVEL`           | Log level (debug/info/warn/error)    | `info`   | `LOG_LEVEL=debug`          |
-| `SERVICE_NAME`        | Service name                         | -        | `SERVICE_NAME=user-service`|
-| `SERVICE_VERSION`     | Service version                      | -        | `SERVICE_VERSION=1.0.0`    |
+| `SERVICE_NAME`        | Service name                         | `app`    | `SERVICE_NAME=user-service`|
+| `SERVICE_VERSION`     | Service version                      | `0.0.0`  | `SERVICE_VERSION=1.0.0`    |
 | `ENV`                 | Environment (dev/staging/production) | `dev`    | `ENV=production`           |
-| `DB_DRIVER`           | Database driver (mysql/postgres)     | -        | `DB_DRIVER=mysql`          |
+| `DB_DRIVER`           | Database driver (mysql/postgres)     | `mysql`  | `DB_DRIVER=mysql`          |
 | `DB_DSN`              | Database connection string           | -        | `DB_DSN=user:pass@tcp(...)`|
 | `DB_MAX_IDLE`         | Max idle connections                 | `10`     | `DB_MAX_IDLE=20`           |
 | `DB_MAX_OPEN`         | Max open connections                 | `100`    | `DB_MAX_OPEN=200`          |
 | `DB_MAX_LIFETIME`     | Connection max lifetime              | `1h`     | `DB_MAX_LIFETIME=30m`      |
+| `DB_PING_TIMEOUT`     | Database ping timeout                | `5s`     | `DB_PING_TIMEOUT=10s`      |
 | `HTTP_PORT`           | HTTP server port                     | `8080`   | `HTTP_PORT=9000`           |
-| `HEALTH_PORT`         | Health check port                    | `8081`   | `HEALTH_PORT=9001`         |
+| `HEALTH_PORT`         | Health check port                    | `8081`   | `HEALTH_PORT=9001`          |
 | `METRICS_PORT`        | Metrics endpoint port                | `9091`   | `METRICS_PORT=9002`        |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry collector endpoint | -   | `otel-collector:4317`      |
+| `ENABLE_METRICS`      | Enable metrics collection            | `true`   | `ENABLE_METRICS=false`     |
+| `SLOW_REQUEST_MILLIS` | Slow request warning threshold (ms) | `1000`   | `SLOW_REQUEST_MILLIS=500`  |
+| `SHUTDOWN_TIMEOUT`    | Graceful shutdown timeout            | `15s`    | `SHUTDOWN_TIMEOUT=30s`     |
 
 ## Database Configuration Auto-Detection
 
@@ -310,17 +313,17 @@ func FromBaseConfig(dbCfg *configx.DatabaseConfig) *DatabaseConfig
 
 ## Observability
 
-servicex provides built-in observability features out of the box:
+servicex provides built-in observability features focused on **Prometheus metrics only** (no distributed tracing).
 
 ### Metrics Endpoint
 
-When `ENABLE_METRICS=true` (default) and OpenTelemetry is initialized, servicex automatically starts a metrics server that exposes Prometheus-compatible metrics at `/metrics`.
+When `ENABLE_METRICS=true` (default), servicex automatically starts a metrics server that exposes Prometheus-compatible metrics at `/metrics`.
 
 **Default Configuration:**
-- **Port**: 9091 (configurable via `METRICS_PORT`)
+- **Port**: 9091 (configurable via `METRICS_PORT` environment variable)
 - **Format**: Prometheus text exposition format
 - **Path**: `/metrics`
-- **Export**: Dual mode - both local Prometheus endpoint and OTLP export to collector
+- **Export**: Local Prometheus scraping endpoint only (no remote push)
 
 **Access metrics:**
 ```bash
@@ -341,8 +344,10 @@ scrape_configs:
   - `rpc_request_duration_seconds`: Histogram of request durations in seconds
   - `rpc_request_size_bytes`: Histogram of request payload sizes in bytes
   - `rpc_response_size_bytes`: Histogram of response payload sizes in bytes
-- OpenTelemetry instrumentation metrics
-- Custom application metrics (when using OTel Meter API)
+- **Optional metrics** (enabled via `WithMetricsConfig`):
+  - Runtime metrics: goroutines, GC, memory (`process_runtime_go_*`)
+  - Process metrics: CPU, RSS, uptime (`process_cpu_*`, `process_memory_*`)
+  - Database metrics: connection pool stats (`db_pool_*`)
 
 **Example RPC metrics:**
 ```prometheus
@@ -371,16 +376,25 @@ histogram_quantile(0.95, sum(rate(rpc_request_duration_seconds_bucket[5m])) by (
 ```bash
 # Disable metrics server
 ENABLE_METRICS=false go run main.go
+
+# Or programmatically
+servicex.Run(ctx,
+    servicex.WithMetrics(false),
+    // ...
+)
 ```
 
-**Note**: The metrics endpoint works alongside OTLP export. If `OTEL_EXPORTER_OTLP_ENDPOINT` is set, metrics are sent to both the local Prometheus endpoint and the OTLP collector.
-
-### Tracing
-
-OpenTelemetry tracing is enabled by default (`ENABLE_TRACING=true`). Traces are exported to the OTLP collector if configured:
-
-```bash
-OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317 go run main.go
+**Enable fine-grained metrics:**
+```go
+servicex.Run(ctx,
+    servicex.WithMetricsConfig(
+        true,  // Enable runtime metrics (goroutines, GC, memory)
+        true,  // Enable process metrics (CPU, RSS, uptime)
+        true,  // Enable database metrics (if database is configured)
+        false, // Enable client-side RPC metrics
+    ),
+    // ...
+)
 ```
 
 ### Health Checks
@@ -434,10 +448,10 @@ servicex/
 1. initializeLogger()      → Setup logging (logx)
 2. initializeConfig()       → Load configuration (configx)
 3. initializeDatabase()     → Connect database + migrations (storex)
-4. initializeObservability()→ Setup tracing/metrics (obsx)
+4. initializeObservability()→ Setup Prometheus metrics (obsx)
 5. buildApp()               → Create App with interceptors (connectx)
 6. User register()          → Register service handlers
-7. startServers()           → Start HTTP + health servers
+7. startServers()           → Start HTTP + health + metrics servers
 8. Wait for shutdown        → Block until context cancelled
 9. gracefulShutdown()       → Cleanup in LIFO order
 ```
@@ -513,12 +527,10 @@ func main() {
     // Run service
     err := servicex.Run(ctx,
         servicex.WithService("user-service", "1.0.0"),
-        servicex.WithConfig(cfg),
-        servicex.WithDatabase(servicex.FromBaseConfig(&cfg.Database)),
+        servicex.WithAppConfig(cfg), // Auto-detects database from BaseConfig
         servicex.WithAutoMigrate(&User{}),
-        servicex.WithTracing(true),
+        servicex.WithMetrics(true),
         servicex.WithRegister(register),
-        servicex.WithDebugLogs(cfg.Env == "dev"),
     )
     if err != nil {
         os.Exit(1)
@@ -680,15 +692,19 @@ DB_DSN=user:pass@tcp(mysql:3306)/mydb?parseTime=true
 DB_MAX_IDLE=10
 DB_MAX_OPEN=100
 DB_MAX_LIFETIME=1h
+DB_PING_TIMEOUT=5s
 
-# Observability
-OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+# Metrics
+ENABLE_METRICS=true
 
 # Logging
-ENABLE_DEBUG_LOGS=false
+LOG_LEVEL=info
 
 # RPC
 SLOW_REQUEST_MILLIS=1000
+
+# Shutdown
+SHUTDOWN_TIMEOUT=15s
 ```
 
 ## Health Checks
@@ -711,7 +727,7 @@ servicex automatically integrates:
 
 - **configx**: Loads configuration from environment + optional ConfigMap
 - **logx**: Sets up structured logging with logfmt format
-- **obsx**: Initializes OpenTelemetry provider if tracing enabled
+- **obsx**: Initializes Prometheus metrics provider (no tracing)
 - **connectx**: Builds default interceptor stack (timeout, logging, errors, metrics)
 - **storex**: Connects to database and runs migrations
 - **runtimex**: Manages HTTP server lifecycle and graceful shutdown
@@ -761,7 +777,7 @@ func TestService(t *testing.T) {
 
 - Database connection pooling configured via `MaxIdleConns` and `MaxOpenConns`
 - Slow request logging threshold configurable
-- OpenTelemetry sampling ratio defaults to 10% (configurable)
+- Prometheus metrics collected on-demand (scrape-based, no overhead)
 - HTTP/2 support for Connect RPC
 - Graceful shutdown ensures in-flight requests complete
 
@@ -815,7 +831,7 @@ Check the initialization stages:
 - Logger initialization
 - Configuration loading
 - Database connection
-- Observability setup
+- Metrics setup (Prometheus provider)
 - Server startup
 
 ## Best Practices

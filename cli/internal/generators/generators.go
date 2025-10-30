@@ -898,6 +898,8 @@ func (g *BackendGenerator) GenerateCompose(ctx context.Context, config *configsc
 		"DatabaseUser":         config.Database.User,
 		"DatabasePassword":     config.Database.Password,
 		"DatabaseRootPassword": config.Database.RootPassword,
+		"EnvGlobal":            config.Env.Global,
+		"EnvBackend":           config.Env.Backend,
 	}
 
 	// Generate docker-compose.yaml from template

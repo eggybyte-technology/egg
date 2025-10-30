@@ -59,7 +59,7 @@ services:
       APP_ENV: development
       
       # Logging Configuration
-      LOG_LEVEL: info
+      LOG_LEVEL: debug
       
       # Port Configuration (servicex BaseConfig)
       HTTP_PORT: "8082"

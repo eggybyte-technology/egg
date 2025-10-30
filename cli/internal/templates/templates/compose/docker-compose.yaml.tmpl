@@ -31,20 +31,66 @@ services:
     environment:
       # Service Identity (servicex standard)
       SERVICE_NAME: {{$serviceName}}
-      SERVICE_VERSION: {{$.Version}}
-      APP_ENV: production
+      SERVICE_VERSION: "{{$.Version}}"
       
-      # Logging Configuration
-      LOG_LEVEL: info
+      # Environment (servicex standard: ENV, not APP_ENV)
+      # Priority: service.env.common.ENV > env.backend.ENV > env.global.ENV > default "production"
+      {{$envValue := "production"}}{{if index $config.Env.Common "ENV"}}{{$envValue = index $config.Env.Common "ENV"}}{{else}}{{if index $.EnvBackend "ENV"}}{{$envValue = index $.EnvBackend "ENV"}}{{else}}{{if index $.EnvGlobal "ENV"}}{{$envValue = index $.EnvGlobal "ENV"}}{{end}}{{end}}{{end}}
+      ENV: {{$envValue}}
+      
+      # Logging Configuration (servicex standard)
+      # Priority: service.env.common.LOG_LEVEL > env.backend.LOG_LEVEL > env.global.LOG_LEVEL > default "info"
+      # Supported levels: debug, info, warn, error (default: info)
+      {{$logLevel := "info"}}{{if index $config.Env.Common "LOG_LEVEL"}}{{$logLevel = index $config.Env.Common "LOG_LEVEL"}}{{else}}{{if index $.EnvBackend "LOG_LEVEL"}}{{$logLevel = index $.EnvBackend "LOG_LEVEL"}}{{else}}{{if index $.EnvGlobal "LOG_LEVEL"}}{{$logLevel = index $.EnvGlobal "LOG_LEVEL"}}{{end}}{{end}}{{end}}
+      LOG_LEVEL: {{$logLevel}}
       
       # Port Configuration (servicex BaseConfig)
-      HTTP_PORT: {{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}
-      HEALTH_PORT: {{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}
-      METRICS_PORT: {{if $config.Ports}}{{$config.Ports.Metrics}}{{else}}9091{{end}}
+      HTTP_PORT: "{{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}"
+      HEALTH_PORT: "{{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}"
+      METRICS_PORT: "{{if $config.Ports}}{{$config.Ports.Metrics}}{{else}}9091{{end}}"
 {{if $.DatabaseEnabled}}
       # Database Configuration (servicex BaseConfig.Database)
-      DB_DSN: {{$.DatabaseUser}}:{{$.DatabasePassword}}@tcp(mysql:3306)/{{$.DatabaseName}}?charset=utf8mb4&parseTime=True&loc=Local
+      DB_DSN: "{{$.DatabaseUser}}:{{$.DatabasePassword}}@tcp(mysql:3306)/{{$.DatabaseName}}?charset=utf8mb4&parseTime=True&loc=Local"
       DB_DRIVER: mysql
+{{if index $.EnvBackend "DB_MAX_IDLE"}}
+      DB_MAX_IDLE: "{{index $.EnvBackend "DB_MAX_IDLE"}}"
+{{end}}
+{{if index $.EnvBackend "DB_MAX_OPEN"}}
+      DB_MAX_OPEN: "{{index $.EnvBackend "DB_MAX_OPEN"}}"
+{{end}}
+{{if index $.EnvBackend "DB_MAX_LIFETIME"}}
+      DB_MAX_LIFETIME: "{{index $.EnvBackend "DB_MAX_LIFETIME"}}"
+{{end}}
+{{if index $.EnvBackend "DB_PING_TIMEOUT"}}
+      DB_PING_TIMEOUT: "{{index $.EnvBackend "DB_PING_TIMEOUT"}}"
+{{end}}
+{{end}}
+{{if or (index $.EnvGlobal "ENABLE_METRICS") (index $.EnvBackend "ENABLE_METRICS") (index $config.Env.Common "ENABLE_METRICS")}}
+{{if index $config.Env.Common "ENABLE_METRICS"}}
+      ENABLE_METRICS: "{{index $config.Env.Common "ENABLE_METRICS"}}"
+{{else if index $.EnvBackend "ENABLE_METRICS"}}
+      ENABLE_METRICS: "{{index $.EnvBackend "ENABLE_METRICS"}}"
+{{else if index $.EnvGlobal "ENABLE_METRICS"}}
+      ENABLE_METRICS: "{{index $.EnvGlobal "ENABLE_METRICS"}}"
+{{end}}
+{{end}}
+{{if or (index $.EnvGlobal "SLOW_REQUEST_MILLIS") (index $.EnvBackend "SLOW_REQUEST_MILLIS") (index $config.Env.Common "SLOW_REQUEST_MILLIS")}}
+{{if index $config.Env.Common "SLOW_REQUEST_MILLIS"}}
+      SLOW_REQUEST_MILLIS: "{{index $config.Env.Common "SLOW_REQUEST_MILLIS"}}"
+{{else if index $.EnvBackend "SLOW_REQUEST_MILLIS"}}
+      SLOW_REQUEST_MILLIS: "{{index $.EnvBackend "SLOW_REQUEST_MILLIS"}}"
+{{else if index $.EnvGlobal "SLOW_REQUEST_MILLIS"}}
+      SLOW_REQUEST_MILLIS: "{{index $.EnvGlobal "SLOW_REQUEST_MILLIS"}}"
+{{end}}
+{{end}}
+{{if or (index $.EnvGlobal "SHUTDOWN_TIMEOUT") (index $.EnvBackend "SHUTDOWN_TIMEOUT") (index $config.Env.Common "SHUTDOWN_TIMEOUT")}}
+{{if index $config.Env.Common "SHUTDOWN_TIMEOUT"}}
+      SHUTDOWN_TIMEOUT: "{{index $config.Env.Common "SHUTDOWN_TIMEOUT"}}"
+{{else if index $.EnvBackend "SHUTDOWN_TIMEOUT"}}
+      SHUTDOWN_TIMEOUT: "{{index $.EnvBackend "SHUTDOWN_TIMEOUT"}}"
+{{else if index $.EnvGlobal "SHUTDOWN_TIMEOUT"}}
+      SHUTDOWN_TIMEOUT: "{{index $.EnvGlobal "SHUTDOWN_TIMEOUT"}}"
+{{end}}
 {{end}}
     ports:
       - "{{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}:{{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}"

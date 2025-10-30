@@ -148,15 +148,21 @@ func (r *Renderer) generateComposeYAML(config *configschema.Config) (string, err
 
 	// Add database service if enabled
 	if config.Database.Enabled {
-		databaseYAML := r.renderDatabaseService(config.Database)
+		databaseYAML := r.renderDatabaseService(config.Database, config.ProjectName)
 		builder.WriteString(databaseYAML)
 		builder.WriteString("\n")
 	}
 
+	// Add volumes section if database is enabled
+	if config.Database.Enabled {
+		builder.WriteString("volumes:\n")
+		builder.WriteString("  mysql_data:\n\n")
+	}
+
 	// Add networks section
 	builder.WriteString("networks:\n")
-	builder.WriteString("  default:\n")
-	builder.WriteString("    name: " + config.ProjectName + "-network\n")
+	builder.WriteString("  " + config.ProjectName + "-network:\n")
+	builder.WriteString("    driver: bridge\n")
 
 	return builder.String(), nil
 }
@@ -197,51 +203,174 @@ func (r *Renderer) renderBackendService(name string, service configschema.Backen
 	builder.WriteString("      - \"" + strconv.Itoa(ports.Health) + ":" + strconv.Itoa(ports.Health) + "\"\n")
 	builder.WriteString("      - \"" + strconv.Itoa(ports.Metrics) + ":" + strconv.Itoa(ports.Metrics) + "\"\n")
 
-	// Environment variables
+	// Environment variables (servicex standard)
 	builder.WriteString("    environment:\n")
 
-	// Global environment
-	for key, value := range config.Env.Global {
-		builder.WriteString("      - " + key + "=" + value + "\n")
-	}
+	// Service Identity (servicex required)
+	builder.WriteString("      # Service Identity (servicex standard)\n")
+	builder.WriteString("      - SERVICE_NAME=" + name + "\n")
+	builder.WriteString("      - SERVICE_VERSION=" + config.Version + "\n")
 
-	// Backend environment
-	for key, value := range config.Env.Backend {
-		builder.WriteString("      - " + key + "=" + value + "\n")
+	// Environment (servicex standard: ENV, not APP_ENV)
+	// Priority: service.env.common.ENV > env.backend.ENV > env.global.ENV > default "production"
+	envValue := "production" // default for docker compose
+	if envVal, exists := service.Env.Common["ENV"]; exists && envVal != "" {
+		envValue = envVal
+	} else if envVal, exists := config.Env.Backend["ENV"]; exists && envVal != "" {
+		envValue = envVal
+	} else if envVal, exists := config.Env.Global["ENV"]; exists && envVal != "" {
+		envValue = envVal
 	}
+	builder.WriteString("      - ENV=" + envValue + "\n")
 
-	// Service-specific environment
-	for key, value := range service.Env.Common {
-		builder.WriteString("      - " + key + "=" + value + "\n")
+	// Logging Configuration (servicex standard)
+	// Priority: service.env.common.LOG_LEVEL > env.backend.LOG_LEVEL > env.global.LOG_LEVEL > default "info"
+	logLevel := "info" // default
+	if logLevelVal, exists := service.Env.Common["LOG_LEVEL"]; exists && logLevelVal != "" {
+		logLevel = logLevelVal
+	} else if logLevelVal, exists := config.Env.Backend["LOG_LEVEL"]; exists && logLevelVal != "" {
+		logLevel = logLevelVal
+	} else if logLevelVal, exists := config.Env.Global["LOG_LEVEL"]; exists && logLevelVal != "" {
+		logLevel = logLevelVal
 	}
+	builder.WriteString("      # Logging Configuration (servicex standard)\n")
+	builder.WriteString("      # Supported levels: debug, info, warn, error (default: info)\n")
+	builder.WriteString("      - LOG_LEVEL=" + logLevel + "\n")
 
-	// Docker-specific environment
-	for key, value := range service.Env.Docker {
-		// Resolve expressions for Compose environment
-		resolved, err := r.refParser.ReplaceAll(value, ref.EnvironmentCompose, config)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve expression %s: %w", value, err)
-		}
-		builder.WriteString("      - " + key + "=" + resolved + "\n")
-	}
-
-	// Port environment variables
+	// Port Configuration (servicex BaseConfig)
+	builder.WriteString("      # Port Configuration (servicex BaseConfig)\n")
 	builder.WriteString("      - HTTP_PORT=" + strconv.Itoa(ports.HTTP) + "\n")
 	builder.WriteString("      - HEALTH_PORT=" + strconv.Itoa(ports.Health) + "\n")
 	builder.WriteString("      - METRICS_PORT=" + strconv.Itoa(ports.Metrics) + "\n")
 
+	// Database Configuration (servicex BaseConfig.Database)
+	if config.Database.Enabled {
+		builder.WriteString("      # Database Configuration (servicex BaseConfig.Database)\n")
+		builder.WriteString("      - DB_DRIVER=mysql\n")
+		builder.WriteString("      - DB_DSN=" + config.Database.User + ":" + config.Database.Password + "@tcp(mysql:3306)/" + config.Database.Database + "?charset=utf8mb4&parseTime=True&loc=Local\n")
+
+		// Database connection pool settings (only if overridden from defaults)
+		// Defaults: DB_MAX_IDLE=10, DB_MAX_OPEN=100, DB_MAX_LIFETIME=1h, DB_PING_TIMEOUT=5s
+		if dbMaxIdle, exists := config.Env.Backend["DB_MAX_IDLE"]; exists && dbMaxIdle != "" {
+			builder.WriteString("      - DB_MAX_IDLE=" + dbMaxIdle + "\n")
+		}
+		if dbMaxOpen, exists := config.Env.Backend["DB_MAX_OPEN"]; exists && dbMaxOpen != "" {
+			builder.WriteString("      - DB_MAX_OPEN=" + dbMaxOpen + "\n")
+		}
+		if dbMaxLifetime, exists := config.Env.Backend["DB_MAX_LIFETIME"]; exists && dbMaxLifetime != "" {
+			builder.WriteString("      - DB_MAX_LIFETIME=" + dbMaxLifetime + "\n")
+		}
+		if dbPingTimeout, exists := config.Env.Backend["DB_PING_TIMEOUT"]; exists && dbPingTimeout != "" {
+			builder.WriteString("      - DB_PING_TIMEOUT=" + dbPingTimeout + "\n")
+		}
+	}
+
+	// Metrics Configuration (servicex standard)
+	// Default: ENABLE_METRICS=true, only set if explicitly disabled
+	enableMetrics := "true"
+	if metricsVal, exists := service.Env.Common["ENABLE_METRICS"]; exists && metricsVal != "" {
+		enableMetrics = metricsVal
+	} else if metricsVal, exists := config.Env.Backend["ENABLE_METRICS"]; exists && metricsVal != "" {
+		enableMetrics = metricsVal
+	} else if metricsVal, exists := config.Env.Global["ENABLE_METRICS"]; exists && metricsVal != "" {
+		enableMetrics = metricsVal
+	}
+	if enableMetrics != "true" {
+		builder.WriteString("      - ENABLE_METRICS=" + enableMetrics + "\n")
+	}
+
+	// RPC Configuration (servicex standard)
+	// Default: SLOW_REQUEST_MILLIS=1000, only set if overridden
+	if slowRequestMillis, exists := service.Env.Common["SLOW_REQUEST_MILLIS"]; exists && slowRequestMillis != "" && slowRequestMillis != "1000" {
+		builder.WriteString("      - SLOW_REQUEST_MILLIS=" + slowRequestMillis + "\n")
+	} else if slowRequestMillis, exists := config.Env.Backend["SLOW_REQUEST_MILLIS"]; exists && slowRequestMillis != "" && slowRequestMillis != "1000" {
+		builder.WriteString("      - SLOW_REQUEST_MILLIS=" + slowRequestMillis + "\n")
+	} else if slowRequestMillis, exists := config.Env.Global["SLOW_REQUEST_MILLIS"]; exists && slowRequestMillis != "" && slowRequestMillis != "1000" {
+		builder.WriteString("      - SLOW_REQUEST_MILLIS=" + slowRequestMillis + "\n")
+	}
+
+	// Shutdown Configuration (servicex standard)
+	// Default: SHUTDOWN_TIMEOUT=15s, only set if overridden
+	if shutdownTimeout, exists := service.Env.Common["SHUTDOWN_TIMEOUT"]; exists && shutdownTimeout != "" && shutdownTimeout != "15s" {
+		builder.WriteString("      - SHUTDOWN_TIMEOUT=" + shutdownTimeout + "\n")
+	} else if shutdownTimeout, exists := config.Env.Backend["SHUTDOWN_TIMEOUT"]; exists && shutdownTimeout != "" && shutdownTimeout != "15s" {
+		builder.WriteString("      - SHUTDOWN_TIMEOUT=" + shutdownTimeout + "\n")
+	} else if shutdownTimeout, exists := config.Env.Global["SHUTDOWN_TIMEOUT"]; exists && shutdownTimeout != "" && shutdownTimeout != "15s" {
+		builder.WriteString("      - SHUTDOWN_TIMEOUT=" + shutdownTimeout + "\n")
+	}
+
+	// Custom environment variables (excluding servicex standard vars to avoid duplication)
+	servicexVars := map[string]bool{
+		"SERVICE_NAME":        true,
+		"SERVICE_VERSION":     true,
+		"ENV":                 true,
+		"LOG_LEVEL":           true,
+		"HTTP_PORT":           true,
+		"HEALTH_PORT":         true,
+		"METRICS_PORT":        true,
+		"DB_DRIVER":           true,
+		"DB_DSN":              true,
+		"DB_MAX_IDLE":         true,
+		"DB_MAX_OPEN":         true,
+		"DB_MAX_LIFETIME":     true,
+		"DB_PING_TIMEOUT":     true,
+		"ENABLE_METRICS":      true,
+		"SLOW_REQUEST_MILLIS": true,
+		"SHUTDOWN_TIMEOUT":    true,
+	}
+
+	// Global environment (excluding servicex standard vars)
+	for key, value := range config.Env.Global {
+		if !servicexVars[key] {
+			builder.WriteString("      - " + key + "=" + value + "\n")
+		}
+	}
+
+	// Backend environment (excluding servicex standard vars)
+	for key, value := range config.Env.Backend {
+		if !servicexVars[key] {
+			builder.WriteString("      - " + key + "=" + value + "\n")
+		}
+	}
+
+	// Service-specific environment (excluding servicex standard vars)
+	for key, value := range service.Env.Common {
+		if !servicexVars[key] {
+			builder.WriteString("      - " + key + "=" + value + "\n")
+		}
+	}
+
+	// Docker-specific environment
+	for key, value := range service.Env.Docker {
+		if !servicexVars[key] {
+			// Resolve expressions for Compose environment
+			resolved, err := r.refParser.ReplaceAll(value, ref.EnvironmentCompose, config)
+			if err != nil {
+				return "", fmt.Errorf("failed to resolve expression %s: %w", value, err)
+			}
+			builder.WriteString("      - " + key + "=" + resolved + "\n")
+		}
+	}
+
 	// Dependencies
 	if config.Database.Enabled {
 		builder.WriteString("    depends_on:\n")
-		builder.WriteString("      - mysql\n")
+		builder.WriteString("      mysql:\n")
+		builder.WriteString("        condition: service_healthy\n")
 	}
+
+	// Networks
+	builder.WriteString("    networks:\n")
+	builder.WriteString("      - " + config.ProjectName + "-network\n")
 
 	// Health check
 	builder.WriteString("    healthcheck:\n")
-	builder.WriteString("      test: [\"CMD\", \"curl\", \"-f\", \"http://localhost:" + strconv.Itoa(ports.Health) + "/health\"]\n")
-	builder.WriteString("      interval: 30s\n")
-	builder.WriteString("      timeout: 10s\n")
-	builder.WriteString("      retries: 3\n")
+	builder.WriteString("      test: [\"CMD\", \"wget\", \"--spider\", \"-q\", \"http://localhost:" + strconv.Itoa(ports.Health) + "/health\"]\n")
+	builder.WriteString("      interval: 10s\n")
+	builder.WriteString("      timeout: 5s\n")
+	builder.WriteString("      retries: 5\n")
+	builder.WriteString("      start_period: 10s\n")
+	builder.WriteString("    restart: unless-stopped\n")
 
 	return builder.String(), nil
 }
@@ -306,23 +435,29 @@ func (r *Renderer) renderFrontendService(name string, service configschema.Front
 //
 // Performance:
 //   - String building
-func (r *Renderer) renderDatabaseService(db configschema.DatabaseConfig) string {
+func (r *Renderer) renderDatabaseService(db configschema.DatabaseConfig, projectName string) string {
 	var builder strings.Builder
 
 	builder.WriteString("  mysql:\n")
 	builder.WriteString("    image: " + db.Image + "\n")
-	builder.WriteString("    ports:\n")
-	builder.WriteString("      - \"" + strconv.Itoa(db.Port) + ":" + strconv.Itoa(db.Port) + "\"\n")
+	builder.WriteString("    container_name: " + projectName + "-mysql\n")
+	builder.WriteString("    restart: unless-stopped\n")
 	builder.WriteString("    environment:\n")
 	builder.WriteString("      - MYSQL_ROOT_PASSWORD=" + db.RootPassword + "\n")
 	builder.WriteString("      - MYSQL_DATABASE=" + db.Database + "\n")
 	builder.WriteString("      - MYSQL_USER=" + db.User + "\n")
 	builder.WriteString("      - MYSQL_PASSWORD=" + db.Password + "\n")
+	builder.WriteString("    ports:\n")
+	builder.WriteString("      - \"" + strconv.Itoa(db.Port) + ":" + strconv.Itoa(db.Port) + "\"\n")
+	builder.WriteString("    volumes:\n")
+	builder.WriteString("      - mysql_data:/var/lib/mysql\n")
 	builder.WriteString("    healthcheck:\n")
-	builder.WriteString("      test: [\"CMD\", \"mysqladmin\", \"ping\", \"-h\", \"localhost\"]\n")
-	builder.WriteString("      interval: 30s\n")
-	builder.WriteString("      timeout: 10s\n")
-	builder.WriteString("      retries: 3\n")
+	builder.WriteString("      test: [\"CMD\", \"mysqladmin\", \"ping\", \"-h\", \"localhost\", \"-u\", \"root\", \"-p" + db.RootPassword + "\"]\n")
+	builder.WriteString("      interval: 10s\n")
+	builder.WriteString("      timeout: 5s\n")
+	builder.WriteString("      retries: 5\n")
+	builder.WriteString("    networks:\n")
+	builder.WriteString("      - " + projectName + "-network\n")
 
 	return builder.String()
 }

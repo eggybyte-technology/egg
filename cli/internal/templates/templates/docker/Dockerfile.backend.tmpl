@@ -30,8 +30,10 @@ ARG HEALTH_PORT=8081
 ARG METRICS_PORT=9091
 
 # ------------------------------------------------------------------------------
-# 1️⃣ Builder Stage
+# Builder Stage
 # ------------------------------------------------------------------------------
+# Docker BuildKit automatically handles platform selection based on --platform flag.
+# Base images will be pulled for the target platform specified in build command.
 FROM ghcr.io/eggybyte-technology/eggybyte-go-builder:go${GO_VERSION}-alpine3.22 AS builder
 
 LABEL org.opencontainers.image.title="EggyByte Builder" \
@@ -52,28 +54,33 @@ WORKDIR /src
 COPY gen/go gen/go
 COPY backend backend
 
+# Download dependencies and update go.sum with checksum verification disabled
+# Use GOPROXY=direct to bypass proxy and fetch latest v0.0.0-dev dependencies directly
+# Use GOSUMDB=off to disable checksum verification for development versions
+RUN cd backend/${SERVICE_NAME} && \
+    GOPROXY=direct GOSUMDB=off go mod download && \
+    GOPROXY=direct GOSUMDB=off go mod tidy
+
 # Build the service binary
+# Use GOPROXY=direct to bypass proxy and fetch latest v0.0.0-dev dependencies directly
+# Use GOSUMDB=off to disable checksum verification for development versions
 RUN echo "Building service '${SERVICE_NAME}' for ${TARGETOS}/${TARGETARCH}" && \
     mkdir -p ${OUT_DIR}/${SERVICE_NAME} && \
     cd backend/${SERVICE_NAME} && \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    CGO_ENABLED=0 GOPROXY=direct GOSUMDB=off GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" \
     -o ${OUT_DIR}/${SERVICE_NAME}/server ./cmd/server && \
     echo "Binary built at ${OUT_DIR}/${SERVICE_NAME}/server"
 
 # ------------------------------------------------------------------------------
-# 2️⃣ Runtime Stage
+# Runtime Stage
 # ------------------------------------------------------------------------------
+# Docker BuildKit automatically handles platform selection based on --platform flag.
+# Base images will be pulled for the target platform specified in build command.
 FROM ghcr.io/eggybyte-technology/eggybyte-go-alpine:go${GO_VERSION}-alpine3.22 AS runtime
 
-LABEL org.opencontainers.image.title="${PROJECT_NAME}-${SERVICE_NAME}" \
-      org.opencontainers.image.description="EggyByte microservice: ${SERVICE_NAME}" \
-      org.opencontainers.image.source="${MODULE_PREFIX}" \
-      org.opencontainers.image.vendor="EggyByte Technology" \
-      org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="${VERSION}"
-
 # Inherit same args to maintain global consistency
+# Note: ARG declarations must come BEFORE LABEL to avoid undefined variable warnings
 ARG SERVICE_NAME
 ARG OUT_DIR
 ARG HTTP_PORT
@@ -82,6 +89,13 @@ ARG METRICS_PORT
 ARG PROJECT_NAME
 ARG MODULE_PREFIX
 ARG VERSION
+
+LABEL org.opencontainers.image.title="${PROJECT_NAME}-${SERVICE_NAME}" \
+      org.opencontainers.image.description="EggyByte microservice: ${SERVICE_NAME}" \
+      org.opencontainers.image.source="${MODULE_PREFIX}" \
+      org.opencontainers.image.vendor="EggyByte Technology" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}"
 
 WORKDIR /app
 

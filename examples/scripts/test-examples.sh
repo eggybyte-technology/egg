@@ -19,11 +19,11 @@ set -e
 
 # Source the unified logger
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/logger.sh"
 
 # Get the examples root directory (parent of scripts/)
 EXAMPLES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_ROOT="$(cd "$EXAMPLES_ROOT/.." && pwd)"
+source "$PROJECT_ROOT/scripts/logger.sh"
 
 # Test example services (smart infrastructure + rebuild services)
 test_examples() {

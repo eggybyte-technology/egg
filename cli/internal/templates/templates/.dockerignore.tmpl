@@ -1,0 +1,63 @@
+# Exclude go.sum files to allow Docker to regenerate them with correct checksums
+# This prevents checksum mismatch errors when building with v0.0.0-dev dependencies
+**/go.sum
+backend/**/go.sum
+gen/**/go.sum
+
+# Exclude build artifacts
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Exclude IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Exclude temporary files
+tmp/
+temp/
+*.tmp
+
+# Exclude logs
+*.log
+logs/
+
+# Exclude Flutter development tools and cache
+# Note: frontend/**/build/web is NOT excluded as it contains production build outputs needed for Docker
+frontend/**/.dart_tool/
+frontend/**/.flutter-plugins
+frontend/**/.flutter-plugins-dependencies
+frontend/**/.fvm/
+frontend/**/build/ios/
+frontend/**/build/android/
+frontend/**/build/linux/
+frontend/**/build/macos/
+frontend/**/build/windows/
+frontend/**/build/desktop/
+# Exclude Flutter debug/profile builds, but keep release builds (build/web for production)
+frontend/**/build/web/main.dart.js.map
+frontend/**/build/web/main.dart.js.gz
+frontend/**/build/web/.last_build_id
+
+# Exclude test coverage
+*.coverprofile
+coverage.html
+
+# Exclude environment files
+.env
+.env.local
+.env.*.local
+
+# Exclude dependency directories
+vendor/
+node_modules/
+
