@@ -4,6 +4,8 @@ package internal
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,7 +93,10 @@ func (m *ManagerImpl) loadInitial(ctx context.Context) error {
 	m.snapshot = merged
 	m.mu.Unlock()
 
-	m.logger.Info("configuration loaded", "keys", len(merged))
+	// Log configuration details for debugging
+	m.logConfigurationDetails(merged)
+
+	m.logger.Info("configuration loaded", log.Int("keys", len(merged)))
 	return nil
 }
 
@@ -236,4 +241,95 @@ func (m *ManagerImpl) OnUpdate(fn func(snapshot map[string]string)) func() {
 		defer m.subsMu.Unlock()
 		delete(m.updateSubs, subID)
 	}
+}
+
+// logConfigurationDetails logs configuration details with sensitive data masking.
+// This helps debug configuration issues without exposing secrets.
+//
+// Logs:
+//   - INFO level: Summary of all configuration keys with masked sensitive values
+//   - DEBUG level: Detailed key-value pairs for each configuration variable
+func (m *ManagerImpl) logConfigurationDetails(config map[string]string) {
+	if len(config) == 0 {
+		m.logger.Info("configuration details", log.Str("status", "empty"))
+		return
+	}
+
+	// Sort keys for consistent output
+	keys := make([]string, 0, len(config))
+	for k := range config {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// Build summary message for INFO level
+	var summaryParts []string
+	for _, key := range keys {
+		value := config[key]
+		maskedValue := maskSensitiveValue(key, value)
+		summaryParts = append(summaryParts, fmt.Sprintf("%s=%s", key, maskedValue))
+	}
+
+	// Log summary at INFO level for easy debugging
+	m.logger.Info("configuration variables",
+		log.Int("count", len(config)),
+		log.Str("summary", strings.Join(summaryParts, ", ")))
+
+	// Log detailed key-value pairs at DEBUG level
+	for _, key := range keys {
+		value := config[key]
+		maskedValue := maskSensitiveValue(key, value)
+		m.logger.Debug("configuration variable",
+			log.Str("key", key),
+			log.Str("value", maskedValue))
+	}
+}
+
+// maskSensitiveValue masks sensitive configuration values.
+// Sensitive keys include: password, passwd, secret, key, token, dsn, auth, credential.
+func maskSensitiveValue(key, value string) string {
+	if value == "" {
+		return "(empty)"
+	}
+
+	keyLower := strings.ToLower(key)
+
+	// Check if key contains sensitive keywords
+	sensitiveKeywords := []string{
+		"password", "passwd", "pass",
+		"secret", "key", "token",
+		"dsn", "auth", "credential",
+		"api_key", "apikey", "apisecret",
+		"private", "private_key",
+	}
+
+	for _, keyword := range sensitiveKeywords {
+		if strings.Contains(keyLower, keyword) {
+			// Mask the value, showing only first 4 chars and last 4 chars if long enough
+			if len(value) <= 8 {
+				return "***"
+			}
+			return value[:4] + "***" + value[len(value)-4:]
+		}
+	}
+
+	// For DSN-like values (containing @), mask the password part
+	if strings.Contains(value, "@") && (strings.Contains(keyLower, "dsn") || strings.Contains(keyLower, "uri") || strings.Contains(keyLower, "url")) {
+		// Format: user:password@host:port/database
+		// Mask as: user:***@host:port/database
+		parts := strings.SplitN(value, "@", 2)
+		if len(parts) == 2 {
+			userPass := parts[0]
+			rest := parts[1]
+			if strings.Contains(userPass, ":") {
+				userParts := strings.SplitN(userPass, ":", 2)
+				if len(userParts) == 2 {
+					return userParts[0] + ":***@" + rest
+				}
+			}
+			return "***@" + rest
+		}
+	}
+
+	return value
 }
