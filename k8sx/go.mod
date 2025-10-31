@@ -21,7 +21,7 @@ replace go.eggybyte.com/egg/clientx => /Users/fengguangyao/eggybyte/projects/go/
 replace go.eggybyte.com/egg/storex => /Users/fengguangyao/eggybyte/projects/go/egg/storex
 
 require (
-	go.eggybyte.com/egg/core v0.3.0
+	go.eggybyte.com/egg/core v0.3.1
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v0.34.1
