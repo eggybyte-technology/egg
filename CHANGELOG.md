@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CLI**: Port proxy management for Docker Compose services
+  - `egg compose proxy <service-name> <service-port> [--local-port <port>]` - Create port proxy for a single service
+  - `egg compose proxy-all` - Automatically create port proxies for all services (HTTP, Health, Metrics ports)
+  - `egg compose proxy-stop` - Stop all running port proxy containers
+  - Automatic port availability detection and alternative port finding
+  - Uses socat-based containers to map Docker network ports to localhost
+  - Supports both backend services (HTTP, Health, Metrics) and frontend services (port 3000)
+
+### Fixed
+
+- **CLI**: Fixed Docker Compose network name resolution for port proxies
+  - Docker Compose network naming convention: `<project-name>_<network-name>`
+  - Port proxies now correctly connect to Docker Compose networks
+  - All compose commands now use `-p` flag to specify project name for consistent network naming
+
+### Changed
+
+- **CLI**: `egg compose up` always uses detached mode (`-d`)
+  - Removed `--detached` flag (always runs in background)
+  - Automatically generates compose.yaml before starting services
+  - Improved network configuration with explicit project name
+
+- **CLI**: Removed `.env` file generation from Docker Compose
+  - Environment variables are now configured directly in compose.yaml
+  - Cleaner deployment structure without unnecessary files
+
+- **Release Process**: Improved large file detection
+  - Created standalone `scripts/check-large-files.sh` script for unified large file detection
+  - `make git-large-files` now uses `--check-only` flag (no interactive prompt, just display results)
+  - Release scripts (`release.sh`, `cli-release.sh`) now check only files that will be added by `git add`
+  - Uses `--check-staged` flag to detect large files in modified/untracked files (excludes `.gitignore` ignored files)
+  - Prevents false positives from build artifacts and ignored files
+  - All scripts use unified `logger.sh` for consistent logging output
+
 ## [0.3.1] - 2025-01-31
 
 ### Changed

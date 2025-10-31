@@ -34,8 +34,9 @@ sudo cp cli/bin/egg /usr/local/bin/egg
 # 1. Check development environment
 egg doctor --install
 
-# 2. Initialize a new project
+# 2. Initialize a new project (includes API configuration)
 egg init --project-name myapp --module-prefix github.com/myorg/myapp
+# Or simply: egg init (uses current directory name)
 
 # 3. Create backend services
 egg create backend user --proto crud --local-modules
@@ -44,24 +45,27 @@ egg create backend ping --proto echo --local-modules
 # 4. Create frontend
 egg create frontend web --platforms web
 
-# 5. Initialize API definitions
-egg api init
-
-# 6. Generate code (using local protoc plugins)
+# 5. Generate code (using local protoc plugins)
 egg api generate
 
-# 7. Build services (requires foundation images)
-egg build backend user    # Build backend service
-egg build frontend web     # Build frontend service
-egg build all              # Build all services
+# 6. Build services (requires foundation images)
+egg build backend user      # Build specific backend service
+egg build frontend web       # Build specific frontend service
+egg build all --local        # Build all services locally (no push)
 
-# 8. Generate Docker Compose
+# 7. Generate Docker Compose
 egg compose generate
 
-# 9. Generate Helm charts
+# 8. Start services with Docker Compose (default: detached mode)
+egg compose up
+
+# 9. Create port proxies for local access (optional)
+egg compose proxy-all
+
+# 10. Generate Helm charts
 egg kube generate
 
-# 10. Check project health
+# 11. Check project health
 egg check
 ```
 
@@ -104,7 +108,7 @@ egg doctor --install
 
 #### `egg init` - Initialize a new project
 
-Scaffolds a complete project structure with proper directory layout.
+Scaffolds a complete project structure with proper directory layout. **Automatically includes API configuration** (buf.yaml and buf.gen.yaml), so you don't need to run `egg api init` separately.
 
 ```bash
 egg init --project-name <name> --module-prefix <prefix> [flags]
@@ -112,9 +116,17 @@ egg init --project-name <name> --module-prefix <prefix> [flags]
 
 **Flags:**
 - `--project-name` - Project name (default: current directory name)
-- `--module-prefix` - Go module prefix (required)
+- `--module-prefix` - Go module prefix (default: github.com/eggybyte-technology/<project-name>)
 - `--docker-registry` - Docker registry URL (default: ghcr.io/eggybyte-technology)
 - `--version` - Project version (default: v1.0.0)
+
+**What it creates:**
+- Project directory structure (api/, backend/, frontend/, gen/, deploy/)
+- egg.yaml configuration file
+- API configuration files (buf.yaml, buf.gen.yaml) - **automatically included**
+- Basic directory structure for backend services
+
+**Note:** The `init` command creates the project in the current directory if no project name is specified, or creates a new subdirectory if `--project-name` is provided.
 
 **Example:**
 ```bash
@@ -152,6 +164,9 @@ egg create backend <service-name> [flags]
 **Flags:**
 - `--proto` - Proto template type: `echo`, `crud`, or `none` (default: echo)
 - `--local-modules` - Use local egg modules with v0.0.0-dev versions (required for development)
+- `--http-port` - HTTP port (default: auto-assigned from available ports)
+- `--health-port` - Health check port (default: auto-assigned)
+- `--metrics-port` - Metrics port (default: auto-assigned)
 
 **Example:**
 ```bash
@@ -206,11 +221,17 @@ egg create frontend user_app --platforms web,android,ios
 
 #### `egg api init` - Initialize API definitions
 
+**Note:** This command is usually **not needed** for new projects, as `egg init` automatically creates the API configuration files (`api/buf.yaml` and `api/buf.gen.yaml`). Only use this command if you have accidentally deleted these files and need to recreate them.
+
 Creates API directory structure with Buf configuration using local protoc plugins.
 
 ```bash
 egg api init
 ```
+
+**When to use:**
+- You accidentally deleted `api/buf.yaml` or `api/buf.gen.yaml`
+- You need to regenerate API configuration files in an existing project
 
 **Generated files:**
 - `api/buf.yaml` - Buf schema configuration
@@ -270,8 +291,10 @@ plugins:
 Build backend services and frontend applications using containerized build environments with multi-platform support.
 
 ```bash
-egg build backend <service>       # Build backend service
-egg build frontend <service>      # Build frontend service  
+egg build backend <service>       # Build specific backend service
+egg build backend                # Build all backend services
+egg build frontend <service>      # Build specific frontend service
+egg build frontend                # Build all frontend services
 egg build all                     # Build all services
 ```
 
@@ -317,21 +340,30 @@ egg build frontend admin_portal --platform linux/amd64,linux/arm64 --push
 **Build All Services:**
 
 ```bash
-# Build all services (single platform, local)
+# Build all services (multi-platform with push - default)
+egg build all
+
+# Build for local platform only (no push)
+egg build all --local
+
+# Build for specific platform (local, no push)
 egg build all --platform linux/amd64
 
 # Build and push all (multi-platform)
 egg build all --platform linux/amd64,linux/arm64 --push
-
-# Default: single platform local build
-egg build all
 ```
 
 **Build Flags:**
 
 - `--tag` - Custom image tag (default: version from egg.yaml)
 - `--platform` - Target platform(s) (default: linux/amd64,linux/arm64)
-- `--push` - Push to registry (required for multi-platform)
+- `--push` - Push to registry (required for multi-platform builds)
+- `--local` - Build for local platform only (no push, single platform)
+
+**Build Behavior:**
+- **Single platform builds**: Can be kept local (no push) or pushed with `--push`
+- **Multi-platform builds**: MUST use `--push` (Docker buildx limitation)
+- **`egg build all`**: Default behavior is multi-platform with push; use `--local` to disable push
 
 **Output Structure:**
 
@@ -359,19 +391,20 @@ bin/
 
 #### `egg compose generate` - Generate Docker Compose configuration
 
-Creates `deploy/compose/compose.yaml` and `.env` files with pre-built image references.
+Creates `deploy/compose/compose.yaml` with pre-built image references and environment variables.
 
-**Important:** Docker Compose uses pre-built images and Docker internal network. Services are not exposed to localhost ports.
+**Important:** Docker Compose uses pre-built images and Docker internal network. Services are not exposed to localhost ports by default. Use `egg compose proxy` or `egg compose proxy-all` to create port proxies for local access.
 
 ```bash
-# Build images first
-egg build all --local
-
-# Then generate compose configuration
+# Generate compose configuration
 egg compose generate
 
+# Build images first (optional, if not already built)
+egg build all --local
+
 # Start services
-docker compose -f deploy/compose/compose.yaml up -d
+egg compose up
+# Or: docker compose -f deploy/compose/compose.yaml up -d
 
 # Services are accessible via Docker network only
 # Use docker compose exec to access services
@@ -381,15 +414,15 @@ docker compose exec user curl http://ping:8090/health
 **Output:**
 ```
 deploy/compose/
-├── compose.yaml  # Service definitions with image references (no port mappings)
-└── .env          # Environment variables
+└── compose.yaml  # Service definitions with image references and environment variables (no port mappings)
 ```
 
 **Service Access:**
 - Services communicate via Docker internal network DNS
 - Use service names: `http://user:8080`, `http://ping:8090`
-- No localhost port mappings (improved security)
+- No localhost port mappings by default (improved security)
 - Access services via `docker compose exec` for testing
+- Use `egg compose proxy-all` to create port proxies for localhost access
 
 **Environment Variables:**
 - `SERVICE_NAME`, `SERVICE_VERSION`, `APP_ENV`, `LOG_LEVEL` - Service identity and logging
@@ -398,18 +431,140 @@ deploy/compose/
 
 #### `egg compose up` - Start services
 
+Starts all services with Docker Compose. By default, runs in **detached mode** (background), so services start and the command returns immediately.
+
 ```bash
 egg compose up [flags]
 ```
 
-**Flags:**
-- `--detached` - Run in background
-- `--build` - Build images before starting
+**Behavior:**
+- Automatically generates the compose configuration if it doesn't exist
+- Shows which external tool is being used (e.g., "Using external tool: docker")
+- Displays command execution results (stdout and stderr)
+- Always runs in detached mode (`-d` flag)
+- Uses explicit project name (`-p`) for consistent network naming
+
+**Example:**
+```bash
+# Start services in detached mode (always)
+egg compose up
+```
 
 #### `egg compose down` - Stop services
 
 ```bash
 egg compose down
+```
+
+#### `egg compose logs` - Show service logs
+
+```bash
+egg compose logs [flags]
+```
+
+**Flags:**
+- `--service` - Filter logs by service name
+- `--follow` / `-f` - Follow log output in real-time
+
+#### `egg compose proxy` - Create port proxy for a service
+
+Creates a socat-based port proxy container to map a Docker Compose service port to localhost.
+
+```bash
+egg compose proxy <service-name> <service-port> [--local-port <port>]
+```
+
+**Flags:**
+- `--local-port` - Local port to map to (0 to auto-find available port)
+
+**Behavior:**
+- Automatically detects port availability before creating proxy
+- Finds alternative port if specified port is unavailable
+- Creates socat container connected to Docker Compose network
+- Service remains accessible via Docker network and localhost
+
+**Example:**
+```bash
+# Create proxy for user service HTTP port (auto-find local port)
+egg compose proxy user 8080
+
+# Create proxy with specific local port
+egg compose proxy user 8080 --local-port 18080
+
+# Access service at http://localhost:8080 (or specified port)
+```
+
+#### `egg compose proxy-all` - Create port proxies for all services
+
+Automatically creates port proxies for all services defined in `egg.yaml`.
+
+```bash
+egg compose proxy-all
+```
+
+**Behavior:**
+- Creates proxies for all backend service ports (HTTP, Health, Metrics)
+- Creates proxies for all frontend service ports (port 3000)
+- Automatically detects port availability and finds alternatives if needed
+- Displays summary of all created port mappings
+
+**Example:**
+```bash
+# Create proxies for all services
+egg compose proxy-all
+
+# Output:
+# Creating port proxies for all services...
+#   Creating proxy for ping HTTP port 8090...
+#     Mapped to localhost:8090
+#   Creating proxy for ping Health port 8091...
+#     Mapped to localhost:8091
+#   ...
+# [✓] Port proxies created: 6 successful, 0 failed
+#
+# Summary of port mappings:
+#   ping:8090 -> localhost:8090 (test-project-proxy-ping-8090)
+#   ping:8091 -> localhost:8091 (test-project-proxy-ping-8091)
+#   ...
+```
+
+#### `egg compose proxy-stop` - Stop all port proxies
+
+Stops all running port proxy containers for the project.
+
+```bash
+egg compose proxy-stop
+```
+
+**Behavior:**
+- Finds all proxy containers matching project name pattern
+- Stops all running proxies
+- Cleans up port mappings
+
+**Example:**
+```bash
+# Stop all port proxies
+egg compose proxy-stop
+
+# Output:
+# Stopping all port proxies...
+# [✓] All port proxies stopped successfully!
+```
+
+**Port Proxy Workflow:**
+```bash
+# 1. Start services (in Docker network only)
+egg compose up
+
+# 2. Create port proxies for local access
+egg compose proxy-all
+
+# 3. Access services at localhost
+curl http://localhost:8080/health  # User service
+curl http://localhost:8090/health  # Ping service
+
+# 4. Stop proxies when done
+egg compose proxy-stop
 ```
 
 ### Kubernetes
@@ -421,6 +576,8 @@ Creates a single project-level Helm chart containing all services.
 ```bash
 egg kube generate
 ```
+
+**Note:** This command generates Helm charts. Use `egg kube template` to render templates, or `egg kube apply` to deploy directly.
 
 **Output:**
 ```
@@ -462,18 +619,11 @@ egg kube uninstall -n <namespace>
 
 ### Build Commands
 
-#### `egg build backend` - Build backend services
-
-```bash
-egg build backend <service-name>  # Build single service
-egg build backend --all            # Build all services
-```
-
-#### `egg build docker` - Build Docker images
-
-```bash
-egg build docker <service-name>
-```
+**Note:** The `build` command is covered in the "Build Management" section above. Individual service builds can be done with:
+- `egg build backend <service>` - Build specific backend service
+- `egg build backend` - Build all backend services
+- `egg build frontend <service>` - Build specific frontend service
+- `egg build frontend` - Build all frontend services
 
 ## Configuration
 
@@ -636,7 +786,7 @@ cd backend/user && go build ./cmd/server
 # 1. Check environment
 egg doctor --install
 
-# 2. Initialize project
+# 2. Initialize project (includes API configuration automatically)
 egg init --project-name shop --module-prefix github.com/myorg/shop
 
 # 3. Create services
@@ -656,8 +806,8 @@ egg compose generate
 egg kube generate
 
 # 7. Build and run
-egg build backend --all
-egg compose up
+egg build all --local        # Build all services locally
+egg compose up               # Start services (default: detached mode)
 ```
 
 ### Development Workflow
@@ -677,7 +827,8 @@ egg compose generate
 egg kube generate
 
 # Test locally
-egg compose up
+egg build all --local        # Build services locally
+egg compose up               # Start services
 ```
 
 ## Best Practices
@@ -737,21 +888,21 @@ egg compose up
 ```bash
 # Build and push multi-platform images
 egg build backend user --platform linux/amd64,linux/arm64 --push
-egg build all --push  # Uses default platforms
+egg build all  # Uses default platforms (multi-platform with push)
 ```
 
 **For Local Development:**
 ```bash
-# Build for current architecture only
-egg build backend user --platform linux/amd64
-egg build all --platform linux/arm64
+# Build for current architecture only (no push)
+egg build backend user --local
+egg build all --local  # Build all services locally
 ```
 
 **Important Notes:**
 - Multi-platform builds REQUIRE `--push` flag (Docker buildx limitation)
-- Single platform builds can be kept local (no push needed)
+- Single platform builds can be kept local (use `--local` or omit `--push`)
 - Default platforms: `linux/amd64,linux/arm64`
-- CLI will warn and downgrade to single platform if `--push` is missing
+- `egg build all` defaults to multi-platform with push; use `--local` to disable push
 
 ### 6. Plugin Management
 

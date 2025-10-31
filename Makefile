@@ -262,12 +262,12 @@ cli-release:
 	./scripts/cli-release.sh $$CLI_VERSION --framework-version $$FW_VERSION
 
 # Delete ALL version tags (DANGEROUS OPERATION!)
-# This will delete all tags for all modules, both locally and remotely
+# This will delete all tags for all modules (including CLI), both locally and remotely
 # Requires 3 confirmations to proceed
 delete-all-tags:
 	$(call print_header,⚠️  DANGER: Delete ALL Version Tags)
 	@echo ""
-	@echo "$(RED)$(BOLD)⚠️  WARNING: This will delete ALL version tags for ALL modules!$(RESET)"
+	@echo "$(RED)$(BOLD)⚠️  WARNING: This will delete ALL version tags for ALL modules (including CLI)!$(RESET)"
 	@echo "$(RED)$(BOLD)⚠️  This operation is IRREVERSIBLE!$(RESET)"
 	@echo ""
 	@./scripts/release.sh --delete-all-tags
@@ -277,18 +277,10 @@ delete-all-tags:
 # ==============================================================================
 
 # Check large files tracked by git in current working directory
-# Shows top 20 largest files currently tracked by git
+# Shows files larger than 1MB (both tracked and untracked)
+# No interaction, just display results
 git-large-files:
-	$(call print_header,Checking large files tracked by git)
-	@echo ""
-	@echo "$(CYAN)Top 20 largest files in git working directory:$(RESET)"
-	@echo ""
-	@git ls-files -z | xargs -0 du -h 2>/dev/null | sort -hr | head -n 20 | \
-		awk '{printf "  %8s  %s\n", $$1, substr($$0, index($$0,$$2))}' || \
-		(echo "$(YELLOW)No tracked files found or git not initialized$(RESET)" && exit 0)
-	@echo ""
-	$(call print_info,To check files larger than a specific size, use:)
-	@echo "  git ls-files -z | xargs -0 du -h | awk '\$$1 > \"10M\"'"
+	@bash scripts/check-large-files.sh --check-only
 
 # Check large objects in git history
 # Shows top 20 largest objects ever committed to git repository

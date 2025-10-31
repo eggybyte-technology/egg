@@ -42,13 +42,16 @@ go install go.eggybyte.com/egg/cli/cmd/egg@latest
 
 ```bash
 # Initialize a new project
-egg init my-project
+egg init --project-name my-project --module-prefix github.com/myorg/my-project
 
 # Create a backend service
 cd my-project
-egg create service backend --type crud
+egg create backend user --proto crud --local-modules
 
-# Start services
+# Generate API code
+egg api generate
+
+# Build and start services
 egg build all --local
 egg compose up
 ```

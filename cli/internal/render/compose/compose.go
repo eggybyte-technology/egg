@@ -96,11 +96,6 @@ func (r *Renderer) Render(config *configschema.Config) error {
 		return fmt.Errorf("failed to write compose.yaml: %w", err)
 	}
 
-	// Generate .env file if needed
-	if err := r.generateEnvFile(config); err != nil {
-		return fmt.Errorf("failed to generate .env file: %w", err)
-	}
-
 	ui.Success("Docker Compose configuration rendered")
 	return nil
 }
@@ -122,8 +117,7 @@ func (r *Renderer) Render(config *configschema.Config) error {
 func (r *Renderer) generateComposeYAML(config *configschema.Config) (string, error) {
 	var builder strings.Builder
 
-	// Write Compose header
-	builder.WriteString("version: '3.8'\n\n")
+	// Write Compose header (no version field - Docker Compose no longer requires it)
 	builder.WriteString("services:\n")
 
 	// Render backend services

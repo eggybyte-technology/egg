@@ -137,9 +137,10 @@ func (r *Runner) execute(ctx context.Context, name string, args ...string) (*Com
 		cmd.Env = append(os.Environ(), "GOWORK=off")
 	}
 
-	// Show command if verbose
+	// Always show tool usage
+	ui.Info("Using external tool: %s", name)
 	if r.verbose {
-		ui.Debug("Running: %s %s", name, strings.Join(args, " "))
+		ui.Debug("Executing command: %s %s", name, strings.Join(args, " "))
 	}
 
 	// Capture output
@@ -159,26 +160,27 @@ func (r *Runner) execute(ctx context.Context, name string, args ...string) (*Com
 	}
 
 	// Handle errors
+	cmdStr := fmt.Sprintf("%s %s", name, strings.Join(args, " "))
 	if err != nil {
 		if result.Stderr != "" && result.Stdout != "" {
-			return result, fmt.Errorf("command failed: %w\nstderr: %s\nstdout: %s", err, result.Stderr, result.Stdout)
+			return result, fmt.Errorf("command failed: %w\ncommand: %s\nstderr: %s\nstdout: %s", err, cmdStr, result.Stderr, result.Stdout)
 		} else if result.Stderr != "" {
-			return result, fmt.Errorf("command failed: %w\nstderr: %s", err, result.Stderr)
+			return result, fmt.Errorf("command failed: %w\ncommand: %s\nstderr: %s", err, cmdStr, result.Stderr)
 		} else if result.Stdout != "" {
-			return result, fmt.Errorf("command failed: %w\nstdout: %s", err, result.Stdout)
+			return result, fmt.Errorf("command failed: %w\ncommand: %s\nstdout: %s", err, cmdStr, result.Stdout)
 		}
-		return result, fmt.Errorf("command failed: %w", err)
+		return result, fmt.Errorf("command failed: %w\ncommand: %s", err, cmdStr)
 	}
 
 	if result.ExitCode != 0 {
 		if result.Stderr != "" && result.Stdout != "" {
-			return result, fmt.Errorf("command exited with code %d\nstderr: %s\nstdout: %s", result.ExitCode, result.Stderr, result.Stdout)
+			return result, fmt.Errorf("command exited with code %d\ncommand: %s\nstderr: %s\nstdout: %s", result.ExitCode, cmdStr, result.Stderr, result.Stdout)
 		} else if result.Stderr != "" {
-			return result, fmt.Errorf("command exited with code %d\nstderr: %s", result.ExitCode, result.Stderr)
+			return result, fmt.Errorf("command exited with code %d\ncommand: %s\nstderr: %s", result.ExitCode, cmdStr, result.Stderr)
 		} else if result.Stdout != "" {
-			return result, fmt.Errorf("command exited with code %d\nstdout: %s", result.ExitCode, result.Stdout)
+			return result, fmt.Errorf("command exited with code %d\ncommand: %s\nstdout: %s", result.ExitCode, cmdStr, result.Stdout)
 		}
-		return result, fmt.Errorf("command exited with code %d", result.ExitCode)
+		return result, fmt.Errorf("command exited with code %d\ncommand: %s", result.ExitCode, cmdStr)
 	}
 
 	return result, nil
@@ -219,13 +221,14 @@ func (r *Runner) executeWithEnv(ctx context.Context, env map[string]string, name
 		cmd.Env = append(cmd.Env, "GOWORK=off")
 	}
 
-	// Show command if verbose
+	// Always show tool usage
+	ui.Info("Using external tool: %s", name)
 	if r.verbose {
 		envStr := ""
 		for k, v := range env {
 			envStr += fmt.Sprintf("%s=%s ", k, v)
 		}
-		ui.Debug("Running: %s%s %s", envStr, name, strings.Join(args, " "))
+		ui.Debug("Executing command: %s%s %s", envStr, name, strings.Join(args, " "))
 	}
 
 	// Capture output
@@ -245,26 +248,27 @@ func (r *Runner) executeWithEnv(ctx context.Context, env map[string]string, name
 	}
 
 	// Handle errors
+	cmdStr := fmt.Sprintf("%s %s", name, strings.Join(args, " "))
 	if err != nil {
 		if result.Stderr != "" && result.Stdout != "" {
-			return result, fmt.Errorf("command failed: %w\nstderr: %s\nstdout: %s", err, result.Stderr, result.Stdout)
+			return result, fmt.Errorf("command failed: %w\ncommand: %s\nstderr: %s\nstdout: %s", err, cmdStr, result.Stderr, result.Stdout)
 		} else if result.Stderr != "" {
-			return result, fmt.Errorf("command failed: %w\nstderr: %s", err, result.Stderr)
+			return result, fmt.Errorf("command failed: %w\ncommand: %s\nstderr: %s", err, cmdStr, result.Stderr)
 		} else if result.Stdout != "" {
-			return result, fmt.Errorf("command failed: %w\nstdout: %s", err, result.Stdout)
+			return result, fmt.Errorf("command failed: %w\ncommand: %s\nstdout: %s", err, cmdStr, result.Stdout)
 		}
-		return result, fmt.Errorf("command failed: %w", err)
+		return result, fmt.Errorf("command failed: %w\ncommand: %s", err, cmdStr)
 	}
 
 	if result.ExitCode != 0 {
 		if result.Stderr != "" && result.Stdout != "" {
-			return result, fmt.Errorf("command exited with code %d\nstderr: %s\nstdout: %s", result.ExitCode, result.Stderr, result.Stdout)
+			return result, fmt.Errorf("command exited with code %d\ncommand: %s\nstderr: %s\nstdout: %s", result.ExitCode, cmdStr, result.Stderr, result.Stdout)
 		} else if result.Stderr != "" {
-			return result, fmt.Errorf("command exited with code %d\nstderr: %s", result.ExitCode, result.Stderr)
+			return result, fmt.Errorf("command exited with code %d\ncommand: %s\nstderr: %s", result.ExitCode, cmdStr, result.Stderr)
 		} else if result.Stdout != "" {
-			return result, fmt.Errorf("command exited with code %d\nstdout: %s", result.ExitCode, result.Stdout)
+			return result, fmt.Errorf("command exited with code %d\ncommand: %s\nstdout: %s", result.ExitCode, cmdStr, result.Stdout)
 		}
-		return result, fmt.Errorf("command exited with code %d", result.ExitCode)
+		return result, fmt.Errorf("command exited with code %d\ncommand: %s", result.ExitCode, cmdStr)
 	}
 
 	return result, nil
@@ -364,6 +368,25 @@ func (r *Runner) Flutter(ctx context.Context, args ...string) (*CommandResult, e
 //   - Streaming output capture
 func (r *Runner) Docker(ctx context.Context, args ...string) (*CommandResult, error) {
 	return r.execute(ctx, "docker", args...)
+}
+
+// DockerCompose runs docker compose commands.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - args: Docker Compose command arguments
+//
+// Returns:
+//   - *CommandResult: Command execution result
+//   - error: Execution error if any
+//
+// Concurrency:
+//   - Single-threaded per command
+//
+// Performance:
+//   - Streaming output capture
+func (r *Runner) DockerCompose(ctx context.Context, args ...string) (*CommandResult, error) {
+	return r.execute(ctx, "docker", append([]string{"compose"}, args...)...)
 }
 
 // Helm runs helm commands.
