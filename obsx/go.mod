@@ -2,11 +2,11 @@ module go.eggybyte.com/egg/obsx
 
 go 1.25.1
 
-// replace go.eggybyte.com/egg/core => /Users/fengguangyao/eggybyte/projects/go/egg/core
+replace go.eggybyte.com/egg/core => /Users/fengguangyao/eggybyte/projects/go/egg/core
 
-// replace go.eggybyte.com/egg/logx => /Users/fengguangyao/eggybyte/projects/go/egg/logx
+replace go.eggybyte.com/egg/logx => /Users/fengguangyao/eggybyte/projects/go/egg/logx
 
-// replace go.eggybyte.com/egg/configx => /Users/fengguangyao/eggybyte/projects/go/egg/configx
+replace go.eggybyte.com/egg/configx => /Users/fengguangyao/eggybyte/projects/go/egg/configx
 
 require (
 	github.com/prometheus/client_golang v1.23.2

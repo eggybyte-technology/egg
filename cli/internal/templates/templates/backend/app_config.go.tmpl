@@ -56,3 +56,10 @@ type AppConfig struct {
 	// Example:
 	// RateLimitQPS int `env:"RATE_LIMIT_QPS" default:"200"`
 }
+
+// GetBaseConfig returns the embedded BaseConfig for servicex framework use.
+// This method implements the BaseConfigProvider interface, allowing servicex
+// to extract BaseConfig for log level initialization and other framework features.
+func (c *AppConfig) GetBaseConfig() *configx.BaseConfig {
+	return &c.BaseConfig
+}

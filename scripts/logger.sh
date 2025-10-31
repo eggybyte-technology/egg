@@ -13,13 +13,17 @@
 
 # Color definitions for enhanced output
 RED='\033[0;31m'
-GREEN='\033[0;32m'
+GREEN='\033[1;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 BOLD='\033[1m'
 RESET='\033[0m'
+# Bright colors for better contrast
+BRIGHT_CYAN='\033[1;36m'
+BRIGHT_BLUE='\033[1;34m'
+WHITE='\033[0;37m'
 
 # Output formatting functions
 
@@ -37,28 +41,28 @@ print_header() {
 # Usage: print_success "Operation completed successfully"
 print_success() {
     local message="$1"
-    printf "${GREEN}[✓] SUCCESS:${RESET} %s\n" "$message"
+    printf "${GREEN}[✓] %s${RESET}\n" "$message"
 }
 
 # Print an error message
 # Usage: print_error "Something went wrong"
 print_error() {
     local message="$1"
-    printf "${RED}[✗] ERROR:${RESET} %s\n" "$message" >&2
+    printf "${RED}[✗] %s${RESET}\n" "$message" >&2
 }
 
 # Print an info message
 # Usage: print_info "Information here"
 print_info() {
     local message="$1"
-    printf "${CYAN}[i] INFO:${RESET} %s\n" "$message"
+    printf "${WHITE}%s${RESET}\n" "$message"
 }
 
 # Print a warning message
 # Usage: print_warning "This might be a problem"
 print_warning() {
     local message="$1"
-    printf "${YELLOW}[!] WARNING:${RESET} %s\n" "$message"
+    printf "${YELLOW}[!] %s${RESET}\n" "$message"
 }
 
 # Print a debug message (only if DEBUG is set)
@@ -66,7 +70,7 @@ print_warning() {
 print_debug() {
     local message="$1"
     if [ "${DEBUG:-false}" = "true" ]; then
-        printf "${MAGENTA}[DEBUG]:${RESET} %s\n" "$message"
+        printf "${MAGENTA}%s${RESET}\n" "$message"
     fi
 }
 
@@ -83,14 +87,14 @@ print_step() {
 print_section() {
     local section="$1"
     printf "\n"
-    printf "${BLUE}┌─ ${BOLD}%s${RESET} ${BLUE}────────────────────────────────────────────────────────────${RESET}\n" "$section"
+    printf "${WHITE}• ${BOLD}%s${RESET}\n" "$section"
 }
 
 # Print a command being executed (for transparency)
 # Usage: print_command "make build"
 print_command() {
     local command="$1"
-    printf "${CYAN}[CMD]${RESET} %s\n" "$command"
+    printf "${BRIGHT_CYAN}${BOLD}[CMD]${RESET} ${BRIGHT_CYAN}%s${RESET}\n" "$command"
 }
 
 # Exit with error message

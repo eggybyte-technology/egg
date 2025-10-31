@@ -84,6 +84,11 @@ egg doctor --install          # Install missing protoc plugins
 - Network connectivity
 - File system permissions
 
+**Output Format:**
+- Clean, consistent formatting with unified logging style
+- No redundant prefixes for better readability
+- Clear visual hierarchy for diagnostic results
+
 **Install plugins:**
 ```bash
 egg doctor --install
@@ -127,6 +132,12 @@ Checks project structure, configuration files, and dependencies.
 ```bash
 egg check
 ```
+
+**Output:**
+- Summary of linting results (errors, warnings, info)
+- Grouped results by severity level
+- Suggestions for fixing issues
+- Consistent formatting with unified logging style
 
 ### Service Generation
 
@@ -350,7 +361,7 @@ bin/
 
 Creates `deploy/compose/compose.yaml` and `.env` files with pre-built image references.
 
-**Important:** Docker Compose uses pre-built images. You must build images first:
+**Important:** Docker Compose uses pre-built images and Docker internal network. Services are not exposed to localhost ports.
 
 ```bash
 # Build images first
@@ -361,14 +372,24 @@ egg compose generate
 
 # Start services
 docker compose -f deploy/compose/compose.yaml up -d
+
+# Services are accessible via Docker network only
+# Use docker compose exec to access services
+docker compose exec user curl http://ping:8090/health
 ```
 
 **Output:**
 ```
 deploy/compose/
-├── compose.yaml  # Service definitions with image references
+├── compose.yaml  # Service definitions with image references (no port mappings)
 └── .env          # Environment variables
 ```
+
+**Service Access:**
+- Services communicate via Docker internal network DNS
+- Use service names: `http://user:8080`, `http://ping:8090`
+- No localhost port mappings (improved security)
+- Access services via `docker compose exec` for testing
 
 **Environment Variables:**
 - `SERVICE_NAME`, `SERVICE_VERSION`, `APP_ENV`, `LOG_LEVEL` - Service identity and logging
@@ -803,7 +824,17 @@ make build-cli
 
 # Run tests (rebuilds CLI automatically)
 ./scripts/test-cli.sh
+
+# Run code quality checks
+make lint     # Run linter on all modules
+make check    # Quick validation (lint + test)
+make quality  # Full quality check (tidy + lint + test + coverage)
 ```
+
+**Code Quality:**
+- All code follows Go best practices and passes golangci-lint checks
+- Error handling is properly annotated for CLI output functions
+- Code structure follows project conventions and standards
 
 ## License
 

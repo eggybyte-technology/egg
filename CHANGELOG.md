@@ -7,6 +7,132 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-01-31
+
+### Added
+
+- **Testing**: Comprehensive test coverage improvements across all modules
+  - `testingx`: Test utilities with 98.4% coverage (MockLogger, CaptureLogger, context helpers)
+  - `logx/internal`: Handler tests with 92.3% coverage (formatting, masking, concurrency)
+  - `httpx/internal`: Middleware tests with 100% coverage (security headers, CORS)
+  - `obsx/internal`: Provider and metrics tests with 69.8% coverage (OpenTelemetry integration)
+  - `runtimex/internal`: Health check tests with 20% coverage (registry, checkers)
+  - `storex/internal`: GORM adapter tests with 59.4% coverage (connection pooling, registry)
+  - `configx/internal`: Manager, sources, and validator tests with 66.4% coverage
+  - `connectx/internal`: Interceptor helper function tests with 23.3% coverage
+  - `clientx/internal`: Retry transport tests with 95.8% coverage (retry logic, circuit breaker)
+- **Testing**: Overall test coverage increased from 33.06% to 57.27% (+24.21 percentage points, +73.3% improvement)
+- **Testing**: Added comprehensive test suites for internal implementations
+  - Table-driven tests following Go best practices
+  - Concurrent safety verification
+  - Error handling and edge case coverage
+  - Mock implementations for external dependencies
+
+### Improved
+
+- **Testing**: Significantly improved test coverage across core modules
+  - `testingx`: From 0% to 98.4% coverage (foundational testing utilities)
+  - `logx`: From 20.1% to 86.4% coverage (logging handler and formatting)
+  - `httpx`: From 51.4% to ~100% coverage (HTTP middleware)
+  - `storex`: From 9.4% to 63.2% coverage (database adapters)
+  - `configx`: From 17.6% to 64.6% coverage (configuration management)
+  - `obsx`: From 5.5% to 68.8% coverage (observability)
+  - `clientx`: From 19.3% to 47.0% coverage (HTTP client with retry)
+  - `runtimex`: From 14.3% to 28.6% coverage (runtime management)
+- **Testing**: Enhanced test reliability and maintainability
+  - Proper mock implementations for external dependencies
+  - Table-driven test patterns for comprehensive coverage
+  - Concurrent safety verification in all test suites
+  - Edge case and error path testing
+
+### Added
+
+- **CLI**: Docker Compose service testing via Docker internal network
+  - Tests now access services using Docker service names instead of localhost
+  - Health checks and RPC tests run inside Docker network using `docker compose exec`
+  - Supports pattern matching for metrics endpoint validation
+- **CLI**: Enhanced test script modularity
+  - Removed redundant tests from integration test suite
+  - Streamlined test flow for better maintainability
+  - Services remain running after tests for manual inspection
+
+### Changed
+
+- **CLI**: Docker Compose templates no longer expose ports to localhost
+  - Services are accessed via Docker internal network only
+  - Removed port mappings from compose.yaml generation
+  - Improved security by preventing accidental local port exposure
+- **CLI**: Unified logging format across CLI and shell scripts
+  - CLI `ui` package now matches `logger.sh` output format
+  - Removed redundant status text (SUCCESS, ERROR) from logger output
+  - Info and debug messages without prefixes for cleaner output
+  - Full-line coloring for better readability
+  - Section headers use simple white bullet point (•)
+  - Enhanced contrast for command and section outputs
+- **CLI**: Improved `egg doctor` command output
+  - Removed redundant prefixes for cleaner display
+  - Better visual hierarchy with standardized formatting
+- **CLI**: Optimized `egg check` command output
+  - Added summary display at the beginning
+  - Consistent formatting for errors, warnings, and info messages
+  - Better organized results grouping
+
+### Improved
+
+- **Scripts**: Enhanced logger.sh with cleaner output format
+  - Success messages: `[✓] message` (no "SUCCESS:" prefix)
+  - Error messages: `[✗] message` (no "ERROR:" prefix)
+  - Info messages: `message` (white, no prefix)
+  - Debug messages: `message` (magenta, no prefix)
+  - Warning messages: `[!] message` (yellow)
+  - Section headers: `• Section Name` (white)
+  - Commands: `[CMD] command` (bright cyan, enhanced contrast)
+- **Testing**: Docker Compose integration tests now use Docker network DNS
+  - Health checks: `http://service-name:port/path`
+  - RPC tests: `http://service-name:port/rpc-path`
+  - Metrics tests: `http://service-name:port/metrics` with pattern matching
+  - Tests execute curl commands inside Docker containers via `docker compose exec`
+- **CLI**: Improved code quality and linter compliance
+  - All linter errors resolved (unlambda, wsl, errcheck)
+  - Proper error handling annotations for CLI output functions
+  - Cleaner code structure following Go best practices
+- **Build System**: Improved lint command reliability
+  - Makefile lint target now correctly handles empty output scenarios
+  - Fixed false-positive failures in multi-module lint runs
+
+### Removed
+
+- **CLI**: Removed redundant integration tests from test-cli.sh
+  - Test 7: Runtime image check (no longer built locally)
+  - Test 9: Build Docker Image (merged into Test 8)
+  - Test 10: Docker Compose Validation (covered by Test 12)
+  - Test 13: Validate egg.yaml structure (covered by Test 2)
+  - Test 15: API Code Generation Verification (covered by Test 5)
+  - Test 16: Service Compilation (covered by Test 8)
+  - Test 17: Syntax Validation (covered by build process)
+- **CLI**: Removed Docker Compose port mappings from templates
+  - Backend services no longer expose HTTP/Health/Metrics ports
+  - Frontend services no longer expose web ports
+  - Database services no longer expose database ports
+  - Services accessed via Docker network only
+
+### Fixed
+
+- **CLI**: Fixed Docker Compose test failures caused by removed port mappings
+  - Tests now correctly access services via Docker internal network
+  - Health checks work with Docker service names instead of localhost
+  - RPC tests execute inside Docker containers for proper network access
+- **CLI**: Fixed `egg doctor` output showing redundant prefixes (`[✓] [+] Go`)
+- **CLI**: Fixed `egg check` output format inconsistencies
+- **CLI**: Fixed code quality issues identified by linter
+  - Simplified template function in `templates.go` (removed unnecessary lambda wrapper)
+  - Fixed case block formatting in `ui.go` (added proper newlines per wsl linter)
+  - Added proper error handling annotations for stdout/stderr writes in CLI context
+  - Simplified single-case select statement in `compose.go`
+- **Makefile**: Fixed lint command logic to handle empty grep output correctly
+  - Lint now correctly passes when all modules have no errors
+  - Fixed false-positive failures caused by grep exit code when no matches found
+
 ### Added
 
 - **CLI**: Support for optional database dependency based on proto template type

@@ -1,6 +1,6 @@
 # Makefile for egg framework (monorepo root)
 .PHONY: help test lint clean tools setup tidy coverage check quality \
-	release delete-all-tags git-large-files git-large-objects
+	release delete-all-tags git-large-files git-large-objects reinit-workspace
 
 # Logger script for unified output
 LOGGER := ./scripts/logger.sh
@@ -51,6 +51,7 @@ help:
 	@echo ""
 	@echo "$(BOLD)Core Development:$(RESET)"
 	@echo "  $(CYAN)setup$(RESET)            - Setup development environment (install tools + init workspace)"
+	@echo "  $(CYAN)reinit-workspace$(RESET) - Reinitialize entire Go workspace (delete & recreate all modules)"
 	@echo "  $(CYAN)tidy$(RESET)             - Clean and update dependencies for all modules"
 	@echo "  $(CYAN)test$(RESET)             - Run tests for all framework modules"
 	@echo "  $(CYAN)lint$(RESET)             - Run linter on all modules (includes fmt + vet)"
@@ -109,7 +110,9 @@ lint:
 	failed_modules=""; \
 		for module in $(MODULES) cli; do \
 		print_info "Linting $$module..."; \
-		if ! (cd $$module && golangci-lint run ./... 2>&1 | grep -v "level=warning"); then \
+		output=$$(cd $$module && golangci-lint run ./... 2>&1 | grep -v "level=warning" || true); \
+		if [ -n "$$output" ]; then \
+			echo "$$output"; \
 			failed_modules="$$failed_modules $$module"; \
 		fi; \
 		done; \
@@ -206,6 +209,11 @@ setup: tools
 	@echo "  1. Run 'make tidy' to clean dependencies"
 	@echo "  2. Run 'make check' for quick validation"
 	@echo "  3. Run 'make coverage' to see test coverage"
+
+# Reinitialize entire Go workspace
+# This will delete all go.mod, go.sum, go.work files and recreate them from scratch
+reinit-workspace:
+	@./scripts/reinit-workspace.sh
 
 # ==============================================================================
 # Release Management

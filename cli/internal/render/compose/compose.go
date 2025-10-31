@@ -192,16 +192,13 @@ func (r *Renderer) renderBackendService(name string, service configschema.Backen
 	imageName := fmt.Sprintf("%s/%s-%s:%s", config.DockerRegistry, config.ProjectName, name, config.Version)
 	builder.WriteString("    image: " + imageName + "\n")
 
-	// Ports
+	// Ports - removed port mapping (services are accessed via docker network)
+	// Ports are still configured via environment variables for servicex
 	ports := service.Ports
 	if ports == nil {
 		ports = &config.BackendDefaults.Ports
 	}
-
-	builder.WriteString("    ports:\n")
-	builder.WriteString("      - \"" + strconv.Itoa(ports.HTTP) + ":" + strconv.Itoa(ports.HTTP) + "\"\n")
-	builder.WriteString("      - \"" + strconv.Itoa(ports.Health) + ":" + strconv.Itoa(ports.Health) + "\"\n")
-	builder.WriteString("      - \"" + strconv.Itoa(ports.Metrics) + ":" + strconv.Itoa(ports.Metrics) + "\"\n")
+	// Port configuration is done via environment variables, not port mapping
 
 	// Environment variables (servicex standard)
 	builder.WriteString("    environment:\n")
@@ -401,10 +398,11 @@ func (r *Renderer) renderFrontendService(name string, service configschema.Front
 	dockerServiceName := strings.ReplaceAll(name, "_", "-")
 	imageName := fmt.Sprintf("%s/%s-%s-frontend:%s", config.DockerRegistry, config.ProjectName, dockerServiceName, config.Version)
 	builder.WriteString("    image: " + imageName + "\n")
+	builder.WriteString("    container_name: " + config.ProjectName + "-" + dockerServiceName + "\n")
+	builder.WriteString("    restart: unless-stopped\n")
 
-	// Ports (default for frontend)
-	builder.WriteString("    ports:\n")
-	builder.WriteString("      - \"3000:3000\"\n")
+	// Ports - removed port mapping (services are accessed via docker network)
+	// Port 3000 is still configured via environment variables
 
 	// Environment variables
 	builder.WriteString("    environment:\n")
@@ -418,6 +416,18 @@ func (r *Renderer) renderFrontendService(name string, service configschema.Front
 	for key, value := range config.Env.Frontend {
 		builder.WriteString("      - " + key + "=" + value + "\n")
 	}
+
+	// Networks
+	builder.WriteString("    networks:\n")
+	builder.WriteString("      - " + config.ProjectName + "-network\n")
+
+	// Health check for frontend (nginx health check)
+	builder.WriteString("    healthcheck:\n")
+	builder.WriteString("      test: [\"CMD\", \"wget\", \"--spider\", \"-q\", \"http://localhost:3000\"]\n")
+	builder.WriteString("      interval: 10s\n")
+	builder.WriteString("      timeout: 5s\n")
+	builder.WriteString("      retries: 5\n")
+	builder.WriteString("      start_period: 10s\n")
 
 	return builder.String(), nil
 }
@@ -447,8 +457,7 @@ func (r *Renderer) renderDatabaseService(db configschema.DatabaseConfig, project
 	builder.WriteString("      - MYSQL_DATABASE=" + db.Database + "\n")
 	builder.WriteString("      - MYSQL_USER=" + db.User + "\n")
 	builder.WriteString("      - MYSQL_PASSWORD=" + db.Password + "\n")
-	builder.WriteString("    ports:\n")
-	builder.WriteString("      - \"" + strconv.Itoa(db.Port) + ":" + strconv.Itoa(db.Port) + "\"\n")
+	// Ports - removed port mapping (database is accessed via docker network)
 	builder.WriteString("    volumes:\n")
 	builder.WriteString("      - mysql_data:/var/lib/mysql\n")
 	builder.WriteString("    healthcheck:\n")

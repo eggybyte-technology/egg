@@ -18,35 +18,15 @@
 
 set -euo pipefail
 
-# Color output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Function to print colored messages
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Source logger script for unified output
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/logger.sh"
 
 # Get the repository root directory
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-log_info "Repository root: $REPO_ROOT"
+print_info "Repository root: $REPO_ROOT"
 
 # Module base path
 MODULE_BASE="go.eggybyte.com/egg"
@@ -74,17 +54,17 @@ declare -a ALL_MODULES=(
 )
 
 # Step 1: Delete all go.mod, go.sum, go.work, and go.work.sum files
-log_info "Step 1: Deleting all go.mod, go.sum, go.work, and go.work.sum files..."
+print_section "Step 1: Deleting all go.mod, go.sum, go.work, and go.work.sum files"
 
 # Delete go.work and go.work.sum in root
 if [ -f go.work ]; then
     rm -f go.work
-    log_success "Deleted go.work"
+    print_success "Deleted go.work"
 fi
 
 if [ -f go.work.sum ]; then
     rm -f go.work.sum
-    log_success "Deleted go.work.sum"
+    print_success "Deleted go.work.sum"
 fi
 
 # Delete go.mod and go.sum in each module
@@ -93,35 +73,35 @@ for module in "${ALL_MODULES[@]}"; do
     if [ -d "$module_dir" ]; then
         if [ -f "$module_dir/go.mod" ]; then
             rm -f "$module_dir/go.mod"
-            log_success "Deleted $module/go.mod"
+            print_success "Deleted $module/go.mod"
         fi
         if [ -f "$module_dir/go.sum" ]; then
             rm -f "$module_dir/go.sum"
-            log_success "Deleted $module/go.sum"
+            print_success "Deleted $module/go.sum"
         fi
     else
-        log_warning "Module directory not found: $module_dir"
+        print_warning "Module directory not found: $module_dir"
     fi
 done
 
 echo ""
 
 # Step 2: Initialize each module with correct module path
-log_info "Step 2: Initializing each module with go mod init..."
+print_section "Step 2: Initializing each module with go mod init"
 
 for module in "${ALL_MODULES[@]}"; do
     module_dir="$REPO_ROOT/$module"
     if [ -d "$module_dir" ]; then
         module_path="$MODULE_BASE/$module"
-        log_info "Initializing $module_path..."
+        print_info "Initializing $module_path..."
         cd "$module_dir"
         go mod init "$module_path" 2>&1 || {
-            log_error "Failed to initialize $module"
+            print_error "Failed to initialize $module"
             continue
         }
-        log_success "Initialized $module"
+        print_success "Initialized $module"
     else
-        log_warning "Skipping non-existent module: $module"
+        print_warning "Skipping non-existent module: $module"
     fi
 done
 
@@ -129,7 +109,7 @@ cd "$REPO_ROOT"
 echo ""
 
 # Step 3: Create go.work and add all modules
-log_info "Step 3: Creating go.work and adding all modules..."
+print_section "Step 3: Creating go.work and adding all modules"
 
 # Build the list of module paths for go work init
 module_paths=()
@@ -138,28 +118,28 @@ for module in "${ALL_MODULES[@]}"; do
     if [ -d "$module_dir" ] && [ -f "$module_dir/go.mod" ]; then
         module_paths+=("./$module")
     else
-        log_warning "Skipping $module (not found or no go.mod)"
+        print_warning "Skipping $module (not found or no go.mod)"
     fi
 done
 
 # Initialize workspace with all modules
 if [ ${#module_paths[@]} -gt 0 ]; then
-    log_info "Initializing workspace with ${#module_paths[@]} modules..."
+    print_info "Initializing workspace with ${#module_paths[@]} modules..."
     go work init "${module_paths[@]}" 2>&1 || {
-        log_error "Failed to initialize workspace"
+        print_error "Failed to initialize workspace"
         exit 1
     }
-    log_success "go work init completed"
+    print_success "go work init completed"
 else
-    log_error "No modules found to add to workspace"
+    print_error "No modules found to add to workspace"
     exit 1
 fi
 
 echo ""
 
 # Step 4: Add dependencies and run go mod tidy layer by layer
-log_info "Step 4: Processing modules by dependency layers..."
-log_info "Note: Processing in dependency order to avoid resolution issues"
+print_section "Step 4: Processing modules by dependency layers"
+print_info "Processing in dependency order to avoid resolution issues"
 
 # Track processed modules for dependency injection
 declare -a PROCESSED_MODULES=()
@@ -167,17 +147,17 @@ declare -a PROCESSED_MODULES=()
 layer_num=0
 for layer in "${MODULE_LAYERS[@]}"; do
     layer_num=$((layer_num + 1))
-    log_info ""
-    log_info "Processing Layer $layer_num: $layer"
+    print_info ""
+    print_section "Processing Layer $layer_num: $layer"
     
     for module in $layer; do
         module_dir="$REPO_ROOT/$module"
         if [ ! -d "$module_dir" ] || [ ! -f "$module_dir/go.mod" ]; then
-            log_warning "Skipping $module (not found or no go.mod)"
+            print_warning "Skipping $module (not found or no go.mod)"
             continue
         fi
         
-        log_info "  → Processing $module..."
+        print_info "Processing $module..."
         cd "$module_dir"
         
         # Step 1: Add replace directives for ALL processed modules (kept for development)
@@ -195,7 +175,7 @@ for layer in "${MODULE_LAYERS[@]}"; do
                 
                 # Only add require directive if this module actually imports it
                 if grep -r "\"$MODULE_BASE/$dep" . --include="*.go" --exclude-dir=vendor --exclude-dir=gen 2>/dev/null | head -1 > /dev/null; then
-                    log_info "    ↳ Adding development dependency: $dep"
+                    print_info "Adding development dependency: $dep"
                     require_args+=("-require=$MODULE_BASE/$dep@v0.0.0-00010101000000-000000000000")
                 fi
             done
@@ -210,18 +190,18 @@ for layer in "${MODULE_LAYERS[@]}"; do
             fi
             
             if [ ${#all_args[@]} -gt 0 ]; then
-                log_info "    ↳ Adding replace directives for development..."
+                print_info "Adding replace directives for development..."
                 go mod edit "${all_args[@]}" 2>/dev/null || true
             fi
         fi
         
         # Step 2: Run go mod tidy with replace directives in place
-        log_info "    ↳ Running go mod tidy..."
+        print_info "Running go mod tidy..."
         tidy_success=false
         if go mod tidy 2>&1; then
             tidy_success=true
         else
-            log_warning "    ⚠ Tidy failed for $module (continuing anyway)"
+            print_warning "Tidy failed for $module (continuing anyway)"
         fi
         
         # Step 3: Keep replace directives for development (DO NOT REMOVE!)
@@ -229,11 +209,11 @@ for layer in "${MODULE_LAYERS[@]}"; do
         # - They allow go.work to resolve internal module dependencies correctly
         # - They prevent go mod tidy from trying to fetch non-existent remote versions
         # - They will be automatically removed during release by release.sh
-        log_info "    ↳ Keeping replace directives for development workspace"
+        print_info "Keeping replace directives for development workspace"
         
         # Step 4: Mark as processed
         if [ "$tidy_success" = true ]; then
-            log_success "    ✓ Completed $module"
+            print_success "Completed $module"
         fi
         PROCESSED_MODULES+=("$module")
     done
@@ -243,27 +223,26 @@ cd "$REPO_ROOT"
 echo ""
 
 # Final verification
-log_info "Verifying workspace status..."
-go work edit -json > /dev/null 2>&1 && log_success "Workspace is valid" || log_error "Workspace validation failed"
+print_section "Final verification"
+print_info "Verifying workspace status..."
+go work edit -json > /dev/null 2>&1 && print_success "Workspace is valid" || print_error "Workspace validation failed"
 
 echo ""
-log_success "=========================================="
-log_success "Workspace reinitialization completed!"
-log_success "=========================================="
-log_info "Summary:"
-log_info "  - All modules have been reinitialized"
-log_info "  - Workspace has been recreated"
-log_info "  - Replace directives have been added to all go.mod files"
-log_info "  - Local dependencies are resolved via workspace + replace"
+print_header "Workspace Reinitialization Completed"
+print_info "Summary:"
+print_info "  - All modules have been reinitialized"
+print_info "  - Workspace has been recreated"
+print_info "  - Replace directives have been added to all go.mod files"
+print_info "  - Local dependencies are resolved via workspace + replace"
 echo ""
-log_info "Important notes:"
-log_info "  1. Replace directives are KEPT in go.mod (they should be committed)"
-log_info "  2. These replace directives are essential for local development"
-log_info "  3. They will be automatically removed during release by release.sh"
+print_info "Important notes:"
+print_info "  1. Replace directives are KEPT in go.mod (they should be committed)"
+print_info "  2. These replace directives are essential for local development"
+print_info "  3. They will be automatically removed during release by release.sh"
 echo ""
-log_info "Next steps:"
-log_info "  1. Review any errors above"
-log_info "  2. Run 'go test ./...' to verify everything works"
-log_info "  3. Commit the go.mod files with their replace directives"
-log_info "  4. Never manually remove replace directives (let release.sh handle it)"
+print_info "Next steps:"
+print_info "  1. Review any errors above"
+print_info "  2. Run 'go test ./...' to verify everything works"
+print_info "  3. Commit the go.mod files with their replace directives"
+print_info "  4. Never manually remove replace directives (let release.sh handle it)"
 

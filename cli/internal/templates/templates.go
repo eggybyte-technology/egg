@@ -109,6 +109,7 @@ func (l *Loader) RenderTemplate(templateContent string, data interface{}) (strin
 		"ToUpper": strings.ToUpper,
 		"ToLower": strings.ToLower,
 		"Title":   strings.Title,
+		"replace": strings.ReplaceAll,
 	}
 
 	tmpl, err := template.New("template").Funcs(funcMap).Parse(templateContent)

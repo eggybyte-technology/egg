@@ -9,8 +9,6 @@ services:
       MYSQL_DATABASE: {{.DatabaseName}}
       MYSQL_USER: {{.DatabaseUser}}
       MYSQL_PASSWORD: {{.DatabasePassword}}
-    ports:
-      - "{{.DatabasePort}}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -92,10 +90,6 @@ services:
       SHUTDOWN_TIMEOUT: "{{index $.EnvGlobal "SHUTDOWN_TIMEOUT"}}"
 {{end}}
 {{end}}
-    ports:
-      - "{{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}:{{if $config.Ports}}{{$config.Ports.HTTP}}{{else}}8080{{end}}"
-      - "{{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}:{{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}"
-      - "{{if $config.Ports}}{{$config.Ports.Metrics}}{{else}}9091{{end}}:{{if $config.Ports}}{{$config.Ports.Metrics}}{{else}}9091{{end}}"
 {{if $.DatabaseEnabled}}
     depends_on:
       mysql:
@@ -105,6 +99,29 @@ services:
       - {{$.ProjectName}}-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:{{if $config.Ports}}{{$config.Ports.Health}}{{else}}8081{{end}}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+{{end}}
+
+  # Frontend Services
+{{range $serviceName, $config := .FrontendServices}}
+  {{$serviceName}}:
+    image: {{$.DockerRegistry}}/{{$.ProjectName}}-{{replace $serviceName "_" "-"}}-frontend:{{$.Version}}
+    container_name: {{$.ProjectName}}-{{replace $serviceName "_" "-"}}
+    restart: unless-stopped
+    environment:
+{{range $key, $value := $.EnvGlobal}}
+      - {{$key}}={{$value}}
+{{end}}
+{{range $key, $value := $.EnvFrontend}}
+      - {{$key}}={{$value}}
+{{end}}
+    networks:
+      - {{$.ProjectName}}-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
       interval: 10s
       timeout: 5s
       retries: 5

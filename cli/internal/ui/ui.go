@@ -157,6 +157,7 @@ func output(level OutputLevel, format string, args ...interface{}) {
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
 		if err := encoder.Encode(message); err != nil {
+			//nolint:errcheck // stderr write failures are non-recoverable in CLI context
 			fmt.Fprintf(os.Stderr, "Failed to encode JSON output: %v\n", err)
 		}
 		return
@@ -168,42 +169,60 @@ func output(level OutputLevel, format string, args ...interface{}) {
 		writer = os.Stderr
 	}
 
-	// Format with color and prefix
+	// Format with color and prefix (matching logger.sh standards)
 	var prefix string
 	var color string
 	const (
-		colorReset  = "\033[0m"
-		colorGray   = "\033[90m"
-		colorBlue   = "\033[34m"
-		colorYellow = "\033[33m"
-		colorRed    = "\033[31m"
-		colorGreen  = "\033[32m"
+		colorReset   = "\033[0m"
+		colorMagenta = "\033[0;35m" // For debug
+		colorWhite   = "\033[0;37m" // For info
+		colorYellow  = "\033[1;33m" // For warning
+		colorRed     = "\033[0;31m" // For error
+		colorGreen   = "\033[1;32m" // For success (bright green)
 	)
 
 	switch level {
 	case LevelDebug:
-		prefix = "[DEBUG]"
-		color = colorGray
+		prefix = "" // No prefix for debug (matches logger.sh)
+		color = colorMagenta
+
 	case LevelInfo:
-		prefix = "[INFO]"
-		color = colorBlue
+		prefix = "" // No prefix for info (matches logger.sh)
+		color = colorWhite
+
 	case LevelWarning:
-		prefix = "[WARN]"
+		prefix = "[!]"
 		color = colorYellow
+
 	case LevelError:
-		prefix = "[ERROR]"
+		prefix = "[✗]"
 		color = colorRed
+
 	case LevelSuccess:
-		prefix = "[OK]"
+		prefix = "[✓]"
 		color = colorGreen
 	}
 
 	// Check if output is a terminal (supports colors)
 	isTerminal := os.Getenv("TERM") != "" && os.Getenv("TERM") != "dumb"
 	if isTerminal && !useJSON {
-		fmt.Fprintf(writer, "%s%-8s%s %s\n", color, prefix, colorReset, text)
+		if prefix != "" {
+			// Color entire line: prefix + message
+			//nolint:errcheck // stdout/stderr write failures are non-recoverable in CLI context
+			fmt.Fprintf(writer, "%s%s %s%s\n", color, prefix, text, colorReset)
+		} else {
+			// Color entire line: message only
+			//nolint:errcheck // stdout/stderr write failures are non-recoverable in CLI context
+			fmt.Fprintf(writer, "%s%s%s\n", color, text, colorReset)
+		}
 	} else {
-		fmt.Fprintf(writer, "%-8s %s\n", prefix, text)
+		if prefix != "" {
+			//nolint:errcheck // stdout/stderr write failures are non-recoverable in CLI context
+			fmt.Fprintf(writer, "%s %s\n", prefix, text)
+		} else {
+			//nolint:errcheck // stdout/stderr write failures are non-recoverable in CLI context
+			fmt.Fprintf(writer, "%s\n", text)
+		}
 	}
 }
 
@@ -324,6 +343,7 @@ func Step(step, total int, format string, args ...interface{}) {
 	}
 
 	text := fmt.Sprintf(format, args...)
+	//nolint:errcheck // stdout write failures are non-recoverable in CLI context
 	fmt.Printf("  [%d/%d] %s\n", step, total, text)
 }
 
@@ -351,9 +371,11 @@ func Confirm(format string, args ...interface{}) bool {
 	}
 
 	text := fmt.Sprintf(format, args...)
+	//nolint:errcheck // stdout write failures are non-recoverable in CLI context
 	fmt.Printf("[?] %s [y/N]: ", text)
 
 	var response string
+	//nolint:errcheck // stdin read errors are handled by empty response check
 	fmt.Scanln(&response)
 	return response == "y" || response == "Y" || response == "yes"
 }
@@ -416,9 +438,11 @@ func (p *Progress) Update() {
 	}
 
 	percentage := float64(p.current) / float64(p.total) * 100
+	//nolint:errcheck // stdout write failures are non-recoverable in CLI context
 	fmt.Printf("\r[*] %s: %d/%d (%.1f%%)", p.title, p.current, p.total, percentage)
 
 	if p.current >= p.total {
+		//nolint:errcheck // stdout write failures are non-recoverable in CLI context
 		fmt.Println() // New line when complete
 	}
 }
@@ -447,6 +471,7 @@ func (p *Progress) Complete() {
 	mu.RUnlock()
 
 	if !useJSON {
+		//nolint:errcheck // stdout write failures are non-recoverable in CLI context
 		fmt.Printf("\r[OK] %s: Complete\n", p.title)
 	}
 }
