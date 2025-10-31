@@ -58,16 +58,16 @@ COPY backend backend
 # Use GOPROXY with fallback: try proxy first, then direct for v0.0.0-dev dependencies
 # Use GOSUMDB=off to disable checksum verification for development versions
 # Use GOPRIVATE and GONOPROXY to ensure internal modules (go.eggybyte.com/egg/*) are downloaded directly
-# Configuration: proxy.golang.org,direct (US/EU) or goproxy.cn,direct (China)
+# Configuration: https://goproxy.cn,direct (China optimized) for better support in China
 # This provides better reliability than direct-only mode while allowing direct access for internal modules
 RUN cd backend/${SERVICE_NAME} && \
-    GOPROXY=https://proxy.golang.org,direct \
+    GOPROXY=https://goproxy.cn,direct \
     GOPRIVATE=go.eggybyte.com/egg \
     GONOPROXY=go.eggybyte.com/egg \
     GOSUMDB=off \
     GOTIMEOUT=300s \
     go mod download && \
-    GOPROXY=https://proxy.golang.org,direct \
+    GOPROXY=https://goproxy.cn,direct \
     GOPRIVATE=go.eggybyte.com/egg \
     GONOPROXY=go.eggybyte.com/egg \
     GOSUMDB=off \
@@ -81,7 +81,7 @@ RUN echo "Building service '${SERVICE_NAME}' for ${TARGETOS}/${TARGETARCH}" && \
     mkdir -p ${OUT_DIR}/${SERVICE_NAME} && \
     cd backend/${SERVICE_NAME} && \
     CGO_ENABLED=0 \
-    GOPROXY=https://proxy.golang.org,direct \
+    GOPROXY=https://goproxy.cn,direct \
     GOPRIVATE=go.eggybyte.com/egg \
     GONOPROXY=go.eggybyte.com/egg \
     GOSUMDB=off \

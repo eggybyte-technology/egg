@@ -293,9 +293,14 @@ func checkDockerInstallation(ctx context.Context, runner *toolrunner.Runner) err
 		return fmt.Errorf("daemon not running")
 	}
 
-	// Check Docker buildx
+	// Check Docker buildx (required)
 	if _, err := runner.Docker(ctx, "buildx", "version"); err != nil {
-		ui.Warning("      Buildx not available - multi-platform builds disabled")
+		return fmt.Errorf("buildx not available (required for multi-platform builds)")
+	}
+
+	// Check Docker Compose (required)
+	if _, err := runner.DockerCompose(ctx, "version"); err != nil {
+		return fmt.Errorf("compose not available (required for local development)")
 	}
 
 	return nil
@@ -457,7 +462,7 @@ func checkProtocPlugins(ctx context.Context, runner *toolrunner.Runner) error {
 	return nil
 }
 
-// installProtocPlugins installs missing protoc plugins.
+// installProtocPlugins installs missing protoc plugins, buf, and protoc.
 //
 // Parameters:
 //   - ctx: Context for cancellation
@@ -469,10 +474,41 @@ func checkProtocPlugins(ctx context.Context, runner *toolrunner.Runner) error {
 //   - Single-threaded
 //
 // Performance:
-//   - Go module download and compilation
+//   - Go module download and compilation, binary downloads
 func installProtocPlugins(ctx context.Context) error {
-	ui.Info("Installing protoc plugins...")
+	ui.Info("Installing protoc plugins, buf, and protoc...")
 	ui.Info("")
+
+	runner := toolrunner.NewRunner(".")
+	runner.SetVerbose(false)
+
+	// First, check and install buf if missing
+	if available, _ := toolrunner.CheckToolAvailability("buf"); !available {
+		ui.Info("Installing buf...")
+		// Install buf using official installer script
+		// buf is installed via go install github.com/bufbuild/buf/cmd/buf@latest
+		if _, err := runner.GoWithEnv(ctx, map[string]string{"GOPROXY": "https://goproxy.cn,direct"}, "install", "github.com/bufbuild/buf/cmd/buf@latest"); err != nil {
+			ui.Warning("Failed to install buf: %v", err)
+			ui.Info("  You can install buf manually: go install github.com/bufbuild/buf/cmd/buf@latest")
+		} else {
+			ui.Success("  Installed buf")
+		}
+	} else {
+		ui.Info("buf already installed")
+	}
+
+	// Check and install protoc if missing
+	if available, _ := toolrunner.CheckToolAvailability("protoc"); !available {
+		ui.Info("Installing protoc...")
+		ui.Warning("  protoc needs to be installed manually")
+		ui.Info("  Installation instructions:")
+		ui.Info("    macOS: brew install protobuf")
+		ui.Info("    Linux: apt-get install protobuf-compiler or yum install protobuf-compiler")
+		ui.Info("    Windows: Download from https://github.com/protocolbuffers/protobuf/releases")
+		ui.Info("")
+	} else {
+		ui.Info("protoc already installed")
+	}
 
 	plugins := []ProtocPlugin{
 		{"protoc-gen-go", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2", true, "Generate Go protocol buffer code"},
@@ -480,9 +516,6 @@ func installProtocPlugins(ctx context.Context) error {
 		{"protoc-gen-openapiv2", "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.24.0", false, "Generate OpenAPI v2 documentation"},
 		{"protoc-gen-dart", "", false, "Generate Dart protocol buffer code (install via: dart pub global activate protoc_plugin)"},
 	}
-
-	runner := toolrunner.NewRunner(".")
-	runner.SetVerbose(false)
 
 	var missing []ProtocPlugin
 	for _, plugin := range plugins {
@@ -515,16 +548,10 @@ func installProtocPlugins(ctx context.Context) error {
 			continue
 		}
 
-		cmd := fmt.Sprintf("go install %s", plugin.GoPackage)
-		result, err := runner.Exec(ctx, "sh", "-c", cmd)
-		if err != nil {
+		// Install plugin with GOPROXY=https://goproxy.cn,direct for better support in China
+		if _, err := runner.GoWithEnv(ctx, map[string]string{"GOPROXY": "https://goproxy.cn,direct"}, "install", plugin.GoPackage); err != nil {
 			ui.Error("  Failed to install %s: %v", plugin.Name, err)
 			return fmt.Errorf("failed to install %s: %w", plugin.Name, err)
-		}
-
-		if result.ExitCode != 0 {
-			ui.Error("  Failed to install %s: %s", plugin.Name, result.Stderr)
-			return fmt.Errorf("failed to install %s: %s", plugin.Name, result.Stderr)
 		}
 
 		ui.Success("  Installed %s", plugin.Name)
