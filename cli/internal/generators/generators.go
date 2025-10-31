@@ -574,12 +574,27 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 			fmt.Sprintf("go.eggybyte.com/egg/runtimex@%s", frameworkVersion),
 			fmt.Sprintf("go.eggybyte.com/egg/servicex@%s", frameworkVersion),
 			fmt.Sprintf("go.eggybyte.com/egg/storex@%s", frameworkVersion),
+		}
+		thirdPartyDeps := []string{
 			"connectrpc.com/connect@latest",
 			"gorm.io/gorm@latest",
 			"gorm.io/driver/mysql@latest",
 			"github.com/google/uuid@latest",
 		}
+
+		// Add egg dependencies with GOPROXY=direct to avoid proxy issues
+		// Egg modules should be fetched directly from source repository
+		ui.Info("Adding egg framework dependencies (GOPROXY=direct)...")
 		for _, dep := range eggDeps {
+			if _, err := serviceRunner.GoWithEnv(ctx, map[string]string{"GOPROXY": "direct"}, "get", dep); err != nil {
+				ui.Warning("Failed to add dependency %s: %v", dep, err)
+				continue
+			}
+		}
+
+		// Add third-party dependencies with default proxy
+		ui.Info("Adding third-party dependencies...")
+		for _, dep := range thirdPartyDeps {
 			if _, err := serviceRunner.Go(ctx, "get", dep); err != nil {
 				ui.Warning("Failed to add dependency %s: %v", dep, err)
 				continue
