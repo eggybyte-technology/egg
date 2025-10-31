@@ -26,13 +26,13 @@ replace go.eggybyte.com/egg/testingx => /Users/fengguangyao/eggybyte/projects/go
 
 require (
 	connectrpc.com/connect v1.19.1
-	go.eggybyte.com/egg/configx v0.0.0-00010101000000-000000000000
-	go.eggybyte.com/egg/connectx v0.0.0-00010101000000-000000000000
-	go.eggybyte.com/egg/core v0.0.0-00010101000000-000000000000
-	go.eggybyte.com/egg/logx v0.0.0-00010101000000-000000000000
-	go.eggybyte.com/egg/obsx v0.0.0-00010101000000-000000000000
-	go.eggybyte.com/egg/runtimex v0.0.0-00010101000000-000000000000
-	go.eggybyte.com/egg/storex v0.0.0-00010101000000-000000000000
+	go.eggybyte.com/egg/configx v0.3.0
+	go.eggybyte.com/egg/connectx v0.3.0
+	go.eggybyte.com/egg/core v0.3.0
+	go.eggybyte.com/egg/logx v0.3.0
+	go.eggybyte.com/egg/obsx v0.3.0
+	go.eggybyte.com/egg/runtimex v0.3.0
+	go.eggybyte.com/egg/storex v0.3.0
 	gorm.io/gorm v1.31.0
 )
 
