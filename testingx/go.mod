@@ -22,4 +22,4 @@ replace go.eggybyte.com/egg/storex => /Users/fengguangyao/eggybyte/projects/go/e
 
 replace go.eggybyte.com/egg/k8sx => /Users/fengguangyao/eggybyte/projects/go/egg/k8sx
 
-require go.eggybyte.com/egg/core v0.0.0-00010101000000-000000000000
+require go.eggybyte.com/egg/core v0.3.0
