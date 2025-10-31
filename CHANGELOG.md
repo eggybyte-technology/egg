@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2025-01-31
+
+### Changed
+
+- **Build System**: Unified `.gitignore` to root directory only
+  - Removed all subdirectory `.gitignore` files
+  - Simplified rules using global patterns (bin/, build/, tmp/, logs/, etc.)
+  - All directories with standard names (bin, build, gen, tmp, logs) are automatically ignored regardless of location
+- **Release Process**: Simplified CLI release command
+  - Short parameters: `make cli-release CLI=v1.0.0 FW=v0.3.0`
+  - Still supports full parameters: `make cli-release VERSION=v1.0.0 FRAMEWORK_VERSION=v0.3.0`
+- **Release Process**: Added large file check before release
+  - Automatically checks for files >1MB in git-tracked files
+  - Prompts for confirmation if large files are found
+  - Helps prevent accidental commits of large binaries or artifacts
+
+### Fixed
+
+- **CLI**: Fixed `cli/cmd/` source files not being tracked in git
+  - Removed incorrect `egg` pattern from `cli/.gitignore` that was matching `cli/cmd/egg/` directory
+  - All CLI source files now properly tracked in git repository
+
+### Added
+
+- **CLI**: Added `cli/cmd/egg/` source files to git repository
+  - All CLI command implementations now tracked (api.go, build.go, check.go, compose.go, create.go, doctor.go, init.go, kube.go, main.go)
+
 ## [0.3.0] - 2025-01-31
 
 ### Added

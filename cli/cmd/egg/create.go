@@ -1,0 +1,683 @@
+// Package egg provides the egg CLI command implementations.
+//
+// Overview:
+//   - Responsibility: CLI command execution and orchestration
+//   - Key Types: Command handlers, argument parsers, option processors
+//   - Concurrency Model: Sequential command execution with context support
+//   - Error Semantics: User-friendly error messages with suggestions
+//   - Performance Notes: Fast command resolution, minimal initialization
+//
+// Usage:
+//
+//	egg create backend <name>
+//	egg create frontend <name> --platforms web
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/cobra"
+	"go.eggybyte.com/egg/cli/internal/configschema"
+	"go.eggybyte.com/egg/cli/internal/generators"
+	"go.eggybyte.com/egg/cli/internal/projectfs"
+	"go.eggybyte.com/egg/cli/internal/toolrunner"
+	"go.eggybyte.com/egg/cli/internal/ui"
+	"gopkg.in/yaml.v3"
+)
+
+// createCmd represents the create command.
+var createCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create a new service",
+	Long: `Create a new backend or frontend service.
+
+This command generates:
+- Service directory structure
+- Go module initialization (for backend)
+- Flutter project initialization (for frontend)
+- Basic service templates
+- Workspace configuration updates
+
+Examples:
+  egg create backend user-service
+  egg create frontend admin-portal --platforms web
+  egg create frontend mobile-app --platforms android,ios`,
+}
+
+// createBackendCmd represents the create backend command.
+var createBackendCmd = &cobra.Command{
+	Use:   "backend <name>",
+	Short: "Create a new backend service",
+	Long: `Create a new backend service with Connect-first architecture.
+
+This command creates:
+- Go module with egg dependencies
+- Connect-only service structure
+- Health and metrics endpoints
+- Configuration management
+- Kubernetes deployment templates
+
+Examples:
+  egg create backend user-service
+  egg create backend user-service --local-modules`,
+	Args: cobra.ExactArgs(1),
+	RunE: runCreateBackend,
+}
+
+// createFrontendCmd represents the create frontend command.
+var createFrontendCmd = &cobra.Command{
+	Use:   "frontend <name>",
+	Short: "Create a new frontend service",
+	Long: `Create a new frontend service with Flutter.
+
+This command creates:
+- Flutter project structure
+- Web/mobile platform support
+- Build configuration
+- Deployment templates
+
+Examples:
+  egg create frontend admin-portal --platforms web
+  egg create frontend mobile-app --platforms android,ios
+  egg create frontend hybrid-app --platforms web,android,ios
+  
+Note: For specific Flutter versions, use FVM before running this command.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runCreateFrontend,
+}
+
+var (
+	frontendPlatforms []string
+	useLocalModules   bool
+	httpPort          int
+	healthPort        int
+	metricsPort       int
+	protoTemplate     string
+)
+
+func init() {
+	rootCmd.AddCommand(createCmd)
+	createCmd.AddCommand(createBackendCmd)
+	createCmd.AddCommand(createFrontendCmd)
+
+	createBackendCmd.Flags().StringVar(&protoTemplate, "proto", "echo", "Proto template: echo, crud, or none")
+	createBackendCmd.Flags().BoolVar(&useLocalModules, "local-modules", false, "Use local egg modules for development")
+	createBackendCmd.Flags().IntVar(&httpPort, "http-port", 0, "HTTP port (default: 8080)")
+	createBackendCmd.Flags().IntVar(&healthPort, "health-port", 0, "Health check port (default: 8081)")
+	createBackendCmd.Flags().IntVar(&metricsPort, "metrics-port", 0, "Metrics port (default: 9091)")
+	createFrontendCmd.Flags().StringSliceVar(&frontendPlatforms, "platforms", []string{"web"}, "Target platforms (comma-separated: web, android, ios)")
+}
+
+// runCreateBackend executes the create backend command.
+//
+// Parameters:
+//   - cmd: Cobra command
+//   - args: Command arguments
+//
+// Returns:
+//   - error: Execution error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Service generation and module initialization
+func runCreateBackend(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+	serviceName := args[0]
+
+	// Validate service name does not end with -service
+	if err := configschema.ValidateServiceName(serviceName); err != nil {
+		ui.Error("Invalid service name: %v", err)
+		return fmt.Errorf("service name validation failed")
+	}
+
+	// Validate proto template
+	if protoTemplate != "echo" && protoTemplate != "crud" && protoTemplate != "none" {
+		ui.Error("Invalid proto template: %s (must be: echo, crud, or none)", protoTemplate)
+		return fmt.Errorf("proto template validation failed")
+	}
+
+	ui.Info("Creating backend service: %s (proto: %s)", serviceName, protoTemplate)
+
+	// Load configuration
+	config, diags, err := loadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	if diags.HasErrors() {
+		ui.Error("Configuration validation failed:")
+		for _, diag := range diags.Items() {
+			if diag.Severity == configschema.SeverityError {
+				ui.Error("  %s: %s", diag.Path, diag.Message)
+			}
+		}
+		return fmt.Errorf("configuration validation failed")
+	}
+
+	// Check if service name conflicts with existing services (backend or frontend)
+	if _, exists := config.Backend[serviceName]; exists {
+		return fmt.Errorf("backend service '%s' already exists - duplicate service names are not allowed", serviceName)
+	}
+	if _, exists := config.Frontend[serviceName]; exists {
+		return fmt.Errorf("service name '%s' conflicts with existing frontend service - service names must be unique across all types", serviceName)
+	}
+
+	// Auto-register new service
+	ui.Info("Registering new backend service: %s", serviceName)
+	if err := autoRegisterBackendService(serviceName, config); err != nil {
+		return fmt.Errorf("failed to register service: %w", err)
+	}
+	ui.Success("Service '%s' registered in egg.yaml", serviceName)
+
+	// Update service configuration with custom ports if provided
+	if httpPort > 0 || healthPort > 0 || metricsPort > 0 {
+		if err := updateBackendServicePorts(serviceName, config, httpPort, healthPort, metricsPort); err != nil {
+			return fmt.Errorf("failed to update service ports: %w", err)
+		}
+	}
+
+	// Create project file system
+	fs := projectfs.NewProjectFS(".")
+	fs.SetVerbose(true)
+
+	// Create tool runner
+	runner := toolrunner.NewRunner(".")
+	runner.SetVerbose(true)
+
+	// Create backend generator
+	backendGen := generators.NewBackendGenerator(fs, runner)
+
+	// Generate service
+	if err := backendGen.Create(ctx, serviceName, config, protoTemplate, useLocalModules); err != nil {
+		return fmt.Errorf("failed to create backend service: %w", err)
+	}
+
+	ui.Success("Backend service created: %s", serviceName)
+	ui.Info("Next steps:")
+	ui.Info("  1. Implement your service logic in internal/")
+	ui.Info("  2. Add API definitions in api/")
+	ui.Info("  3. Generate code: egg api generate")
+	ui.Info("  4. Test locally: egg compose up")
+
+	return nil
+}
+
+// runCreateFrontend executes the create frontend command.
+//
+// Parameters:
+//   - cmd: Cobra command
+//   - args: Command arguments
+//
+// Returns:
+//   - error: Execution error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Flutter project creation
+func runCreateFrontend(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+	serviceName := args[0]
+
+	// Validate service name does not end with -service
+	if err := configschema.ValidateServiceName(serviceName); err != nil {
+		ui.Error("Invalid service name: %v", err)
+		return fmt.Errorf("service name validation failed")
+	}
+
+	// Validate frontend service name uses underscores (Flutter requirement)
+	if strings.Contains(serviceName, "-") {
+		ui.Error("Frontend service names must use underscores (_) instead of hyphens (-)")
+		ui.Info("Flutter requires package names to use underscores only")
+		ui.Info("Example: use 'admin_portal' instead of 'admin-portal'")
+		return fmt.Errorf("invalid frontend service name: contains hyphens")
+	}
+	if !strings.Contains(serviceName, "_") && len(serviceName) > 1 {
+		ui.Warning("Frontend service name '%s' does not contain underscores", serviceName)
+		ui.Info("Consider using snake_case for multi-word names (e.g., 'admin_portal')")
+	}
+
+	ui.Info("Creating frontend service: %s", serviceName)
+
+	// Load configuration
+	config, diags, err := loadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	if diags.HasErrors() {
+		ui.Error("Configuration validation failed:")
+		for _, diag := range diags.Items() {
+			if diag.Severity == configschema.SeverityError {
+				ui.Error("  %s: %s", diag.Path, diag.Message)
+			}
+		}
+		return fmt.Errorf("configuration validation failed")
+	}
+
+	// Check if service name conflicts with existing services (frontend or backend)
+	if _, exists := config.Frontend[serviceName]; exists {
+		return fmt.Errorf("frontend service '%s' already exists - duplicate service names are not allowed", serviceName)
+	}
+	if _, exists := config.Backend[serviceName]; exists {
+		return fmt.Errorf("service name '%s' conflicts with existing backend service - service names must be unique across all types", serviceName)
+	}
+
+	// Auto-register new service
+	ui.Info("Registering new frontend service: %s", serviceName)
+	if err := autoRegisterFrontendService(serviceName, config); err != nil {
+		return fmt.Errorf("failed to register service: %w", err)
+	}
+	ui.Success("Service '%s' registered in egg.yaml", serviceName)
+
+	// Create project file system
+	fs := projectfs.NewProjectFS(".")
+	fs.SetVerbose(true)
+
+	// Create tool runner
+	runner := toolrunner.NewRunner(".")
+	runner.SetVerbose(true)
+
+	// Create frontend generator
+	frontendGen := generators.NewFrontendGenerator(fs, runner)
+
+	// Generate service
+	if err := frontendGen.Create(ctx, serviceName, frontendPlatforms, config); err != nil {
+		return fmt.Errorf("failed to create frontend service: %w", err)
+	}
+
+	ui.Success("Frontend service created: %s", serviceName)
+	ui.Info("Next steps:")
+	ui.Info("  1. Implement your Flutter app in lib/")
+	ui.Info("  2. Add API client code")
+	ui.Info("  3. Test locally: egg compose up")
+	ui.Info("  4. Build for production: egg build")
+
+	return nil
+}
+
+// loadConfig loads and validates the project configuration.
+//
+// Parameters:
+//   - None
+//
+// Returns:
+//   - *configschema.Config: Project configuration
+//   - *configschema.Diagnostics: Validation diagnostics
+//   - error: Loading error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Configuration parsing and validation
+func loadConfig() (*configschema.Config, *configschema.Diagnostics, error) {
+	config, diags := configschema.Load("egg.yaml")
+	if config == nil {
+		return nil, diags, fmt.Errorf("failed to load configuration")
+	}
+
+	return config, diags, nil
+}
+
+// autoRegisterBackendService automatically registers a backend service in egg.yaml.
+//
+// Parameters:
+//   - serviceName: Name of the service to register
+//   - config: Current configuration
+//
+// Returns:
+//   - error: Registration error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - File I/O operation
+func autoRegisterBackendService(serviceName string, config *configschema.Config) error {
+	// Initialize backend map if nil
+	if config.Backend == nil {
+		config.Backend = make(map[string]configschema.BackendService)
+	}
+
+	// Find available ports to avoid conflicts
+	httpPort, healthPort, metricsPort := findAvailablePorts(config)
+
+	// Add the service with available ports
+	config.Backend[serviceName] = configschema.BackendService{
+		Ports: &configschema.PortConfig{
+			HTTP:    httpPort,
+			Health:  healthPort,
+			Metrics: metricsPort,
+		},
+	}
+
+	// Save the updated configuration
+	return saveConfig(config)
+}
+
+// findAvailablePorts finds available ports for a new service.
+//
+// Parameters:
+//   - config: Current configuration
+//
+// Returns:
+//   - httpPort: Available HTTP port
+//   - healthPort: Available health port
+//   - metricsPort: Available metrics port
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - O(n) where n is number of existing services
+func findAvailablePorts(config *configschema.Config) (int, int, int) {
+	// Collect all used ports
+	usedPorts := make(map[int]bool)
+
+	for _, service := range config.Backend {
+		if service.Ports != nil {
+			usedPorts[service.Ports.HTTP] = true
+			usedPorts[service.Ports.Health] = true
+			usedPorts[service.Ports.Metrics] = true
+		}
+	}
+
+	// Start from defaults
+	httpPort := config.BackendDefaults.Ports.HTTP
+	healthPort := config.BackendDefaults.Ports.Health
+	metricsPort := config.BackendDefaults.Ports.Metrics
+
+	// If defaults are free, use them
+	if !usedPorts[httpPort] && !usedPorts[healthPort] && !usedPorts[metricsPort] {
+		return httpPort, healthPort, metricsPort
+	}
+
+	// Otherwise, find next available port set by incrementing base port
+	// Maintain fixed offset: health = http + 1, metrics = 9091 + (http - 8080)
+	baseHttpPort := config.BackendDefaults.Ports.HTTP
+	baseHealthOffset := config.BackendDefaults.Ports.Health - config.BackendDefaults.Ports.HTTP
+	baseMetricsPort := config.BackendDefaults.Ports.Metrics
+	
+	// Try incrementing by 10 from base port
+	for attempt := 1; attempt < 100; attempt++ {
+		httpPort = baseHttpPort + (attempt * 10)
+		healthPort = httpPort + baseHealthOffset
+		metricsPort = baseMetricsPort + attempt
+		
+		// Check if all three ports are available
+		if !usedPorts[httpPort] && !usedPorts[healthPort] && !usedPorts[metricsPort] {
+			return httpPort, healthPort, metricsPort
+		}
+	}
+
+	// Fallback to defaults (should rarely happen)
+	return baseHttpPort, config.BackendDefaults.Ports.Health, baseMetricsPort
+}
+
+// updateBackendServicePorts updates the port configuration for a backend service.
+//
+// Parameters:
+//   - serviceName: Name of the service to update
+//   - config: Current configuration
+//   - httpPort: HTTP port (0 to keep default)
+//   - healthPort: Health port (0 to keep default)
+//   - metricsPort: Metrics port (0 to keep default)
+//
+// Returns:
+//   - error: Update error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - File I/O operation
+func updateBackendServicePorts(serviceName string, config *configschema.Config, httpPort, healthPort, metricsPort int) error {
+	service, exists := config.Backend[serviceName]
+	if !exists {
+		return fmt.Errorf("service %s not found", serviceName)
+	}
+
+	// Initialize ports if nil
+	if service.Ports == nil {
+		service.Ports = &configschema.PortConfig{
+			HTTP:    config.BackendDefaults.Ports.HTTP,
+			Health:  config.BackendDefaults.Ports.Health,
+			Metrics: config.BackendDefaults.Ports.Metrics,
+		}
+	}
+
+	// Update ports if provided
+	if httpPort > 0 {
+		service.Ports.HTTP = httpPort
+	}
+	if healthPort > 0 {
+		service.Ports.Health = healthPort
+	}
+	if metricsPort > 0 {
+		service.Ports.Metrics = metricsPort
+	}
+
+	// Update the service in config
+	config.Backend[serviceName] = service
+
+	// Save the updated configuration to egg.yaml
+	return savePortsToConfig(serviceName, service.Ports)
+}
+
+// savePortsToConfig saves port configuration for a service to egg.yaml.
+//
+// Parameters:
+//   - serviceName: Name of the service
+//   - ports: Port configuration
+//
+// Returns:
+//   - error: Save error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - File I/O operation
+func savePortsToConfig(serviceName string, ports *configschema.PortConfig) error {
+	// Read current egg.yaml
+	data, err := os.ReadFile("egg.yaml")
+	if err != nil {
+		return fmt.Errorf("failed to read egg.yaml: %w", err)
+	}
+
+	// Parse YAML to preserve structure
+	var yamlData map[string]interface{}
+	if err := yaml.Unmarshal(data, &yamlData); err != nil {
+		return fmt.Errorf("failed to parse egg.yaml: %w", err)
+	}
+
+	// Update backend section
+	if yamlData["backend"] == nil {
+		return fmt.Errorf("backend section not found in egg.yaml")
+	}
+	
+	backendMap := yamlData["backend"].(map[string]interface{})
+	if backendMap[serviceName] == nil {
+		backendMap[serviceName] = make(map[string]interface{})
+	}
+	
+	serviceMap := backendMap[serviceName].(map[string]interface{})
+	serviceMap["ports"] = map[string]interface{}{
+		"http":    ports.HTTP,
+		"health":  ports.Health,
+		"metrics": ports.Metrics,
+	}
+
+	// Write back to file
+	output, err := yaml.Marshal(yamlData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal YAML: %w", err)
+	}
+
+	if err := os.WriteFile("egg.yaml", output, 0644); err != nil {
+		return fmt.Errorf("failed to write egg.yaml: %w", err)
+	}
+
+	return nil
+}
+
+// autoRegisterFrontendService automatically registers a frontend service in egg.yaml.
+//
+// Parameters:
+//   - serviceName: Name of the service to register
+//   - config: Current configuration
+//
+// Returns:
+//   - error: Registration error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - File I/O operation
+func autoRegisterFrontendService(serviceName string, config *configschema.Config) error {
+	// Initialize frontend map if nil
+	if config.Frontend == nil {
+		config.Frontend = make(map[string]configschema.FrontendService)
+	}
+
+	// Add the service with default configuration
+	config.Frontend[serviceName] = configschema.FrontendService{
+		Platforms: []string{"web"},
+	}
+
+	// Save the updated configuration
+	return saveConfig(config)
+}
+
+// saveConfig saves the configuration to egg.yaml.
+//
+// Parameters:
+//   - config: Configuration to save
+//
+// Returns:
+//   - error: Save error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - File I/O operation
+func saveConfig(config *configschema.Config) error {
+	// Read current egg.yaml to preserve comments and formatting
+	data, err := os.ReadFile("egg.yaml")
+	if err != nil {
+		return fmt.Errorf("failed to read egg.yaml: %w", err)
+	}
+
+	// Parse YAML to preserve structure
+	var yamlData map[string]interface{}
+	if err := yaml.Unmarshal(data, &yamlData); err != nil {
+		return fmt.Errorf("failed to parse egg.yaml: %w", err)
+	}
+
+	// Update backend section
+	if yamlData["backend"] == nil {
+		yamlData["backend"] = make(map[string]interface{})
+	}
+	backendMap := yamlData["backend"].(map[string]interface{})
+	for name, service := range config.Backend {
+		// Only add entry if it doesn't exist (keep existing configuration)
+		if _, exists := backendMap[name]; !exists {
+			serviceMap := make(map[string]interface{})
+			
+			// Add ports if configured
+			if service.Ports != nil {
+				serviceMap["ports"] = map[string]interface{}{
+					"http":    service.Ports.HTTP,
+					"health":  service.Ports.Health,
+					"metrics": service.Ports.Metrics,
+				}
+			}
+			
+			backendMap[name] = serviceMap
+		}
+	}
+
+	// Update frontend section
+	if yamlData["frontend"] == nil {
+		yamlData["frontend"] = make(map[string]interface{})
+	}
+	frontendMap := yamlData["frontend"].(map[string]interface{})
+	for name, service := range config.Frontend {
+		frontendMap[name] = map[string]interface{}{
+			"platforms": service.Platforms,
+		}
+	}
+
+	// Write back to file
+	output, err := yaml.Marshal(yamlData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal YAML: %w", err)
+	}
+
+	if err := os.WriteFile("egg.yaml", output, 0644); err != nil {
+		return fmt.Errorf("failed to write egg.yaml: %w", err)
+	}
+
+	return nil
+}
+
+// cleanupBackendService removes a service from backend workspace.
+//
+// Parameters:
+//   - name: Service name
+//   - config: Project configuration
+//
+// Returns:
+//   - error: Cleanup error if any
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Workspace file manipulation
+func cleanupBackendService(name string, config *configschema.Config) error {
+	backendWorkspace := filepath.Join("backend", "go.work")
+	
+	// Read existing workspace file
+	data, err := os.ReadFile(backendWorkspace)
+	if err != nil {
+		return fmt.Errorf("failed to read workspace file: %w", err)
+	}
+
+	// Parse workspace file and remove the service reference
+	workspaceContent := string(data)
+	serviceDir := fmt.Sprintf("./%s", name)
+	
+	// Remove the service directory reference from go.work
+	// This is a simple string replacement approach
+	if !strings.Contains(workspaceContent, serviceDir) {
+		return nil // Already removed
+	}
+
+	// Remove the service directory line
+	lines := strings.Split(workspaceContent, "\n")
+	var newLines []string
+	for _, line := range lines {
+		if !strings.Contains(line, serviceDir) {
+			newLines = append(newLines, line)
+		}
+	}
+
+	// Write back to file
+	newContent := strings.Join(newLines, "\n")
+	if err := os.WriteFile(backendWorkspace, []byte(newContent), 0644); err != nil {
+		return fmt.Errorf("failed to write workspace file: %w", err)
+	}
+
+	return nil
+}
