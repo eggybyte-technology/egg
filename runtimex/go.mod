@@ -12,4 +12,4 @@ replace go.eggybyte.com/egg/obsx => /Users/fengguangyao/eggybyte/projects/go/egg
 
 replace go.eggybyte.com/egg/httpx => /Users/fengguangyao/eggybyte/projects/go/egg/httpx
 
-require go.eggybyte.com/egg/core v0.0.0-00010101000000-000000000000
+require go.eggybyte.com/egg/core v0.3.0
