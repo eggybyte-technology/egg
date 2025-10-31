@@ -16,8 +16,8 @@ replace go.eggybyte.com/egg/runtimex => /Users/fengguangyao/eggybyte/projects/go
 
 require (
 	connectrpc.com/connect v1.19.1
-	go.eggybyte.com/egg/core v0.3.0
-	go.eggybyte.com/egg/obsx v0.3.0
+	go.eggybyte.com/egg/core v0.3.1
+	go.eggybyte.com/egg/obsx v0.3.1
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/metric v1.38.0
 	gorm.io/gorm v1.31.0
