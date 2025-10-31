@@ -125,6 +125,74 @@ check_working_directory() {
 }
 
 # ============================================================================
+# Function: check_large_files
+# Description: Checks for git-tracked files larger than 1MB
+#              Prompts user for confirmation if large files are found
+# Returns:
+#   0 if no large files found or user confirms, 1 if user cancels
+# ============================================================================
+check_large_files() {
+    print_info "Checking for large files (>1MB) in git-tracked files..."
+    
+    # Find files larger than 1MB (1048576 bytes)
+    # Use du to get actual file sizes, then filter for files > 1MB
+    local large_files
+    large_files=$(git ls-files -z | xargs -0 du -b 2>/dev/null | awk '$1 > 1048576 {size=$1; $1=""; print size " " substr($0,2)}' | sort -rn || true)
+    
+    if [ -z "$large_files" ]; then
+        print_success "No large files found (>1MB)"
+        return 0
+    fi
+    
+    # Count large files
+    local file_count
+    file_count=$(echo "$large_files" | wc -l | tr -d ' ')
+    
+    print_warning "Found $file_count file(s) larger than 1MB:"
+    echo ""
+    
+    # Display large files with human-readable sizes
+    # Use a temporary file to avoid subshell issues with while loop
+    local temp_file
+    temp_file=$(mktemp)
+    echo "$large_files" > "$temp_file"
+    
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ -n "$line" ]; then
+            local size_bytes
+            local file_path
+            size_bytes=$(echo "$line" | awk '{print $1}')
+            file_path=$(echo "$line" | awk '{for(i=2;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/[[:space:]]*$//')
+            
+            # Convert to human-readable format
+            local size_human
+            if [ "$size_bytes" -ge 1048576 ]; then
+                size_human=$(awk "BEGIN {printf \"%.2f MB\", $size_bytes/1048576}")
+            else
+                size_human=$(awk "BEGIN {printf \"%.2f KB\", $size_bytes/1024}")
+            fi
+            
+            printf "  %8s  %s\n" "$size_human" "$file_path"
+        fi
+    done < "$temp_file"
+    
+    rm -f "$temp_file"
+    
+    echo ""
+    print_warning "Large files in git repository can slow down clones and increase repository size."
+    print_info "Consider using git-lfs or removing unnecessary large files before releasing."
+    echo ""
+    
+    read -rp "Do you want to continue with the release? (y/N): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        print_info "Release cancelled by user"
+        return 1
+    fi
+    
+    return 0
+}
+
+# ============================================================================
 # Function: check_git_remote
 # Description: Verifies that a Git remote is configured
 # ============================================================================
@@ -449,6 +517,7 @@ main() {
     validate_version "$FRAMEWORK_VERSION"
     check_command "git" "Git is required but not installed"
     check_command "go" "Go is required but not installed"
+    check_large_files || exit 0
     check_working_directory "$CLI_VERSION"
     check_git_remote
     
