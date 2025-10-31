@@ -19,7 +19,7 @@ replace go.eggybyte.com/egg/connectx => /Users/fengguangyao/eggybyte/projects/go
 replace go.eggybyte.com/egg/clientx => /Users/fengguangyao/eggybyte/projects/go/egg/clientx
 
 require (
-	go.eggybyte.com/egg/core v0.0.0-00010101000000-000000000000
+	go.eggybyte.com/egg/core v0.3.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/driver/sqlite v1.6.0
