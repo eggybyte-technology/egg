@@ -3,6 +3,4 @@ package generators
 
 // FrameworkVersion is the Egg framework version that this CLI release uses.
 // This version is used when generating new projects.
-// For development builds, this will be empty and getFrameworkVersion() will return "latest".
-const FrameworkVersion = ""
-
+const FrameworkVersion = "v0.3.0"
