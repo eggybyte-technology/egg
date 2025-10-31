@@ -20,15 +20,15 @@ import (
 
 // Version is the CLI version.
 // This value is set by cli-release.sh during release builds.
-var Version = "v0.0.3"
+var Version = "v0.0.3-alpha.2"
 
 // Commit is the git commit hash.
 // This value is set by cli-release.sh during release builds.
-var Commit = "19c26a3"
+var Commit = "8d40c81"
 
 // BuildTime is the build timestamp in RFC3339 format.
 // This value is set by cli-release.sh during release builds.
-var BuildTime = "2025-10-31T09:24:52Z"
+var BuildTime = "2025-10-31T09:52:48Z"
 
 // FrameworkVersion is the Egg framework version that this CLI release uses.
 // This value is set by cli-release.sh during release builds.
