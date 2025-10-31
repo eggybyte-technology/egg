@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.eggybyte.com/egg/cli/internal/toolrunner"
 	"go.eggybyte.com/egg/cli/internal/ui"
+	"go.eggybyte.com/egg/cli/internal/version"
 )
 
 // doctorCmd represents the doctor command.
@@ -86,6 +87,9 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	hasErrors := false
 	hasWarnings := false
 
+	// Check version information
+	checkVersionInfo()
+	
 	// Check system information
 	checkSystemInfo()
 
@@ -97,6 +101,10 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		hasErrors = true
 	} else {
 		ui.Success("  Go")
+		// Display Go version
+		if goVersion, err := toolrunner.GetGoVersion(ctx); err == nil {
+			ui.Info("      Version: %s", strings.TrimSpace(goVersion))
+		}
 	}
 
 	// Check Docker installation
@@ -106,6 +114,19 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		hasErrors = true
 	} else {
 		ui.Success("  Docker")
+		// Display Docker version
+		if result, err := runner.Docker(ctx, "version", "--format", "{{.Server.Version}}"); err == nil {
+			ui.Info("      Version: %s", strings.TrimSpace(result.Stdout))
+		}
+		// Check Docker buildx version
+		if result, err := runner.Docker(ctx, "buildx", "version"); err == nil {
+			// Extract version from buildx output (format: "github.com/docker/buildx v0.x.x")
+			output := strings.TrimSpace(result.Stdout)
+			if idx := strings.LastIndex(output, " "); idx >= 0 {
+				buildxVersion := output[idx+1:]
+				ui.Info("      Buildx: %s", buildxVersion)
+			}
+		}
 	}
 	ui.Info("")
 
@@ -165,6 +186,28 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// checkVersionInfo checks CLI and framework version information.
+//
+// Parameters:
+//   - None
+//
+// Returns:
+//   - None
+//
+// Concurrency:
+//   - Single-threaded
+//
+// Performance:
+//   - Version information retrieval
+func checkVersionInfo() {
+	ui.Info("Version Information")
+	ui.Info("  CLI Version:           %s", version.Version)
+	ui.Info("  Framework Version:     %s", version.FrameworkVersion)
+	ui.Info("  Git Commit:            %s", version.Commit)
+	ui.Info("  Build Time:            %s", version.BuildTime)
+	ui.Info("")
+}
+
 // checkSystemInfo checks basic system information.
 //
 // Parameters:
@@ -206,7 +249,7 @@ func checkGoInstallation(ctx context.Context, runner *toolrunner.Runner) error {
 	}
 
 	// Get Go version
-	version, err := toolrunner.GetGoVersion(ctx)
+	goVersion, err := toolrunner.GetGoVersion(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get version: %w", err)
 	}
@@ -217,11 +260,10 @@ func checkGoInstallation(ctx context.Context, runner *toolrunner.Runner) error {
 	}
 
 	// Parse version to check minimum requirement (1.21+)
-	if !strings.Contains(version, "go1.") {
-		return fmt.Errorf("invalid version format: %s", version)
+	if !strings.Contains(goVersion, "go1.") {
+		return fmt.Errorf("invalid version format: %s", goVersion)
 	}
 
-	ui.Debug("      Version: %s", version)
 	return nil
 }
 
@@ -246,13 +288,10 @@ func checkDockerInstallation(ctx context.Context, runner *toolrunner.Runner) err
 	}
 
 	// Check Docker daemon
-	result, err := runner.Docker(ctx, "version", "--format", "{{.Server.Version}}")
+	_, err := runner.Docker(ctx, "version", "--format", "{{.Server.Version}}")
 	if err != nil {
 		return fmt.Errorf("daemon not running")
 	}
-
-	version := strings.TrimSpace(result.Stdout)
-	ui.Debug("      Version: %s", version)
 
 	// Check Docker buildx
 	if _, err := runner.Docker(ctx, "buildx", "version"); err != nil {
@@ -294,11 +333,30 @@ func checkRequiredTools(ctx context.Context, runner *toolrunner.Runner) error {
 		if available {
 			ui.Success("  %s", tool.name)
 			// Get version if available
-			if tool.name == "buf" {
+			var toolVersion string
+			switch tool.name {
+			case "buf":
 				if result, err := runner.Buf(ctx, "version"); err == nil {
-					version := strings.TrimSpace(result.Stdout)
-					ui.Debug("      Version: %s", version)
+					toolVersion = strings.TrimSpace(result.Stdout)
 				}
+			case "kubectl":
+				if result, err := runner.Exec(ctx, "kubectl", "version", "--client", "--short"); err == nil {
+					// Extract version from kubectl output (format: "Client Version: v1.x.x")
+					output := strings.TrimSpace(result.Stdout)
+					if idx := strings.Index(output, "v"); idx >= 0 {
+						parts := strings.Fields(output[idx:])
+						if len(parts) > 0 {
+							toolVersion = parts[0]
+						}
+					}
+				}
+			case "helm":
+				if result, err := runner.Exec(ctx, "helm", "version", "--short"); err == nil {
+					toolVersion = strings.TrimSpace(result.Stdout)
+				}
+			}
+			if toolVersion != "" {
+				ui.Info("      Version: %s", toolVersion)
 			}
 		} else {
 			if tool.required {
@@ -356,6 +414,22 @@ func checkProtocPlugins(ctx context.Context, runner *toolrunner.Runner) error {
 		available, _ := toolrunner.CheckToolAvailability(plugin.Name)
 		if available {
 			ui.Success("  %s", plugin.Name)
+			// Try to get plugin version
+			var pluginVersion string
+			switch plugin.Name {
+			case "protoc-gen-go":
+				// protoc-gen-go doesn't have a version flag, but we can check if it's in PATH
+				pluginVersion = "installed"
+			case "protoc-gen-connect-go":
+				pluginVersion = "installed"
+			case "protoc-gen-openapiv2":
+				pluginVersion = "installed"
+			case "protoc-gen-dart":
+				pluginVersion = "installed"
+			}
+			if pluginVersion != "" {
+				ui.Info("      Status: %s", pluginVersion)
+			}
 		} else {
 			if plugin.Required {
 				ui.Warning("  %s: missing (required)", plugin.Name)

@@ -81,9 +81,12 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "V", false, "Enable verbose output")
 	rootCmd.PersistentFlags().BoolVar(&nonInteractive, "non-interactive", false, "Disable interactive prompts")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	// Add version flags (--version and -v)
+	rootCmd.Flags().BoolP("version", "v", false, "Show version information")
 }
 
 // main is the entry point for the egg CLI tool.

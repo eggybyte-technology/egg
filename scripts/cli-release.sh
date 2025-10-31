@@ -308,6 +308,93 @@ EOF
         print_warning "    ↳ Failed to create framework_version.go"
     fi
     
+    # Step 2b: Generate version information file
+    print_info "  → Generating version information..."
+    local version_file="$CLI_PATH/internal/version/version.go"
+    local git_commit
+    git_commit=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    local build_time
+    build_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    # Create version.go with version information
+    cat > "$version_file" <<EOF
+// Package version provides version information for the egg CLI tool.
+//
+// Overview:
+//   - Responsibility: CLI version metadata (version, commit, build time)
+//   - Key Types: Version constants and functions
+//   - Concurrency Model: Immutable constants, safe for concurrent use
+//   - Error Semantics: No errors (all constants)
+//   - Performance Notes: Zero-cost constants
+//
+// Usage:
+//
+//	import "go.eggybyte.com/egg/cli/internal/version"
+//	version.GetVersionString()
+package version
+
+import (
+	"fmt"
+	"runtime"
+)
+
+// Version is the CLI version.
+// This value is set by cli-release.sh during release builds.
+var Version = "$cli_version"
+
+// Commit is the git commit hash.
+// This value is set by cli-release.sh during release builds.
+var Commit = "$git_commit"
+
+// BuildTime is the build timestamp in RFC3339 format.
+// This value is set by cli-release.sh during release builds.
+var BuildTime = "$build_time"
+
+// FrameworkVersion is the Egg framework version that this CLI release uses.
+// This value is set by cli-release.sh during release builds.
+var FrameworkVersion = "$framework_version"
+
+// GetVersionString returns the full version string in the format:
+// egg version v0.3.0 (commit 4a9b2c1, built 2025-10-31T12:10:00Z)
+//
+// Returns:
+//   - string: Formatted version string
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - O(1) string concatenation
+func GetVersionString() string {
+	return fmt.Sprintf("egg version %s (commit %s, built %s)", Version, Commit, BuildTime)
+}
+
+// GetFullVersionInfo returns detailed version information including framework version.
+//
+// Returns:
+//   - string: Multi-line version information
+//
+// Concurrency:
+//   - Safe for concurrent use
+//
+// Performance:
+//   - O(1) string concatenation
+func GetFullVersionInfo() string {
+	return fmt.Sprintf(\`egg version %s (commit %s, built %s)
+egg framework version %s
+go version %s (%s/%s)\`,
+		Version, Commit, BuildTime,
+		FrameworkVersion,
+		runtime.Version(), runtime.GOOS, runtime.GOARCH)
+}
+EOF
+    
+    if [ -f "$version_file" ]; then
+        print_success "    ↳ Version information generated: $cli_version (commit $git_commit, built $build_time)"
+    else
+        print_warning "    ↳ Failed to create version.go"
+    fi
+    
     # Step 3: Commit changes
     cd "$PROJECT_ROOT"
     if ! git diff --quiet -- "$CLI_MODULE/" 2>/dev/null; then
@@ -316,9 +403,12 @@ EOF
         
         local commit_msg="chore($CLI_MODULE): update dependencies to framework $framework_version for release $cli_version"
         
-        # Also commit framework_version.go if it exists
+        # Also commit framework_version.go and version.go if they exist
         if [ -f "$CLI_PATH/internal/generators/framework_version.go" ]; then
             git add "$CLI_PATH/internal/generators/framework_version.go" 2>/dev/null || true
+        fi
+        if [ -f "$CLI_PATH/internal/version/version.go" ]; then
+            git add "$CLI_PATH/internal/version/version.go" 2>/dev/null || true
         fi
         
         if git commit -m "$commit_msg" 2>/dev/null; then
@@ -457,7 +547,7 @@ main() {
     check_command "go" "Go is required but not installed"
     # Check for large files before release
     print_section "Checking for large files"
-    if ! bash "$SCRIPT_DIR/check-large-files.sh"; then
+    if ! bash "$SCRIPT_DIR/check-large-files.sh" --check-staged; then
         exit_with_error "Large files detected. Please remove or use git-lfs before releasing."
     fi
     check_working_directory "$CLI_VERSION"

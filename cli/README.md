@@ -39,8 +39,8 @@ egg init --project-name myapp --module-prefix github.com/myorg/myapp
 # Or simply: egg init (uses current directory name)
 
 # 3. Create backend services
-egg create backend user --proto crud --local-modules
-egg create backend ping --proto echo --local-modules
+egg create backend user --proto crud
+egg create backend ping --proto echo
 
 # 4. Create frontend
 egg create frontend web --platforms web
@@ -73,6 +73,37 @@ egg check
 
 ### Environment Management
 
+#### `egg version` / `egg --version` / `egg -v` - Show version information
+
+Displays version information for the egg CLI tool and egg framework.
+
+```bash
+egg version           # Show full version information
+egg --version         # Show version (short format)
+egg -v                # Show version (short format)
+```
+
+**Output Format:**
+
+Full version information:
+```
+egg version v0.3.0 (commit 4a9b2c1, built 2025-10-31T12:10:00Z)
+egg framework version v0.3.0
+go version go1.25.1 (darwin/arm64)
+```
+
+Short format (with `--version` or `-v` flag):
+```
+egg version v0.3.0 (commit 4a9b2c1, built 2025-10-31T12:10:00Z)
+```
+
+**Version Information Includes:**
+- CLI version (semantic version)
+- Git commit hash (short format)
+- Build timestamp (RFC3339 format, UTC)
+- Egg framework version
+- Go runtime version and platform
+
 #### `egg doctor` - Environment diagnostics
 
 Verifies development environment and required tools, including local protoc plugins.
@@ -83,10 +114,13 @@ egg doctor --install          # Install missing protoc plugins
 ```
 
 **Checks:**
-- Go, Docker, buf, kubectl, helm installations
-- Local protoc plugins (protoc-gen-go, protoc-gen-connect-go, protoc-gen-openapiv2, protoc-gen-dart)
-- Network connectivity
-- File system permissions
+- **Version Information**: CLI version, framework version, git commit, build time
+- **System Information**: OS/Architecture, Go runtime version
+- **Core Toolchain**: Go, Docker installations and versions
+- **Development Tools**: buf, kubectl, helm installations and versions
+- **Code Generation**: Local protoc plugins (protoc-gen-go, protoc-gen-connect-go, protoc-gen-openapiv2, protoc-gen-dart)
+- **Network Connectivity**: Docker Hub, Go Proxy accessibility
+- **File System**: Write permissions for current directory and temp directory
 
 **Output Format:**
 - Clean, consistent formatting with unified logging style

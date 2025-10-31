@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2025-10-31
+
 ### Added
+
+- **CLI**: Version command and version information display
+  - `egg version` - Show full version information (CLI version, commit hash, build time, framework version, Go runtime)
+  - `egg --version` / `egg -v` - Show short version format
+  - Version information includes: CLI version, git commit hash (short), build timestamp (RFC3339 UTC), egg framework version, Go runtime version and platform
+  - Version information is automatically generated during release via `cli-release.sh`
+  
+- **CLI**: Enhanced `egg doctor` command with version information
+  - Displays CLI version, framework version, git commit, and build time at the start of diagnostics
+  - Shows detailed version information for all checked tools:
+    - Go version (full version string)
+    - Docker version (server version)
+    - Docker buildx version (if available)
+    - buf version (if available)
+    - kubectl version (if available)
+    - helm version (if available)
+  - Improved tool version detection and display for better diagnostics
+
+- **CLI Release**: Automatic version information generation
+  - `cli-release.sh` now automatically generates `internal/version/version.go` with version metadata
+  - Version information includes: CLI version, git commit hash, build timestamp (RFC3339 UTC), framework version
+  - Version information is committed as part of the release process
 
 - **CLI**: Port proxy management for Docker Compose services
   - `egg compose proxy <service-name> <service-port> [--local-port <port>]` - Create port proxy for a single service
@@ -17,14 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Uses socat-based containers to map Docker network ports to localhost
   - Supports both backend services (HTTP, Health, Metrics) and frontend services (port 3000)
 
-### Fixed
-
-- **CLI**: Fixed Docker Compose network name resolution for port proxies
-  - Docker Compose network naming convention: `<project-name>_<network-name>`
-  - Port proxies now correctly connect to Docker Compose networks
-  - All compose commands now use `-p` flag to specify project name for consistent network naming
-
 ### Changed
+
+- **CLI**: Changed verbose flag from `-v` to `-V` to avoid conflict with version flag
+  - `egg -v` now shows version information (was verbose flag)
+  - `egg --verbose` or `egg -V` enables verbose output
+
+- **CLI**: Improved `egg doctor` output with detailed version information
+  - All checked tools now display their version numbers when available
+  - Version information section added at the beginning of diagnostics
+  - Better visual hierarchy for version and diagnostic information
 
 - **CLI**: `egg compose up` always uses detached mode (`-d`)
   - Removed `--detached` flag (always runs in background)
@@ -42,6 +68,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Uses `--check-staged` flag to detect large files in modified/untracked files (excludes `.gitignore` ignored files)
   - Prevents false positives from build artifacts and ignored files
   - All scripts use unified `logger.sh` for consistent logging output
+
+### Fixed
+
+- **CLI**: Fixed Docker Compose network name resolution for port proxies
+  - Docker Compose network naming convention: `<project-name>_<network-name>`
+  - Port proxies now correctly connect to Docker Compose networks
+  - All compose commands now use `-p` flag to specify project name for consistent network naming
 
 ## [0.3.1] - 2025-01-31
 

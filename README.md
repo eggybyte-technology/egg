@@ -46,7 +46,7 @@ egg init --project-name my-project --module-prefix github.com/myorg/my-project
 
 # Create a backend service
 cd my-project
-egg create backend user --proto crud --local-modules
+egg create backend user --proto crud
 
 # Generate API code
 egg api generate
