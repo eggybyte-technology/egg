@@ -137,10 +137,13 @@ func (r *Runner) execute(ctx context.Context, name string, args ...string) (*Com
 		cmd.Env = append(os.Environ(), "GOWORK=off")
 	}
 
-	// Always show tool usage
-	ui.Info("Using external tool: %s", name)
-	if r.verbose {
-		ui.Debug("Executing command: %s %s", name, strings.Join(args, " "))
+	// Build command string for display
+	cmdStr := fmt.Sprintf("%s %s", name, strings.Join(args, " "))
+
+	// Always show the command being executed
+	ui.Info("Executing: %s", cmdStr)
+	if r.workDir != "" && r.workDir != "." {
+		ui.Debug("Working directory: %s", r.workDir)
 	}
 
 	// Capture output
@@ -159,8 +162,22 @@ func (r *Runner) execute(ctx context.Context, name string, args ...string) (*Com
 		Duration: duration,
 	}
 
+	// Always show command output if present
+	if result.Stdout != "" || result.Stderr != "" {
+		if result.Stdout != "" {
+			ui.Info("Command stdout:\n%s", result.Stdout)
+		}
+		if result.Stderr != "" {
+			ui.Info("Command stderr:\n%s", result.Stderr)
+		}
+	}
+
+	// Show execution time if verbose
+	if r.verbose {
+		ui.Debug("Command completed in %v", duration)
+	}
+
 	// Handle errors
-	cmdStr := fmt.Sprintf("%s %s", name, strings.Join(args, " "))
 	if err != nil {
 		if result.Stderr != "" && result.Stdout != "" {
 			return result, fmt.Errorf("command failed: %w\ncommand: %s\nstderr: %s\nstdout: %s", err, cmdStr, result.Stderr, result.Stdout)
@@ -221,14 +238,22 @@ func (r *Runner) executeWithEnv(ctx context.Context, env map[string]string, name
 		cmd.Env = append(cmd.Env, "GOWORK=off")
 	}
 
-	// Always show tool usage
-	ui.Info("Using external tool: %s", name)
-	if r.verbose {
-		envStr := ""
+	// Build command string for display
+	cmdStr := fmt.Sprintf("%s %s", name, strings.Join(args, " "))
+
+	// Always show the command being executed
+	ui.Info("Executing: %s", cmdStr)
+	if r.workDir != "" && r.workDir != "." {
+		ui.Debug("Working directory: %s", r.workDir)
+	}
+
+	// Show environment variables if any
+	if len(env) > 0 {
+		envParts := make([]string, 0, len(env))
 		for k, v := range env {
-			envStr += fmt.Sprintf("%s=%s ", k, v)
+			envParts = append(envParts, fmt.Sprintf("%s=%s", k, v))
 		}
-		ui.Debug("Executing command: %s%s %s", envStr, name, strings.Join(args, " "))
+		ui.Debug("Environment variables: %s", strings.Join(envParts, " "))
 	}
 
 	// Capture output
@@ -247,8 +272,22 @@ func (r *Runner) executeWithEnv(ctx context.Context, env map[string]string, name
 		Duration: duration,
 	}
 
+	// Always show command output if present
+	if result.Stdout != "" || result.Stderr != "" {
+		if result.Stdout != "" {
+			ui.Info("Command stdout:\n%s", result.Stdout)
+		}
+		if result.Stderr != "" {
+			ui.Info("Command stderr:\n%s", result.Stderr)
+		}
+	}
+
+	// Show execution time if verbose
+	if r.verbose {
+		ui.Debug("Command completed in %v", duration)
+	}
+
 	// Handle errors
-	cmdStr := fmt.Sprintf("%s %s", name, strings.Join(args, " "))
 	if err != nil {
 		if result.Stderr != "" && result.Stdout != "" {
 			return result, fmt.Errorf("command failed: %w\ncommand: %s\nstderr: %s\nstdout: %s", err, cmdStr, result.Stderr, result.Stdout)

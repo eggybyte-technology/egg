@@ -89,7 +89,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Check version information
 	checkVersionInfo()
-	
+
 	// Check system information
 	checkSystemInfo()
 
@@ -336,22 +336,26 @@ func checkRequiredTools(ctx context.Context, runner *toolrunner.Runner) error {
 			var toolVersion string
 			switch tool.name {
 			case "buf":
-				if result, err := runner.Buf(ctx, "version"); err == nil {
+				// buf uses --version flag, not version subcommand
+				if result, err := runner.Buf(ctx, "--version"); err == nil && result.ExitCode == 0 {
 					toolVersion = strings.TrimSpace(result.Stdout)
 				}
 			case "kubectl":
-				if result, err := runner.Exec(ctx, "kubectl", "version", "--client", "--short"); err == nil {
-					// Extract version from kubectl output (format: "Client Version: v1.x.x")
-					output := strings.TrimSpace(result.Stdout)
-					if idx := strings.Index(output, "v"); idx >= 0 {
-						parts := strings.Fields(output[idx:])
-						if len(parts) > 0 {
-							toolVersion = parts[0]
+				// kubectl version --client outputs version info, parse from output
+				if result, err := runner.Exec(ctx, "kubectl", "version", "--client"); err == nil && result.ExitCode == 0 {
+					// Extract version from kubectl output (format: "Client Version: version.Info{Major:\"1\", Minor:\"28\", GitVersion:\"v1.28.0\", ...}")
+					output := result.Stdout
+					// Look for GitVersion field
+					if idx := strings.Index(output, "GitVersion:\""); idx >= 0 {
+						versionStart := idx + len("GitVersion:\"")
+						if versionEnd := strings.Index(output[versionStart:], "\""); versionEnd >= 0 {
+							toolVersion = output[versionStart : versionStart+versionEnd]
 						}
 					}
 				}
 			case "helm":
-				if result, err := runner.Exec(ctx, "helm", "version", "--short"); err == nil {
+				// helm version --short outputs short version
+				if result, err := runner.Exec(ctx, "helm", "version", "--short"); err == nil && result.ExitCode == 0 {
 					toolVersion = strings.TrimSpace(result.Stdout)
 				}
 			}
@@ -377,10 +381,10 @@ func checkRequiredTools(ctx context.Context, runner *toolrunner.Runner) error {
 
 // ProtocPlugin represents a protoc plugin configuration.
 type ProtocPlugin struct {
-	Name         string
-	GoPackage    string
-	Required     bool
-	Description  string
+	Name        string
+	GoPackage   string
+	Required    bool
+	Description string
 }
 
 // checkProtocPlugins checks local protoc plugins installation.
@@ -498,31 +502,31 @@ func installProtocPlugins(ctx context.Context) error {
 
 	for _, plugin := range missing {
 		ui.Info("Installing %s...", plugin.Name)
-		
+
 		// Special handling for Dart plugin
 		if plugin.Name == "protoc-gen-dart" {
 			ui.Info("  For Dart plugin, please run manually:")
 			ui.Info("    dart pub global activate protoc_plugin")
 			continue
 		}
-		
+
 		// Skip if no GoPackage is specified
 		if plugin.GoPackage == "" {
 			continue
 		}
-		
+
 		cmd := fmt.Sprintf("go install %s", plugin.GoPackage)
 		result, err := runner.Exec(ctx, "sh", "-c", cmd)
 		if err != nil {
 			ui.Error("  Failed to install %s: %v", plugin.Name, err)
 			return fmt.Errorf("failed to install %s: %w", plugin.Name, err)
 		}
-		
+
 		if result.ExitCode != 0 {
 			ui.Error("  Failed to install %s: %s", plugin.Name, result.Stderr)
 			return fmt.Errorf("failed to install %s: %s", plugin.Name, result.Stderr)
 		}
-		
+
 		ui.Success("  Installed %s", plugin.Name)
 	}
 
@@ -557,11 +561,24 @@ func checkNetworkConnectivity(ctx context.Context, runner *toolrunner.Runner) er
 	var failedServices []string
 	for _, svc := range services {
 		ui.Info("  Checking %s...", svc.name)
-		if _, err := runner.Exec(ctx, "curl", "-s", "--connect-timeout", "5", svc.url); err != nil {
+		// Use curl with -w to get HTTP status code and -o to redirect output
+		// Check for HTTP status code 200 or 401 (401 means server is reachable, just needs auth)
+		result, err := runner.Exec(ctx, "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--connect-timeout", "5", svc.url)
+		if err != nil {
 			ui.Warning("  %s: unreachable", svc.name)
 			failedServices = append(failedServices, svc.name)
-		} else {
+			continue
+		}
+
+		// Check HTTP status code
+		statusCode := strings.TrimSpace(result.Stdout)
+		// 200 = OK, 401 = Unauthorized (server is reachable, just needs auth)
+		// Both indicate the service is accessible
+		if statusCode == "200" || statusCode == "401" {
 			ui.Success("  %s", svc.name)
+		} else {
+			ui.Warning("  %s: unreachable (HTTP %s)", svc.name, statusCode)
+			failedServices = append(failedServices, svc.name)
 		}
 	}
 
