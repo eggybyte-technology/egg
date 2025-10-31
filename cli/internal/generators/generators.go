@@ -582,11 +582,11 @@ func (g *BackendGenerator) Create(ctx context.Context, name string, config *conf
 			"github.com/google/uuid@latest",
 		}
 
-		// Add egg dependencies with GOPROXY=direct to avoid proxy issues
-		// Egg modules should be fetched directly from source repository
-		ui.Info("Adding egg framework dependencies (GOPROXY=direct)...")
+		// Add egg dependencies with GOPROXY=https://goproxy.cn,direct for better support in China
+		// Egg modules should be fetched through goproxy.cn proxy first, fallback to direct if proxy fails
+		ui.Info("Adding egg framework dependencies (GOPROXY=https://goproxy.cn,direct)...")
 		for _, dep := range eggDeps {
-			if _, err := serviceRunner.GoWithEnv(ctx, map[string]string{"GOPROXY": "direct"}, "get", dep); err != nil {
+			if _, err := serviceRunner.GoWithEnv(ctx, map[string]string{"GOPROXY": "https://goproxy.cn,direct"}, "get", dep); err != nil {
 				ui.Warning("Failed to add dependency %s: %v", dep, err)
 				continue
 			}
