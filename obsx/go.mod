@@ -2,12 +2,6 @@ module go.eggybyte.com/egg/obsx
 
 go 1.25.1
 
-replace go.eggybyte.com/egg/core => ../core
-
-replace go.eggybyte.com/egg/logx => ../logx
-
-replace go.eggybyte.com/egg/configx => ../configx
-
 require (
 	github.com/prometheus/client_golang v1.23.2
 	go.opentelemetry.io/otel v1.38.0
