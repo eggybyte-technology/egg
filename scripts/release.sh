@@ -6,12 +6,14 @@
 # It follows a layer-by-layer release strategy to ensure dependency consistency.
 #
 # Usage:
-#   ./scripts/release.sh v0.x.y              # Release a new version
-#   ./scripts/release.sh --delete-all-tags   # Delete ALL tags (DANGEROUS!)
+#   ./scripts/release.sh v0.x.y                         # Release a new version
+#   ./scripts/release.sh --delete-all-tags              # Delete ALL tags (DANGEROUS!)
+#   ./scripts/release.sh --delete-version-tags v0.x.y   # Delete tags for a specific version (framework modules only)
 #
 # Example:
 #   ./scripts/release.sh v0.1.0
 #   ./scripts/release.sh --delete-all-tags
+#   ./scripts/release.sh --delete-version-tags v0.3.0
 #
 # Environment Variables:
 #   AUTO_COMMIT_CHANGES - Set to "true" to auto-commit without prompting (for CI/CD)
@@ -593,6 +595,101 @@ delete_all_tags() {
 }
 
 # ============================================================================
+# Function: delete_version_tags
+# Description: Deletes tags for a specific version for all framework modules (excluding CLI)
+# Parameters:
+#   $1 - Version string (e.g., v0.3.0)
+# ============================================================================
+delete_version_tags() {
+    local version="$1"
+    
+    print_header "Delete Version Tags - Framework Modules Only"
+    
+    echo ""
+    print_warning "⚠️  WARNING: This will delete tags for version $version for all framework modules (excluding CLI)!"
+    print_warning "⚠️  This operation is IRREVERSIBLE!"
+    echo ""
+    
+    # Validate version format
+    validate_version "$version"
+    
+    # Find tags for the specified version
+    print_info "Finding tags for version $version..."
+    local version_tags=()
+    
+    # Find tags for framework modules only (excluding CLI)
+    for mod in "${ALL_MODULES[@]}"; do
+        local tag="${mod}/${version}"
+        if git rev-parse "$tag" >/dev/null 2>&1; then
+            version_tags+=("$tag")
+        fi
+    done
+    
+    if [ ${#version_tags[@]} -eq 0 ]; then
+        print_info "No tags found for version $version"
+        exit 0
+    fi
+    
+    echo ""
+    print_info "Found ${#version_tags[@]} tags for version $version:"
+    for tag in "${version_tags[@]}"; do
+        echo "  - $tag"
+    done
+    echo ""
+    
+    # Confirmation
+    print_warning "This will delete tags both locally AND from remote (origin)"
+    echo ""
+    read -rp "Are you sure you want to delete these tags? (type 'yes' to continue): " confirm
+    
+    if [[ "$confirm" != "yes" ]]; then
+        print_info "Operation cancelled"
+        exit 0
+    fi
+    
+    # Proceed with deletion
+    echo ""
+    print_section "Deleting Tags"
+    
+    local deleted_count=0
+    local failed_count=0
+    
+    for tag in "${version_tags[@]}"; do
+        print_info "Deleting tag: $tag"
+        
+        # Delete local tag
+        if git tag -d "$tag" 2>/dev/null; then
+            print_info "  ↳ Local tag deleted"
+        else
+            print_warning "  ↳ Failed to delete local tag (may not exist)"
+        fi
+        
+        # Delete remote tag
+        if git push --delete origin "$tag" 2>/dev/null; then
+            print_success "  ✓ Remote tag deleted"
+            deleted_count=$((deleted_count + 1))
+        else
+            print_error "  ✗ Failed to delete remote tag"
+            failed_count=$((failed_count + 1))
+        fi
+    done
+    
+    echo ""
+    print_header "Deletion Summary"
+    echo ""
+    print_info "Version: $version"
+    print_info "Total tags processed: ${#version_tags[@]}"
+    print_success "Successfully deleted: $deleted_count"
+    
+    if [ $failed_count -gt 0 ]; then
+        print_error "Failed to delete: $failed_count"
+    fi
+    
+    echo ""
+    print_success "Tag deletion completed!"
+}
+
+# ============================================================================
 # Main Execution
 # ============================================================================
 main() {
@@ -606,18 +703,37 @@ main() {
         exit 0
     fi
     
+    # Check for delete version tags command
+    if [[ "$version" == "--delete-version-tags" ]]; then
+        local target_version="${2:-}"
+        if [[ -z "$target_version" ]]; then
+            print_error "Version argument is required for --delete-version-tags"
+            echo ""
+            echo "Usage:"
+            echo "  $0 --delete-version-tags v0.x.y"
+            echo ""
+            echo "Example:"
+            echo "  $0 --delete-version-tags v0.3.0"
+            exit 1
+        fi
+        delete_version_tags "$target_version"
+        exit 0
+    fi
+    
     # Validate input
     if [[ -z "$version" ]]; then
         print_error "Version argument is required"
         echo ""
         echo "Usage:"
-        echo "  $0 v0.x.y              # Release a new version"
-        echo "  $0 --delete-all-tags   # Delete ALL tags (DANGEROUS!)"
+        echo "  $0 v0.x.y                         # Release a new version"
+        echo "  $0 --delete-all-tags              # Delete ALL tags (DANGEROUS!)"
+        echo "  $0 --delete-version-tags v0.x.y   # Delete tags for a specific version (framework modules only)"
         echo ""
         echo "Example:"
         echo "  $0 v0.1.0"
         echo "  $0 v0.2.0-beta.1"
         echo "  $0 --delete-all-tags"
+        echo "  $0 --delete-version-tags v0.3.0"
         exit 1
     fi
     

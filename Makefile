@@ -1,6 +1,6 @@
 # Makefile for egg framework (monorepo root)
 .PHONY: help test lint clean tools setup tidy coverage check quality \
-	release delete-all-tags cli-release git-large-files git-large-objects reinit-workspace
+	release delete-all-tags delete-version-tags cli-release git-large-files git-large-objects reinit-workspace
 
 # Logger script for unified output
 LOGGER := ./scripts/logger.sh
@@ -69,6 +69,8 @@ help:
 	@echo "$(BOLD)Release Management:$(RESET)"
 	@echo "  $(CYAN)release$(RESET)          - Release all modules (Usage: make release VERSION=v0.3.0)"
 	@echo "  $(CYAN)cli-release$(RESET)       - Release CLI tool (Usage: make cli-release CLI=v1.0.0 FW=v0.3.0)"
+	@echo "  $(YELLOW)delete-version-tags$(RESET) - Delete tags for a specific version (framework modules only)"
+	@echo "                           (Usage: make delete-version-tags VERSION=v0.3.0)"
 	@echo "  $(RED)delete-all-tags$(RESET)  - $(RED)$(BOLD)[DANGEROUS]$(RESET) Delete ALL version tags"
 	@echo ""
 	@echo "$(BOLD)Git Utilities:$(RESET)"
@@ -260,6 +262,16 @@ cli-release:
 	echo "$(BOLD)$(BLUE)▶ Releasing Egg CLI $$CLI_VERSION with framework $$FW_VERSION$(RESET)"; \
 	echo "$(BOLD)$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"; \
 	./scripts/cli-release.sh $$CLI_VERSION --framework-version $$FW_VERSION
+
+# Delete tags for a specific version (framework modules only, excluding CLI)
+# Usage: make delete-version-tags VERSION=v0.3.0
+delete-version-tags:
+	@if [ -z "$(VERSION)" ]; then \
+		$(call print_error,VERSION is required); \
+		echo "Usage: make delete-version-tags VERSION=v0.3.0"; \
+		exit 1; \
+	fi
+	@./scripts/release.sh --delete-version-tags $(VERSION)
 
 # Delete ALL version tags (DANGEROUS OPERATION!)
 # This will delete all tags for all modules (including CLI), both locally and remotely
