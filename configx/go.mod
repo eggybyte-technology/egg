@@ -4,7 +4,7 @@ go 1.25.1
 
 require (
 	github.com/go-playground/validator/v10 v10.28.0
-	go.eggybyte.com/egg/core v0.3.2-alpha.1
+	go.eggybyte.com/egg/core v0.3.2
 )
 
 require (
