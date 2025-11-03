@@ -2,13 +2,9 @@ module go.eggybyte.com/egg/configx
 
 go 1.25.1
 
-replace go.eggybyte.com/egg/core => ../core
-
-replace go.eggybyte.com/egg/logx => ../logx
-
 require (
 	github.com/go-playground/validator/v10 v10.28.0
-	go.eggybyte.com/egg/core v0.0.0-00010101000000-000000000000
+	go.eggybyte.com/egg/core v0.3.2-alpha.1
 )
 
 require (
