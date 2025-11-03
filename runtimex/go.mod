@@ -2,14 +2,4 @@ module go.eggybyte.com/egg/runtimex
 
 go 1.25.1
 
-replace go.eggybyte.com/egg/core => ../core
-
-replace go.eggybyte.com/egg/logx => ../logx
-
-replace go.eggybyte.com/egg/configx => ../configx
-
-replace go.eggybyte.com/egg/obsx => ../obsx
-
-replace go.eggybyte.com/egg/httpx => ../httpx
-
-require go.eggybyte.com/egg/core v0.0.0-00010101000000-000000000000
+require go.eggybyte.com/egg/core v0.3.2-alpha.1
