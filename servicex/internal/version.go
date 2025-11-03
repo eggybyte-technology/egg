@@ -10,5 +10,5 @@ package internal
 //
 // This value is set by the release script and should not be manually edited.
 // It is displayed at service startup to help identify which build/release is running.
-var BuildTime = "20251103212732" // Default fallback: January 1, 2025 00:00:00
+var BuildTime = "20251103213600" // Default fallback: January 1, 2025 00:00:00
 
