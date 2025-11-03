@@ -7,59 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.3] - 2025-10-31
+## [0.3.2] - 2025-11-03
 
-### Added
+### Fixed
 
-- **CLI**: Version command and version information display
-  - `egg version` - Show full version information (CLI version, commit hash, build time, framework version, Go runtime)
-  - `egg --version` / `egg -v` - Show short version format
-  - Version information includes: CLI version, git commit hash (short), build timestamp (RFC3339 UTC), egg framework version, Go runtime version and platform
-  - Version information is automatically generated during release via `cli-release.sh`
+- **Release Scripts**: Fixed module dependency management in release process
+  - `release.sh`: Now correctly removes ALL replace directives (including those parsed from go.mod)
+  - `release.sh`: Updates ALL egg module dependencies to release version, not just already-released ones
+  - `release.sh`: Ensures all modules use consistent version dependencies during release
   
-- **CLI**: Enhanced `egg doctor` command with version information
-  - Displays CLI version, framework version, git commit, and build time at the start of diagnostics
-  - Shows detailed version information for all checked tools:
-    - Go version (full version string)
-    - Docker version (server version)
-    - Docker buildx version (if available)
-    - buf version (if available)
-    - kubectl version (if available)
-    - helm version (if available)
-  - Improved tool version detection and display for better diagnostics
-
-- **CLI Release**: Automatic version information generation
-  - `cli-release.sh` now automatically generates `internal/version/version.go` with version metadata
-  - Version information includes: CLI version, git commit hash, build timestamp (RFC3339 UTC), framework version
-  - Version information is committed as part of the release process
-
-- **CLI**: Port proxy management for Docker Compose services
-  - `egg compose proxy <service-name> <service-port> [--local-port <port>]` - Create port proxy for a single service
-  - `egg compose proxy-all` - Automatically create port proxies for all services (HTTP, Health, Metrics ports)
-  - `egg compose proxy-stop` - Stop all running port proxy containers
-  - Automatic port availability detection and alternative port finding
-  - Uses socat-based containers to map Docker network ports to localhost
-  - Supports both backend services (HTTP, Health, Metrics) and frontend services (port 3000)
+- **Workspace Reinitialization**: Fixed replace directive handling in workspace setup
+  - `reinit-workspace.sh`: Fixed `local` keyword error that caused script failure (bash `local` only works in functions)
+  - `reinit-workspace.sh`: Added comprehensive validation to ensure relative paths are used (never absolute paths)
+  - `reinit-workspace.sh`: Improved error handling and logging for replace directive addition
+  - `reinit-workspace.sh`: Now correctly processes all modules including CLI and examples
+  - `reinit-workspace.sh`: Added detailed logging showing each replace directive being added
 
 ### Changed
-
-- **CLI**: Changed verbose flag from `-v` to `-V` to avoid conflict with version flag
-  - `egg -v` now shows version information (was verbose flag)
-  - `egg --verbose` or `egg -V` enables verbose output
-
-- **CLI**: Improved `egg doctor` output with detailed version information
-  - All checked tools now display their version numbers when available
-  - Version information section added at the beginning of diagnostics
-  - Better visual hierarchy for version and diagnostic information
-
-- **CLI**: `egg compose up` always uses detached mode (`-d`)
-  - Removed `--detached` flag (always runs in background)
-  - Automatically generates compose.yaml before starting services
-  - Improved network configuration with explicit project name
-
-- **CLI**: Removed `.env` file generation from Docker Compose
-  - Environment variables are now configured directly in compose.yaml
-  - Cleaner deployment structure without unnecessary files
 
 - **Release Process**: Improved large file detection
   - Created standalone `scripts/check-large-files.sh` script for unified large file detection
@@ -69,14 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Prevents false positives from build artifacts and ignored files
   - All scripts use unified `logger.sh` for consistent logging output
 
-### Fixed
-
-- **CLI**: Fixed Docker Compose network name resolution for port proxies
-  - Docker Compose network naming convention: `<project-name>_<network-name>`
-  - Port proxies now correctly connect to Docker Compose networks
-  - All compose commands now use `-p` flag to specify project name for consistent network naming
-
-## [0.3.1] - 2025-01-31
+## [0.3.1] - 2025-10-31
 
 ### Changed
 
@@ -92,18 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Prompts for confirmation if large files are found
   - Helps prevent accidental commits of large binaries or artifacts
 
-### Fixed
-
-- **CLI**: Fixed `cli/cmd/` source files not being tracked in git
-  - Removed incorrect `egg` pattern from `cli/.gitignore` that was matching `cli/cmd/egg/` directory
-  - All CLI source files now properly tracked in git repository
-
-### Added
-
-- **CLI**: Added `cli/cmd/egg/` source files to git repository
-  - All CLI command implementations now tracked (api.go, build.go, check.go, compose.go, create.go, doctor.go, init.go, kube.go, main.go)
-
-## [0.3.0] - 2025-01-31
+## [0.3.0] - 2025-10-31
 
 ### Added
 
@@ -141,38 +87,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Concurrent safety verification in all test suites
   - Edge case and error path testing
 
-### Added
-
-- **CLI**: Docker Compose service testing via Docker internal network
-  - Tests now access services using Docker service names instead of localhost
-  - Health checks and RPC tests run inside Docker network using `docker compose exec`
-  - Supports pattern matching for metrics endpoint validation
-- **CLI**: Enhanced test script modularity
-  - Removed redundant tests from integration test suite
-  - Streamlined test flow for better maintainability
-  - Services remain running after tests for manual inspection
-
-### Changed
-
-- **CLI**: Docker Compose templates no longer expose ports to localhost
-  - Services are accessed via Docker internal network only
-  - Removed port mappings from compose.yaml generation
-  - Improved security by preventing accidental local port exposure
-- **CLI**: Unified logging format across CLI and shell scripts
-  - CLI `ui` package now matches `logger.sh` output format
-  - Removed redundant status text (SUCCESS, ERROR) from logger output
-  - Info and debug messages without prefixes for cleaner output
-  - Full-line coloring for better readability
-  - Section headers use simple white bullet point (•)
-  - Enhanced contrast for command and section outputs
-- **CLI**: Improved `egg doctor` command output
-  - Removed redundant prefixes for cleaner display
-  - Better visual hierarchy with standardized formatting
-- **CLI**: Optimized `egg check` command output
-  - Added summary display at the beginning
-  - Consistent formatting for errors, warnings, and info messages
-  - Better organized results grouping
-
 ### Improved
 
 - **Scripts**: Enhanced logger.sh with cleaner output format
@@ -188,103 +102,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - RPC tests: `http://service-name:port/rpc-path`
   - Metrics tests: `http://service-name:port/metrics` with pattern matching
   - Tests execute curl commands inside Docker containers via `docker compose exec`
-- **CLI**: Improved code quality and linter compliance
-  - All linter errors resolved (unlambda, wsl, errcheck)
-  - Proper error handling annotations for CLI output functions
-  - Cleaner code structure following Go best practices
 - **Build System**: Improved lint command reliability
   - Makefile lint target now correctly handles empty output scenarios
   - Fixed false-positive failures in multi-module lint runs
 
 ### Removed
 
-- **CLI**: Removed redundant integration tests from test-cli.sh
-  - Test 7: Runtime image check (no longer built locally)
-  - Test 9: Build Docker Image (merged into Test 8)
-  - Test 10: Docker Compose Validation (covered by Test 12)
-  - Test 13: Validate egg.yaml structure (covered by Test 2)
-  - Test 15: API Code Generation Verification (covered by Test 5)
-  - Test 16: Service Compilation (covered by Test 8)
-  - Test 17: Syntax Validation (covered by build process)
-- **CLI**: Removed Docker Compose port mappings from templates
-  - Backend services no longer expose HTTP/Health/Metrics ports
-  - Frontend services no longer expose web ports
-  - Database services no longer expose database ports
-  - Services accessed via Docker network only
-
 ### Fixed
 
-- **CLI**: Fixed Docker Compose test failures caused by removed port mappings
-  - Tests now correctly access services via Docker internal network
-  - Health checks work with Docker service names instead of localhost
-  - RPC tests execute inside Docker containers for proper network access
-- **CLI**: Fixed `egg doctor` output showing redundant prefixes (`[✓] [+] Go`)
-- **CLI**: Fixed `egg check` output format inconsistencies
-- **CLI**: Fixed code quality issues identified by linter
-  - Simplified template function in `templates.go` (removed unnecessary lambda wrapper)
-  - Fixed case block formatting in `ui.go` (added proper newlines per wsl linter)
-  - Added proper error handling annotations for stdout/stderr writes in CLI context
-  - Simplified single-case select statement in `compose.go`
 - **Makefile**: Fixed lint command logic to handle empty grep output correctly
   - Lint now correctly passes when all modules have no errors
   - Fixed false-positive failures caused by grep exit code when no matches found
 
 ### Added
 
-- **CLI**: Support for optional database dependency based on proto template type
-  - `echo` template services can start without database (no DB_DSN required)
-  - `crud` template services require database (DB_DSN mandatory)
-  - Handler templates adapt based on template type (Ping only vs full CRUD)
-- **CLI**: Conditional file generation - only CRUD templates generate model/repository/service files
-- **CLI**: Enhanced Docker Compose configuration with servicex-standard environment variables
-  - `SERVICE_NAME`, `SERVICE_VERSION`, `APP_ENV`, `LOG_LEVEL` automatically configured
-  - Database configuration (`DB_DSN`, `DB_DRIVER`) included when database enabled
-  - Health checks and restart policies added to all services
-- **CLI**: `--local` flag for `build backend` and `build frontend` commands
-  - Builds for local platform only (no push)
-  - Automatically detects platform (linux/amd64 or linux/arm64)
-- **CLI**: Default database enabled in new projects (`database.enabled: true`)
-
-### Changed
-
-- **CLI**: Docker Compose now uses pre-built images instead of building during compose
-  - Services reference images built via `egg build all --local` or `egg build all --push`
-  - Image names follow pattern: `<docker_registry>/<project_name>-<service_name>:<version>`
-- **CLI**: `egg build all` defaults to multi-platform build with push
-  - Use `--local` flag to build for local platform only (no push)
-- **CLI**: Frontend build process simplified
-  - Flutter web assets now copied directly from `frontend/<service>/build/web`
-  - Removed intermediate copy step to `bin/frontend/<service>`
-- **CLI**: `ping` service default uses `echo` template (simplest Ping RPC only)
-- **CLI**: Backend service templates now conditionally generate code based on proto type
-  - Echo services: handler only (no database dependency)
-  - CRUD services: full stack (handler/service/repository/model with database)
-- **CLI**: Test integration script defaults to keeping test directory (`--keep` behavior)
-  - Use `--remove` flag to clean up test directory after completion
-
-### Fixed
-
-- **CLI**: Fixed Docker Compose attempting to build images instead of using pre-built ones
-- **CLI**: Fixed database DSN requirement error for echo/ping services
-- **CLI**: Fixed service registration failing when database not configured for echo services
-- **CLI**: Fixed frontend build copying assets to wrong location
-
-### Improved
-
-- **CLI**: Better separation between minimal services (echo) and full services (crud)
-- **CLI**: Docker Compose configuration aligned with servicex environment variable standards
-- **CLI**: Default project configuration enables database for easier development setup
-
-### Added
-
-- **CLI**: Multi-platform Docker image build support with `docker buildx` (linux/amd64, linux/arm64)
-- **CLI**: `buildMultiPlatformImage()` function for automated multi-arch builds with push
-- **CLI**: Frontend service name validation enforcing underscore usage (Flutter requirement)
-- **CLI**: Automatic service name conversion for Docker images (underscores to hyphens)
-- **CLI**: Cross-type service name conflict detection (backend vs frontend)
-- **CLI**: Comprehensive service name uniqueness validation
-- **CLI**: Local dev version support (v0.0.0-dev) with GOPROXY=direct and GOSUMDB=off
-- **CLI**: `GoWithEnv()` method in toolrunner for environment-specific command execution
 - **Makefile**: New `make tidy` command to clean and update dependencies for all modules
 - **Makefile**: New `make coverage` command to generate test coverage reports (HTML + terminal)
 - **Makefile**: New `make check` command for quick validation (lint + test, no coverage)
@@ -307,12 +138,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **CLI**: Flutter web build now correctly copies from `build/web` to output directory
-- **CLI**: Backend service creation now uses version-based dependencies (v0.0.0-dev) instead of replace directives for Docker compatibility
-- **CLI**: Frontend service names in Docker images use hyphens (e.g., `admin-portal`) while source uses underscores (e.g., `admin_portal`)
-- **CLI**: Service creation no longer supports `--force` flag; duplicate names are rejected
-- **CLI**: Multi-platform builds automatically use `--push` flag (buildx limitation)
-- **CLI**: Build commands provide clear guidance when multi-platform requires push
 - **toolrunner**: Error formatting improved with proper wrapping and cleaner output
 - **Makefile**: All commands now use unified `scripts/logger.sh` for consistent output formatting
 - **Makefile**: Removed redundant `make build` (library modules don't need build)
@@ -344,12 +169,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Improved
 
-- **CLI**: Multi-platform Docker builds with automatic platform detection and buildx support
-- **CLI**: Service name validation prevents conflicts across all service types (backend/frontend)
-- **CLI**: Flutter web build reliability with correct output path handling
-- **CLI**: Docker image naming consistency (hyphens for images, underscores for Flutter packages)
-- **CLI**: Better error messages for multi-platform builds without push flag
-- **CLI**: Development workflow with v0.0.0-dev versions works in both local and Docker environments
 - **Build System**: Unified logging format across Makefile and shell scripts using `logger.sh`
 - **Build System**: Reduced root Makefile from 367 lines to 231 lines (37% reduction)
 - **Build System**: Clearer separation of concerns (framework vs. base images vs. examples)
@@ -371,8 +190,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- **CLI**: Removed `--force` flag from service creation commands (enforces unique service names)
-- **CLI**: Removed replace directives for egg modules in generated go.mod files (use v0.0.0-dev versions)
 - **Makefile**: Removed `make build` (not needed for library modules)
 - **Makefile**: Removed `make fmt` (redundant with lint)
 - **Makefile**: Removed `make vet` (redundant with lint)
@@ -384,12 +201,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **CLI**: Fixed Flutter web build output path (now correctly copies from `build/web/`)
-- **CLI**: Fixed Docker builds failing with replace directives by using version-based dependencies
-- **CLI**: Fixed service name conflicts not being detected across backend/frontend types
-- **CLI**: Fixed frontend service creation allowing invalid hyphenated names (now enforces underscores)
-- **CLI**: Fixed Docker image names not following naming conventions (now converts underscores to hyphens)
-- **CLI**: Fixed multi-platform builds failing without proper --push handling
 - **toolrunner**: Fixed error message formatting with proper fmt.Errorf wrapping
 - **Makefile**: Fixed shell script execution errors (`@echo: command not found`) by using `source $(LOGGER)`
 - **Makefile**: Fixed golangci-lint warnings about gocritic configuration
@@ -521,8 +332,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Go workspace (`go.work`) support for local development
 
 ### Changed
-- CLI `build` command now uses Docker buildx by default
-- Added `--buildx` and `--platforms` flags to build command
 
 ### Fixed
 - **Critical**: Removed `replace` directives from all module `go.mod` files

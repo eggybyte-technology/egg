@@ -2,33 +2,33 @@ module go.eggybyte.com/egg/examples/user-service
 
 go 1.25.1
 
-replace go.eggybyte.com/egg/core => /Users/fengguangyao/eggybyte/projects/go/egg/core
+replace go.eggybyte.com/egg/core => ../../core
 
-replace go.eggybyte.com/egg/logx => /Users/fengguangyao/eggybyte/projects/go/egg/logx
+replace go.eggybyte.com/egg/logx => ../../logx
 
-replace go.eggybyte.com/egg/configx => /Users/fengguangyao/eggybyte/projects/go/egg/configx
+replace go.eggybyte.com/egg/configx => ../../configx
 
-replace go.eggybyte.com/egg/obsx => /Users/fengguangyao/eggybyte/projects/go/egg/obsx
+replace go.eggybyte.com/egg/obsx => ../../obsx
 
-replace go.eggybyte.com/egg/httpx => /Users/fengguangyao/eggybyte/projects/go/egg/httpx
+replace go.eggybyte.com/egg/httpx => ../../httpx
 
-replace go.eggybyte.com/egg/runtimex => /Users/fengguangyao/eggybyte/projects/go/egg/runtimex
+replace go.eggybyte.com/egg/runtimex => ../../runtimex
 
-replace go.eggybyte.com/egg/connectx => /Users/fengguangyao/eggybyte/projects/go/egg/connectx
+replace go.eggybyte.com/egg/connectx => ../../connectx
 
-replace go.eggybyte.com/egg/clientx => /Users/fengguangyao/eggybyte/projects/go/egg/clientx
+replace go.eggybyte.com/egg/clientx => ../../clientx
 
-replace go.eggybyte.com/egg/storex => /Users/fengguangyao/eggybyte/projects/go/egg/storex
+replace go.eggybyte.com/egg/storex => ../../storex
 
-replace go.eggybyte.com/egg/k8sx => /Users/fengguangyao/eggybyte/projects/go/egg/k8sx
+replace go.eggybyte.com/egg/k8sx => ../../k8sx
 
-replace go.eggybyte.com/egg/testingx => /Users/fengguangyao/eggybyte/projects/go/egg/testingx
+replace go.eggybyte.com/egg/testingx => ../../testingx
 
-replace go.eggybyte.com/egg/servicex => /Users/fengguangyao/eggybyte/projects/go/egg/servicex
+replace go.eggybyte.com/egg/servicex => ../../servicex
 
-replace go.eggybyte.com/egg/cli => /Users/fengguangyao/eggybyte/projects/go/egg/cli
+replace go.eggybyte.com/egg/cli => ../../cli
 
-replace go.eggybyte.com/egg/examples/minimal-connect-service => /Users/fengguangyao/eggybyte/projects/go/egg/examples/minimal-connect-service
+replace go.eggybyte.com/egg/examples/minimal-connect-service => ../minimal-connect-service
 
 require (
 	connectrpc.com/connect v1.19.1
@@ -37,7 +37,7 @@ require (
 	go.eggybyte.com/egg/core v0.0.0-00010101000000-000000000000
 	go.eggybyte.com/egg/servicex v0.0.0-00010101000000-000000000000
 	google.golang.org/protobuf v1.36.9
-	gorm.io/gorm v1.31.0
+	gorm.io/gorm v1.31.1
 )
 
 require (

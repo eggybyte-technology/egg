@@ -2,11 +2,11 @@ module go.eggybyte.com/egg/obsx
 
 go 1.25.1
 
-replace go.eggybyte.com/egg/core => /Users/fengguangyao/eggybyte/projects/go/egg/core
+replace go.eggybyte.com/egg/core => ../core
 
-replace go.eggybyte.com/egg/logx => /Users/fengguangyao/eggybyte/projects/go/egg/logx
+replace go.eggybyte.com/egg/logx => ../logx
 
-replace go.eggybyte.com/egg/configx => /Users/fengguangyao/eggybyte/projects/go/egg/configx
+replace go.eggybyte.com/egg/configx => ../configx
 
 require (
 	github.com/prometheus/client_golang v1.23.2
@@ -32,6 +32,6 @@ require (
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	golang.org/x/sys v0.36.0 // indirect
-	google.golang.org/protobuf v1.36.9 // indirect
+	golang.org/x/sys v0.35.0 // indirect
+	google.golang.org/protobuf v1.36.8 // indirect
 )

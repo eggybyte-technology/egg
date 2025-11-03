@@ -228,13 +228,30 @@ release_cli() {
         cd "$CLI_PATH"
         
         # Step 1a: Remove ALL replace directives (local development paths)
+        # Remove all replace directives, not just framework modules
         print_info "    ↳ Removing all replace directives..."
         local removed_count=0
+        
+        # Remove replace directives for all framework modules
         for mod in "${FRAMEWORK_MODULES[@]}"; do
             if go mod edit -dropreplace="$REPO_BASE/$mod" 2>/dev/null; then
                 removed_count=$((removed_count + 1))
             fi
         done
+        
+        # Also try to remove any other replace directives that might exist
+        # Parse go.mod to find all replace directives
+        while IFS= read -r replace_line; do
+            if [[ -n "$replace_line" ]]; then
+                # Extract the module path from replace directive
+                # Format: replace <old> => <new> or replace <old> => <new> // indirect
+                local old_path
+                old_path=$(echo "$replace_line" | sed -E 's/^replace[[:space:]]+([^[:space:]]+).*/\1/' | sed 's/=>//g' | tr -d '[:space:]')
+                if [[ "$old_path" =~ ^go\.eggybyte\.com/egg/ ]]; then
+                    go mod edit -dropreplace="$old_path" 2>/dev/null && removed_count=$((removed_count + 1)) || true
+                fi
+            fi
+        done < <(grep -E '^replace[[:space:]]+' go.mod 2>/dev/null || true)
         
         if [ $removed_count -gt 0 ]; then
             print_success "    ↳ Removed $removed_count replace directives"

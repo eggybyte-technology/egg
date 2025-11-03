@@ -224,32 +224,59 @@ release_single_module() {
         
         # Step 1a: Remove ALL replace directives (left from development/reinit)
         # This is critical for releases - go.mod must not contain local paths
-        print_info "    ↳ Removing any existing replace directives..."
-        existing_replaces=$(go mod edit -json | grep -o '"Replace":\[[^]]*\]' || echo "")
-        if [[ -n "$existing_replaces" && "$existing_replaces" != "\"Replace\":[]" ]]; then
-            # Get all replace paths from go.mod
-            for dep_module in "${ALL_MODULES[@]}"; do
-                go mod edit -dropreplace="$REPO_BASE/$dep_module" 2>/dev/null || true
-            done
-            print_success "    ↳ Cleaned replace directives"
+        # Remove all replace directives for egg modules
+        print_info "    ↳ Removing all replace directives for egg modules..."
+        local removed_count=0
+        
+        # Remove replace directives for all egg modules
+        for dep_module in "${ALL_MODULES[@]}"; do
+            if go mod edit -dropreplace="$REPO_BASE/$dep_module" 2>/dev/null; then
+                removed_count=$((removed_count + 1))
+            fi
+        done
+        
+        # Also try to remove any other replace directives that might exist
+        # Parse go.mod to find all replace directives
+        while IFS= read -r replace_line; do
+            if [[ -n "$replace_line" ]]; then
+                # Extract the module path from replace directive
+                # Format: replace <old> => <new> or replace <old> => <new> // indirect
+                local old_path
+                old_path=$(echo "$replace_line" | sed -E 's/^replace[[:space:]]+([^[:space:]]+).*/\1/' | sed 's/=>//g' | tr -d '[:space:]')
+                if [[ "$old_path" =~ ^go\.eggybyte\.com/egg/ ]]; then
+                    go mod edit -dropreplace="$old_path" 2>/dev/null && removed_count=$((removed_count + 1)) || true
+                fi
+            fi
+        done < <(grep -E '^replace[[:space:]]+' go.mod 2>/dev/null || true)
+        
+        if [ $removed_count -gt 0 ]; then
+            print_success "    ↳ Removed $removed_count replace directives"
         else
             print_info "    ↳ No replace directives to remove"
         fi
         
-        # Step 1b: Update dependencies to already-released modules
-        # Use array expansion that's safe for empty arrays (set -u compatible)
-        if [ ${#RELEASED_MODULES[@]} -gt 0 ]; then
-            for dep in "${RELEASED_MODULES[@]}"; do
-                if [[ "$dep" != "$mod" ]]; then
-                    # Check if this module imports from the released module (in .go files)
-                    if grep -r "\"$REPO_BASE/$dep" . --include="*.go" --exclude-dir=vendor 2>/dev/null | head -1 > /dev/null; then
-                        print_info "    ↳ Setting $dep@$version"
-                        go mod edit -require="$REPO_BASE/$dep@$version" || true
+        # Step 1b: Update ALL egg module dependencies to the release version
+        # All egg module dependencies should use the current release version
+        print_info "    ↳ Updating all egg module dependencies to $version..."
+        local updated_count=0
+        
+        for dep in "${ALL_MODULES[@]}"; do
+            if [[ "$dep" != "$mod" ]]; then
+                # Check if this module imports from the dependency module (in .go files)
+                if grep -r "\"$REPO_BASE/$dep" . --include="*.go" --exclude-dir=vendor --exclude-dir=gen 2>/dev/null | head -1 > /dev/null; then
+                    # All dependencies use the current release version
+                    print_info "    ↳ Setting $dep@$version"
+                    if go mod edit -require="$REPO_BASE/$dep@$version" 2>/dev/null; then
+                        updated_count=$((updated_count + 1))
                     fi
                 fi
-            done
+            fi
+        done
+        
+        if [ $updated_count -gt 0 ]; then
+            print_success "    ↳ Updated $updated_count egg module dependencies"
         else
-            print_info "    ↳ No dependencies to update (L0 module)"
+            print_info "    ↳ No egg module dependencies to update"
         fi
         
         # Step 1c: Run go mod tidy with retry mechanism

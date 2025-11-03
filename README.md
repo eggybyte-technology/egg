@@ -41,19 +41,24 @@ go install go.eggybyte.com/egg/cli/cmd/egg@latest
 ### Create Your First Service
 
 ```bash
-# Initialize a new project
+# 1. Check development environment and install tools
+egg doctor --install
+
+# 2. Initialize a new project (automatically includes API configuration)
 egg init --project-name my-project --module-prefix github.com/myorg/my-project
 
-# Create a backend service
+# 3. Create backend services
 cd my-project
 egg create backend user --proto crud
+egg create backend ping --proto echo
 
-# Generate API code
+# 4. Generate API code (using local protoc plugins)
 egg api generate
 
-# Build and start services
+# 5. Build and start services
 egg build all --local
 egg compose up
+egg compose proxy-all  # Create port proxies for localhost access
 ```
 
 That's it! The CLI generates all necessary files including `main.go`, `go.mod`, Docker configuration, and more.
@@ -134,12 +139,15 @@ Auxiliary Modules (can depend on any layer):
 
 The Egg CLI eliminates boilerplate and enforces best practices:
 
-- **Project scaffolding** - Generate complete project structure
-- **Service generation** - Create backend/frontend services with templates
-- **Code generation** - Automatic Protobuf code generation with local plugins
-- **Build automation** - Multi-platform Docker builds
-- **Docker Compose** - Automatic service orchestration
-- **Kubernetes** - Helm chart generation
+- **Project scaffolding** - Generate complete project structure with automatic API configuration
+- **Service generation** - Create backend/frontend services with templates (echo, crud, or custom)
+- **Local API code generation** - Use local protoc plugins verified by `egg doctor` (no remote dependencies)
+- **Automatic workspace management** - Backend-scoped Go workspace with automatic gen/go module handling
+- **Build automation** - Multi-platform Docker builds with foundation images
+- **Docker Compose** - Automatic service orchestration with port proxy support
+- **Kubernetes** - Unified project-level Helm chart generation
+- **Environment diagnostics** - `egg doctor` command verifies and installs required tools
+- **Version management** - Built-in version information display
 
 See [CLI Documentation](cli/README.md) for details.
 
