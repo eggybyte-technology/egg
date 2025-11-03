@@ -2,14 +2,6 @@ module go.eggybyte.com/egg/httpx
 
 go 1.25.1
 
-replace go.eggybyte.com/egg/core => ../core
-
-replace go.eggybyte.com/egg/logx => ../logx
-
-replace go.eggybyte.com/egg/configx => ../configx
-
-replace go.eggybyte.com/egg/obsx => ../obsx
-
 require github.com/go-playground/validator/v10 v10.28.0
 
 require (
