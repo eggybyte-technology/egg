@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CLI**: Standalone service management commands
+  - `egg standalone init` - Initialize standalone Go backend services
+  - `egg standalone build` - Build Docker images with multi-platform support
+  - `egg standalone run` - Run services locally with .env configuration
+  - `egg standalone run-image` - Run Docker containers with .env configuration
+  - Standalone services use same structure as full egg project services
+  - Independent projects without requiring egg.yaml configuration
+  - Automatic dependency management with version control (v0.0.0-dev or published versions)
+  - Fixed buildx builder name 'egg-builder' for all builds
+  - .env file loading for environment variable management
+
 ## [CLI-v0.0.4] - 2025-11-03
 
 ### Added

@@ -1,0 +1,113 @@
+# ==============================================================================
+# EggyByte Standalone Service Dockerfile
+# ==============================================================================
+#
+# Purpose:
+#   Build and package standalone Go backend services using the egg framework.
+#   This Dockerfile is designed for services that exist independently without
+#   requiring an egg.yaml configuration file.
+#
+# Base Images:
+#   - Builder: ghcr.io/eggybyte-technology/eggybyte-go-builder:go1.25.1-alpine3.22
+#   - Runtime: ghcr.io/eggybyte-technology/eggybyte-go-alpine:go1.25.1-alpine3.22
+#
+# Build Process:
+#   1. Builder stage: Compile Go binary using remote egg framework versions
+#   2. Runtime stage: Package binary into minimal Alpine runtime
+#
+# Build Args:
+#   - SERVICE_NAME: Name of the service (e.g., "user-service")
+#   - MODULE_PATH: Go module path (e.g., "github.com/org/my-service")
+#   - GO_VERSION: Go version (default: 1.25.1)
+#
+# Usage:
+#   docker build --build-arg SERVICE_NAME=my-service --build-arg MODULE_PATH=github.com/org/my-service -t my-service:latest .
+#
+# Important:
+#   This Dockerfile uses remote egg framework versions (not local replace directives)
+#   to ensure the image works independently of the local development environment.
+#
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Global build arguments
+# ------------------------------------------------------------------------------
+ARG GO_VERSION=1.25.1
+ARG SERVICE_NAME={{.ServiceName}}
+ARG MODULE_PATH={{.ModulePath}}
+
+# ------------------------------------------------------------------------------
+# Builder Stage
+# ------------------------------------------------------------------------------
+FROM ghcr.io/eggybyte-technology/eggybyte-go-builder:go${GO_VERSION}-alpine3.22 AS builder
+
+LABEL org.opencontainers.image.title="EggyByte Standalone Builder" \
+      org.opencontainers.image.description="Build stage for standalone EggyByte service" \
+      org.opencontainers.image.vendor="EggyByte Technology"
+
+# Inherit global args
+ARG SERVICE_NAME
+ARG MODULE_PATH
+ARG TARGETOS TARGETARCH
+
+WORKDIR /src
+
+# Copy source code
+COPY . .
+
+# Download dependencies using remote versions
+# Use GOPROXY with fallback for reliability
+# GOPRIVATE ensures internal egg modules go through proxy
+RUN cd . && \
+    GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=on \
+    GOTIMEOUT=300s \
+    go mod download && \
+    GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=on \
+    GOTIMEOUT=300s \
+    go mod tidy
+
+# Build the service binary
+RUN echo "Building service '${SERVICE_NAME}' for ${TARGETOS}/${TARGETARCH}" && \
+    mkdir -p /out && \
+    CGO_ENABLED=0 \
+    GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=on \
+    GOTIMEOUT=300s \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" \
+    -o /out/server ./cmd/server && \
+    echo "Binary built at /out/server"
+
+# ------------------------------------------------------------------------------
+# Runtime Stage
+# ------------------------------------------------------------------------------
+FROM ghcr.io/eggybyte-technology/eggybyte-go-alpine:go${GO_VERSION}-alpine3.22 AS runtime
+
+# Inherit args for labels
+ARG SERVICE_NAME
+ARG MODULE_PATH
+
+LABEL org.opencontainers.image.title="standalone-${SERVICE_NAME}" \
+      org.opencontainers.image.description="EggyByte standalone service: ${SERVICE_NAME}" \
+      org.opencontainers.image.source="${MODULE_PATH}" \
+      org.opencontainers.image.vendor="EggyByte Technology" \
+      org.opencontainers.image.licenses="MIT"
+
+WORKDIR /app
+
+# Copy the binary from builder
+COPY --from=builder /out/server /app/app
+
+# Set standard runtime environment
+ENV SERVICE_NAME=${SERVICE_NAME} \
+    HTTP_PORT=8080 \
+    HEALTH_PORT=8081 \
+    METRICS_PORT=9091
+
+# Expose standard EggyByte service ports
+EXPOSE 8080 8081 9091
+
+ENTRYPOINT ["/app/app"]
+

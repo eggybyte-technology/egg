@@ -59,4 +59,5 @@ type TemplateData struct {
 	HealthPort        int    // Health port (default: 8081)
 	MetricsPort       int    // Metrics port (default: 9091)
 	ProtoTemplate     string // Proto template type: "echo", "crud", or "none"
+	HasDatabase       bool   // Whether the service requires database (true for crud, false for echo)
 }

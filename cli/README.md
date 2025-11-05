@@ -39,8 +39,8 @@ egg init --project-name myapp --module-prefix github.com/myorg/myapp
 # Or simply: egg init (uses current directory name)
 
 # 3. Create backend services
-egg create backend user --proto crud --local-modules
-egg create backend ping --proto echo --local-modules
+egg create backend user --proto crud
+egg create backend ping --proto echo
 
 # 4. Create frontend
 egg create frontend web_app --platforms web
@@ -78,6 +78,210 @@ All commands support the following global flags:
 - `--json` - Output in JSON format
 
 ## Commands
+
+### Standalone Service Management
+
+The `egg standalone` command set provides tools for managing independent Go backend services that use the egg framework but don't require a full egg project structure. These services are perfect for microservices, APIs, or single-purpose backends.
+
+#### `egg standalone init` - Initialize standalone service
+
+Initialize a new standalone Go backend service project with complete egg framework integration.
+
+```bash
+egg standalone init <name> [flags]
+```
+
+**Flags:**
+- `--module-path` - Go module path (default: inferred from service name)
+- `--proto` - Proto template: `echo`, `crud`, or `none` (default: echo)
+- `--local-modules` - Use local egg modules for development (v0.0.0-dev)
+
+**Features:**
+- Complete service structure matching full egg project services
+- Automatic dependency management with version control
+- Default: Uses published egg framework versions (from CLI release)
+- Development mode: Uses v0.0.0-dev with local modules
+- Generates: proto files, handlers, services, Dockerfile, .env.example
+
+**Example:**
+```bash
+# Initialize with echo template (no database)
+egg standalone init my-service
+
+# Initialize with CRUD template (with database)
+egg standalone init my-service --proto crud --module-path github.com/myorg/my-service
+
+# Initialize for local development
+egg standalone init my-service --local-modules
+```
+
+**Generated Structure:**
+```
+my-service/
+├── api/
+│   ├── buf.yaml
+│   ├── buf.gen.yaml
+│   └── my-service/v1/my-service.proto
+├── cmd/server/main.go
+├── gen/go/ (after buf generate)
+├── internal/
+│   ├── config/app_config.go
+│   ├── handler/my-service_handler.go
+│   ├── model/errors.go
+│   ├── repository/ (crud only)
+│   └── service/my-service_service.go
+├── go.mod
+├── Dockerfile
+├── .env.example
+├── .gitignore
+└── .dockerignore
+```
+
+#### `egg standalone build` - Build Docker image
+
+Build Docker image for standalone service with multi-platform support using docker buildx.
+
+```bash
+egg standalone build [flags]
+```
+
+**Flags:**
+- `--push` - Push image to registry (required for multi-platform)
+- `--tag` - Image tag (default: `<service-name>:latest`)
+- `--platform` - Target platforms (default: `linux/amd64,linux/arm64`)
+
+**Features:**
+- Multi-platform builds (arm64, amd64)
+- Fixed buildx builder named 'egg-builder' (created automatically if needed)
+- Uses remote egg framework versions in Docker build
+- Automatic platform detection for local builds
+
+**Examples:**
+```bash
+# Build for local platform
+egg standalone build
+
+# Build and push multi-platform image
+egg standalone build --push
+
+# Build with custom tag
+egg standalone build --tag my-service:v1.0.0 --push
+
+# Build for specific platform
+egg standalone build --platform linux/amd64
+```
+
+**Build Process:**
+1. Ensures 'egg-builder' buildx builder exists
+2. Compiles Go binary using remote egg versions (GOPROXY=https://goproxy.cn,direct)
+3. Packages into minimal Alpine runtime image
+4. Supports arm64 and amd64 architectures
+
+#### `egg standalone run` - Run service locally
+
+Run standalone service locally with environment variables from .env file.
+
+```bash
+egg standalone run [flags]
+```
+
+**Flags:**
+- `--env-file` - Environment file path (default: `.env`)
+
+**Features:**
+- Loads environment variables from .env file
+- Runs service using `go run`
+- Runs in foreground (stop with Ctrl+C)
+- Merges .env variables with OS environment
+
+**Example:**
+```bash
+# Run with default .env file
+egg standalone run
+
+# Run with custom env file
+egg standalone run --env-file .env.local
+```
+
+**Before running:**
+```bash
+# Copy and configure environment
+cp .env.example .env
+# Edit .env with your configuration
+
+# Generate code if needed
+buf generate
+```
+
+#### `egg standalone run-image` - Run Docker container
+
+Run standalone service Docker container with environment variables from .env file.
+
+```bash
+egg standalone run-image <image-name> [flags]
+```
+
+**Flags:**
+- `--env-file` - Environment file path (default: `.env`)
+- `--port` - HTTP port mapping (default: 8080)
+- `--name` - Container name (default: auto-generated)
+
+**Features:**
+- Automatic port mapping (HTTP, Health, Metrics)
+- Loads environment variables from .env file
+- Runs in foreground (stop with Ctrl+C)
+- Uses ports from .env or defaults
+
+**Examples:**
+```bash
+# Run with default .env
+egg standalone run-image my-service:latest
+
+# Run with custom env file
+egg standalone run-image my-service:v1.0.0 --env-file .env.prod
+
+# Run with custom name
+egg standalone run-image my-service:latest --name my-service-1
+```
+
+**Port Mapping:**
+- HTTP port: From `HTTP_PORT` in .env (default: 8080)
+- Health port: From `HEALTH_PORT` in .env (default: 8081)
+- Metrics port: From `METRICS_PORT` in .env (default: 9091)
+
+#### Standalone Service Workflow
+
+Complete workflow for standalone service development:
+
+```bash
+# 1. Initialize service
+egg standalone init my-service --proto crud --module-path github.com/myorg/my-service
+
+# 2. Enter service directory
+cd my-service
+
+# 3. Configure environment
+cp .env.example .env
+# Edit .env with your settings (database, ports, etc.)
+
+# 4. Define your API
+# Edit api/my-service/v1/my-service.proto
+
+# 5. Generate code
+buf generate
+
+# 6. Implement service logic
+# Edit internal/handler, internal/service, internal/repository
+
+# 7. Test locally
+egg standalone run
+
+# 8. Build Docker image
+egg standalone build --tag my-service:v1.0.0 --push
+
+# 9. Run in production
+egg standalone run-image my-service:v1.0.0 --env-file .env.prod
+```
 
 ### Environment Management
 

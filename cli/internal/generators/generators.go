@@ -1311,6 +1311,7 @@ func (g *BackendGenerator) prepareTemplateData(name string, serviceConfig config
 		HealthPort:        healthPort,
 		MetricsPort:       metricsPort,
 		ProtoTemplate:     protoTemplate,
+		HasDatabase:       protoTemplate == "crud", // Database required for CRUD services
 	}
 }
 

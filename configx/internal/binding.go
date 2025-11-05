@@ -8,14 +8,37 @@ import (
 	"time"
 )
 
+// Validator is an optional interface that configuration structs can implement
+// to perform custom validation after binding environment variables.
+// If the configuration struct implements this interface, Validate() will be called
+// automatically after binding all fields.
+type Validator interface {
+	Validate() error
+}
+
 // BindToStruct binds configuration values to struct fields using env tags.
+// After binding all fields, if the target implements the Validator interface,
+// its Validate() method will be called to perform additional validation or
+// post-processing (e.g., parsing structured data from raw strings).
 func BindToStruct(snapshot map[string]string, target any, onUpdate func()) error {
 	targetValue := reflect.ValueOf(target)
 	if targetValue.Kind() != reflect.Ptr || targetValue.Elem().Kind() != reflect.Struct {
 		return fmt.Errorf("target must be a pointer to struct")
 	}
 
-	return bindStructFields(snapshot, targetValue.Elem())
+	// Bind all fields from environment variables
+	if err := bindStructFields(snapshot, targetValue.Elem()); err != nil {
+		return err
+	}
+
+	// Call Validate() if the target implements the Validator interface
+	if validator, ok := target.(Validator); ok {
+		if err := validator.Validate(); err != nil {
+			return fmt.Errorf("configuration validation failed: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // bindStructFields recursively binds configuration values to struct fields.
