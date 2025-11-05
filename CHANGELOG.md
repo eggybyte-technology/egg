@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **configx**: Fixed configuration validation not being called after environment variable binding
+  - `BindToStruct()` now automatically calls `Validate()` method if configuration struct implements `Validator` interface
+  - Allows configuration structs to parse structured data from raw environment variables (e.g., parsing `OSS_BUCKETS="bucket1:region1,bucket2:region2"`)
+  - Fixes issue where services using complex configuration parsing (like `eggybyte-oss`) would fail at runtime instead of at configuration load time
+  - Configuration validation errors now have clear error messages: `"configuration validation failed: <reason>"`
+
 ## [0.3.2] - 2025-11-03
 
 ### Fixed
