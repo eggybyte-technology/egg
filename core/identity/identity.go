@@ -16,6 +16,9 @@ package identity
 
 import (
 	"context"
+	"crypto/subtle"
+
+	"go.eggybyte.com/egg/core/errors"
 )
 
 // UserInfo contains user identity information.
@@ -125,4 +128,44 @@ func IsInternalService(ctx context.Context, serviceName string) bool {
 
 	// Simple check: if internal token is not empty and matches service name
 	return meta.InternalToken != "" && meta.InternalToken == serviceName
+}
+
+// RequireInternalToken validates the internal token from context against expected token.
+// Returns error if token is missing or invalid. Uses constant-time comparison to prevent timing attacks.
+//
+// Parameters:
+//   - ctx: context containing request metadata
+//   - expectedToken: the expected internal token value
+//
+// Returns:
+//   - error: nil if token is valid; CodeUnauthenticated if missing or invalid
+//
+// Security:
+//   - Uses crypto/subtle for constant-time string comparison
+//   - Prevents timing attack vulnerabilities
+func RequireInternalToken(ctx context.Context, expectedToken string) error {
+	if expectedToken == "" {
+		// If no token is configured, skip validation
+		return nil
+	}
+
+	meta, ok := MetaFrom(ctx)
+	if !ok || meta.InternalToken == "" {
+		return errors.New(errors.CodeUnauthenticated, "internal token required")
+	}
+
+	// Use constant-time comparison for security
+	if !secureCompare(meta.InternalToken, expectedToken) {
+		return errors.New(errors.CodeUnauthenticated, "invalid internal token")
+	}
+
+	return nil
+}
+
+// secureCompare performs constant-time string comparison to prevent timing attacks.
+func secureCompare(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

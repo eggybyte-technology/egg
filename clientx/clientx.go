@@ -16,6 +16,7 @@
 package clientx
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -26,12 +27,14 @@ import (
 
 // Options configures the HTTP client behavior.
 type Options struct {
-	Timeout          time.Duration // Request timeout (default: 30s)
-	MaxRetries       int           // Maximum retry attempts (default: 3)
-	RetryBackoff     time.Duration // Initial backoff duration (default: 100ms)
-	EnableCircuit    bool          // Enable circuit breaker (default: true)
-	CircuitThreshold uint32        // Circuit breaker failure threshold (default: 5)
-	IdempotencyKey   string        // Custom idempotency key header name
+	Timeout            time.Duration // Request timeout (default: 30s)
+	MaxRetries         int           // Maximum retry attempts (default: 3)
+	RetryBackoff       time.Duration // Initial backoff duration (default: 100ms)
+	EnableCircuit      bool          // Enable circuit breaker (default: true)
+	CircuitThreshold   uint32        // Circuit breaker failure threshold (default: 5)
+	IdempotencyKey     string        // Custom idempotency key header name
+	InternalToken      string        // Internal service token
+	InternalTokenHeader string       // Header name for internal token
 }
 
 // Option is a functional option for configuring the client.
@@ -62,6 +65,24 @@ func WithCircuitBreaker(enabled bool) Option {
 func WithIdempotencyKey(key string) Option {
 	return func(o *Options) {
 		o.IdempotencyKey = key
+	}
+}
+
+// WithInternalToken sets the internal token for service-to-service authentication.
+// The token is automatically added to all outgoing requests.
+func WithInternalToken(token string) Option {
+	return func(o *Options) {
+		o.InternalToken = token
+		if o.InternalTokenHeader == "" {
+			o.InternalTokenHeader = "X-Internal-Token"
+		}
+	}
+}
+
+// WithInternalTokenHeader sets the header name for internal token.
+func WithInternalTokenHeader(header string) Option {
+	return func(o *Options) {
+		o.InternalTokenHeader = header
 	}
 }
 
@@ -105,9 +126,43 @@ func NewHTTPClient(baseURL string, opts ...Option) *http.Client {
 // NewConnectClient creates a Connect client with interceptors.
 // This is a convenience wrapper for creating Connect clients with standard interceptors.
 func NewConnectClient[T any](baseURL, serviceName string, newClient func(connect.HTTPClient, string, ...connect.ClientOption) T, opts ...Option) T {
+	// Apply options
+	options := Options{
+		Timeout:            30 * time.Second,
+		MaxRetries:         3,
+		RetryBackoff:       100 * time.Millisecond,
+		EnableCircuit:      true,
+		CircuitThreshold:   5,
+		IdempotencyKey:     "X-Idempotency-Key",
+		InternalTokenHeader: "X-Internal-Token",
+	}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
 	httpClient := NewHTTPClient(baseURL, opts...)
 
-	// TODO: Add Connect client interceptors (timeout, metrics, etc.)
-	// For now, return basic client
-	return newClient(httpClient, baseURL)
+	// Build client options
+	var clientOpts []connect.ClientOption
+
+	// Add internal token interceptor if token is provided
+	if options.InternalToken != "" {
+		clientOpts = append(clientOpts, connect.WithInterceptors(
+			internalTokenInterceptor(options.InternalToken, options.InternalTokenHeader),
+		))
+	}
+
+	return newClient(httpClient, baseURL, clientOpts...)
+}
+
+// internalTokenInterceptor creates a client-side interceptor that adds internal token to requests.
+func internalTokenInterceptor(token, headerName string) connect.UnaryInterceptorFunc {
+	return func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			if token != "" && req.Header() != nil {
+				req.Header().Set(headerName, token)
+			}
+			return next(ctx, req)
+		}
+	}
 }

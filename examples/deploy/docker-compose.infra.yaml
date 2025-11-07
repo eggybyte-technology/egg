@@ -23,8 +23,8 @@ services:
       MYSQL_USER: egguser
       MYSQL_PASSWORD: eggpassword
       TZ: Asia/Shanghai
-    ports:
-      - "3306:3306"
+    # ports:
+    #   - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     networks:

@@ -33,8 +33,10 @@ replace go.eggybyte.com/egg/examples/minimal-connect-service => ../minimal-conne
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/google/uuid v1.6.0
-	go.eggybyte.com/egg/configx v0.0.0-00010101000000-000000000000
-	go.eggybyte.com/egg/core v0.0.0-00010101000000-000000000000
+	go.eggybyte.com/egg/clientx v0.3.2
+	go.eggybyte.com/egg/configx v0.3.2
+	go.eggybyte.com/egg/core v0.3.2
+	go.eggybyte.com/egg/examples/minimal-connect-service v0.0.0-20251105130812-d552a0a488db
 	go.eggybyte.com/egg/servicex v0.0.0-00010101000000-000000000000
 	google.golang.org/protobuf v1.36.9
 	gorm.io/gorm v1.31.1
@@ -66,11 +68,12 @@ require (
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/otlptranslator v0.0.2 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
-	go.eggybyte.com/egg/connectx v0.0.0-00010101000000-000000000000 // indirect
-	go.eggybyte.com/egg/logx v0.0.0-00010101000000-000000000000 // indirect
-	go.eggybyte.com/egg/obsx v0.0.0-00010101000000-000000000000 // indirect
-	go.eggybyte.com/egg/runtimex v0.0.0-00010101000000-000000000000 // indirect
-	go.eggybyte.com/egg/storex v0.0.0-00010101000000-000000000000 // indirect
+	github.com/sony/gobreaker v1.0.0 // indirect
+	go.eggybyte.com/egg/connectx v0.3.2 // indirect
+	go.eggybyte.com/egg/logx v0.3.2 // indirect
+	go.eggybyte.com/egg/obsx v0.3.2 // indirect
+	go.eggybyte.com/egg/runtimex v0.3.2 // indirect
+	go.eggybyte.com/egg/storex v0.3.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.38.0 // indirect
 	go.opentelemetry.io/otel/exporters/prometheus v0.60.0 // indirect

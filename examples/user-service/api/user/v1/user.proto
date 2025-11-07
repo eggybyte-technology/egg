@@ -20,6 +20,13 @@ service UserService {
   
   // ListUsers lists users with pagination.
   rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  
+  // AdminResetAllUsers deletes all users (admin only, requires internal token).
+  rpc AdminResetAllUsers(AdminResetAllUsersRequest) returns (AdminResetAllUsersResponse);
+  
+  // ValidateInternalToken validates an internal token by calling the greet service.
+  // This demonstrates service-to-service communication and token validation.
+  rpc ValidateInternalToken(ValidateInternalTokenRequest) returns (ValidateInternalTokenResponse);
 }
 
 // User represents a user entity.
@@ -86,4 +93,27 @@ message ListUsersResponse {
   int32 total = 2;
   int32 page = 3;
   int32 page_size = 4;
+}
+
+// AdminResetAllUsersRequest is the request to reset all users (admin operation).
+message AdminResetAllUsersRequest {
+  bool confirm = 1;  // Must be true to execute
+}
+
+// AdminResetAllUsersResponse is the response when resetting all users.
+message AdminResetAllUsersResponse {
+  int32 deleted_count = 1;
+  bool success = 2;
+}
+
+// ValidateInternalTokenRequest is the request to validate an internal token.
+message ValidateInternalTokenRequest {
+  string token = 1;  // Token to validate
+}
+
+// ValidateInternalTokenResponse is the response when validating an internal token.
+message ValidateInternalTokenResponse {
+  bool valid = 1;           // Whether the token is valid
+  string message = 2;        // Response message from greet service (if valid)
+  string error_message = 3;  // Error message if validation failed
 }

@@ -249,8 +249,6 @@ func runTests(ctx context.Context, logger log.Logger, baseURL, serviceType strin
 
 // testMinimalService tests the minimal greet service endpoints.
 func testMinimalService(ctx context.Context, logger log.Logger, baseURL string) error {
-	logger.Info("Testing minimal-service (greet)")
-
 	// Create HTTP client with retry and timeout
 	httpClient := clientx.NewHTTPClient(baseURL,
 		clientx.WithTimeout(10*time.Second),
@@ -263,7 +261,6 @@ func testMinimalService(ctx context.Context, logger log.Logger, baseURL string) 
 	suite := &TestSuite{}
 
 	// Test SayHello with different languages
-	logger.Info("Testing SayHello endpoint with multiple languages")
 	languages := []string{"en", "es", "fr", "de", "zh"}
 	for _, lang := range languages {
 		testName := fmt.Sprintf("SayHello_%s", lang)
@@ -279,14 +276,10 @@ func testMinimalService(ctx context.Context, logger log.Logger, baseURL string) 
 			logger.Error(err, fmt.Sprintf("✗ FAIL %s", testName))
 		} else {
 			suite.add(testName, duration, nil, resp.Msg.Message)
-			logger.Info(fmt.Sprintf("✓ PASS %s", testName),
-				log.Str("message", resp.Msg.Message),
-				log.Str("duration", fmt.Sprintf("%dms", duration.Milliseconds())))
 		}
 	}
 
 	// Test SayHello with empty name (should default to "World")
-	logger.Info("Testing SayHello with empty name")
 	start := time.Now()
 	req := connect.NewRequest(&greetv1.SayHelloRequest{
 		Name:     "",
@@ -299,13 +292,9 @@ func testMinimalService(ctx context.Context, logger log.Logger, baseURL string) 
 		logger.Error(err, "✗ FAIL SayHello_EmptyName")
 	} else {
 		suite.add("SayHello_EmptyName", duration, nil, resp.Msg.Message)
-		logger.Info("✓ PASS SayHello_EmptyName",
-			log.Str("message", resp.Msg.Message),
-			log.Str("duration", fmt.Sprintf("%dms", duration.Milliseconds())))
 	}
 
 	// Test SayHelloStream with different counts
-	logger.Info("Testing SayHelloStream endpoint with different counts")
 	counts := []int32{1, 3, 5, 10}
 	for _, count := range counts {
 		testName := fmt.Sprintf("SayHelloStream_%d", count)
@@ -329,16 +318,11 @@ func testMinimalService(ctx context.Context, logger log.Logger, baseURL string) 
 				logger.Error(err, fmt.Sprintf("✗ FAIL %s", testName))
 			} else {
 				suite.add(testName, duration, nil, fmt.Sprintf("%d messages", len(messages)))
-				logger.Info(fmt.Sprintf("✓ PASS %s", testName),
-					log.Int("messages", len(messages)),
-					log.Int32("expected", count),
-					log.Str("duration", fmt.Sprintf("%dms", duration.Milliseconds())))
 			}
 		}
 	}
 
 	// Test SayHelloStream with zero count (should default to 5)
-	logger.Info("Testing SayHelloStream with zero count")
 	start = time.Now()
 	streamReqZero := connect.NewRequest(&greetv1.SayHelloStreamRequest{
 		Name:  "Tester",
@@ -359,16 +343,10 @@ func testMinimalService(ctx context.Context, logger log.Logger, baseURL string) 
 			logger.Error(err, "✗ FAIL SayHelloStream_ZeroCount")
 		} else {
 			suite.add("SayHelloStream_ZeroCount", duration, nil, fmt.Sprintf("%d messages", len(messages)))
-			logger.Info("✓ PASS SayHelloStream_ZeroCount",
-				log.Int("messages", len(messages)),
-				log.Str("duration", fmt.Sprintf("%dms", duration.Milliseconds())))
 		}
 	}
 
 	// Test metrics endpoint
-	// Derive metrics URL from base URL
-	// Calculate expected call count: 5 SayHello + 1 EmptyName = 6
-	// Note: Streaming calls (SayHelloStream) are not counted as they require StreamingInterceptor
 	expectedCallCount := 6
 	metricsURL := deriveMetricsURL(baseURL)
 	testMetricsEndpoint(ctx, logger, metricsURL, suite, "greet-service", expectedCallCount)
@@ -379,8 +357,6 @@ func testMinimalService(ctx context.Context, logger log.Logger, baseURL string) 
 
 // testUserService tests the user CRUD service endpoints.
 func testUserService(ctx context.Context, logger log.Logger, baseURL string, testArgs []string) error {
-	logger.Info("Testing user-service (CRUD)")
-
 	// Create HTTP client with retry and timeout
 	httpClient := clientx.NewHTTPClient(baseURL,
 		clientx.WithTimeout(10*time.Second),
@@ -399,7 +375,6 @@ func testUserService(ctx context.Context, logger log.Logger, baseURL string, tes
 	suite := &TestSuite{}
 
 	// Test CreateUser with multiple users
-	logger.Info("Testing CreateUser endpoint with multiple users")
 	var createdUserIDs []string
 	for i := 1; i <= 3; i++ {
 		testName := fmt.Sprintf("CreateUser_%d", i)
@@ -416,10 +391,6 @@ func testUserService(ctx context.Context, logger log.Logger, baseURL string, tes
 		} else {
 			createdUserIDs = append(createdUserIDs, createResp.Msg.User.Id)
 			suite.add(testName, duration, nil, createResp.Msg.User.Id)
-			logger.Info(fmt.Sprintf("✓ PASS %s", testName),
-				log.Str("user_id", createResp.Msg.User.Id),
-				log.Str("email", createResp.Msg.User.Email),
-				log.Str("duration", fmt.Sprintf("%dms", duration.Milliseconds())))
 		}
 	}
 
@@ -471,8 +442,10 @@ func testUserService(ctx context.Context, logger log.Logger, baseURL string, tes
 		}
 	}
 
-	// Test ListUsers
-	logger.Info("Testing ListUsers endpoint")
+	// Test ListUsers with different pagination scenarios
+	logger.Info("Testing ListUsers endpoint with various pagination scenarios")
+
+	// Test ListUsers - page 1, pageSize 10
 	start := time.Now()
 	listReq := connect.NewRequest(&userv1.ListUsersRequest{
 		Page:     1,
@@ -481,14 +454,104 @@ func testUserService(ctx context.Context, logger log.Logger, baseURL string, tes
 	listResp, err := client.ListUsers(ctx, listReq)
 	duration := time.Since(start)
 	if err != nil {
-		suite.add("ListUsers", duration, err, "")
-		logger.Error(err, "✗ FAIL ListUsers")
+		suite.add("ListUsers_Page1_Size10", duration, err, "")
+		logger.Error(err, "✗ FAIL ListUsers_Page1_Size10")
 	} else {
-		suite.add("ListUsers", duration, nil, fmt.Sprintf("%d users", len(listResp.Msg.Users)))
-		logger.Info("✓ PASS ListUsers",
+		suite.add("ListUsers_Page1_Size10", duration, nil, fmt.Sprintf("%d users", len(listResp.Msg.Users)))
+		logger.Info("✓ PASS ListUsers_Page1_Size10",
 			log.Int("count", len(listResp.Msg.Users)),
 			log.Int32("total", listResp.Msg.Total),
+			log.Int32("page", listResp.Msg.Page),
+			log.Int32("page_size", listResp.Msg.PageSize),
 			log.Str("duration", fmt.Sprintf("%dms", duration.Milliseconds())))
+	}
+
+	// Test ListUsers - page 1, pageSize 5
+	start = time.Now()
+	listReq2 := connect.NewRequest(&userv1.ListUsersRequest{
+		Page:     1,
+		PageSize: 5,
+	})
+	listResp2, err := client.ListUsers(ctx, listReq2)
+	duration = time.Since(start)
+	if err != nil {
+		suite.add("ListUsers_Page1_Size5", duration, err, "")
+		logger.Error(err, "✗ FAIL ListUsers_Page1_Size5")
+	} else {
+		suite.add("ListUsers_Page1_Size5", duration, nil, fmt.Sprintf("%d users", len(listResp2.Msg.Users)))
+		logger.Info("✓ PASS ListUsers_Page1_Size5",
+			log.Int("count", len(listResp2.Msg.Users)),
+			log.Int32("total", listResp2.Msg.Total),
+			log.Str("duration", fmt.Sprintf("%dms", duration.Milliseconds())))
+	}
+
+	// Test ListUsers - invalid page (should normalize to 1)
+	start = time.Now()
+	listReq3 := connect.NewRequest(&userv1.ListUsersRequest{
+		Page:     0,
+		PageSize: 10,
+	})
+	listResp3, err := client.ListUsers(ctx, listReq3)
+	duration = time.Since(start)
+	if err != nil {
+		suite.add("ListUsers_InvalidPage", duration, err, "")
+		logger.Error(err, "✗ FAIL ListUsers_InvalidPage")
+	} else {
+		// Should normalize to page 1
+		if listResp3.Msg.Page == 1 {
+			suite.add("ListUsers_InvalidPage", duration, nil, "correctly normalized to page 1")
+			logger.Info("✓ PASS ListUsers_InvalidPage - correctly normalized to page 1",
+				log.Int32("normalized_page", listResp3.Msg.Page))
+		} else {
+			suite.add("ListUsers_InvalidPage", duration, fmt.Errorf("expected page 1, got %d", listResp3.Msg.Page), "")
+			logger.Error(nil, "✗ FAIL ListUsers_InvalidPage - should normalize to page 1")
+		}
+	}
+
+	// Test ListUsers - invalid pageSize (should normalize)
+	start = time.Now()
+	listReq4 := connect.NewRequest(&userv1.ListUsersRequest{
+		Page:     1,
+		PageSize: 0,
+	})
+	listResp4, err := client.ListUsers(ctx, listReq4)
+	duration = time.Since(start)
+	if err != nil {
+		suite.add("ListUsers_InvalidPageSize", duration, err, "")
+		logger.Error(err, "✗ FAIL ListUsers_InvalidPageSize")
+	} else {
+		// Should normalize to default pageSize (10)
+		if listResp4.Msg.PageSize >= 1 && listResp4.Msg.PageSize <= 100 {
+			suite.add("ListUsers_InvalidPageSize", duration, nil, fmt.Sprintf("normalized to %d", listResp4.Msg.PageSize))
+			logger.Info("✓ PASS ListUsers_InvalidPageSize - correctly normalized",
+				log.Int32("normalized_page_size", listResp4.Msg.PageSize))
+		} else {
+			suite.add("ListUsers_InvalidPageSize", duration, fmt.Errorf("invalid pageSize %d", listResp4.Msg.PageSize), "")
+			logger.Error(nil, "✗ FAIL ListUsers_InvalidPageSize - invalid normalized value")
+		}
+	}
+
+	// Test ListUsers - large pageSize (should cap at 100)
+	start = time.Now()
+	listReq5 := connect.NewRequest(&userv1.ListUsersRequest{
+		Page:     1,
+		PageSize: 200,
+	})
+	listResp5, err := client.ListUsers(ctx, listReq5)
+	duration = time.Since(start)
+	if err != nil {
+		suite.add("ListUsers_LargePageSize", duration, err, "")
+		logger.Error(err, "✗ FAIL ListUsers_LargePageSize")
+	} else {
+		// Should cap at 100
+		if listResp5.Msg.PageSize <= 100 {
+			suite.add("ListUsers_LargePageSize", duration, nil, fmt.Sprintf("capped at %d", listResp5.Msg.PageSize))
+			logger.Info("✓ PASS ListUsers_LargePageSize - correctly capped",
+				log.Int32("capped_page_size", listResp5.Msg.PageSize))
+		} else {
+			suite.add("ListUsers_LargePageSize", duration, fmt.Errorf("pageSize should be capped at 100, got %d", listResp5.Msg.PageSize), "")
+			logger.Error(nil, "✗ FAIL ListUsers_LargePageSize - should cap at 100")
+		}
 	}
 
 	// Test DeleteUser
@@ -510,16 +573,167 @@ func testUserService(ctx context.Context, logger log.Logger, baseURL string, tes
 	}
 
 	// Test error scenarios
-	logger.Info("Testing error scenarios")
 	testErrorScenarios(ctx, logger, client, suite)
+
+	// Test UpdateUser error scenarios
+
+	// Test UpdateUser with non-existent ID
+	start = time.Now()
+	updateReqInvalid := connect.NewRequest(&userv1.UpdateUserRequest{
+		Id:    "non-existent-update-id",
+		Email: "update@example.com",
+		Name:  "Update Test",
+	})
+	_, err = client.UpdateUser(ctx, updateReqInvalid)
+	duration = time.Since(start)
+	if err != nil {
+		suite.add("UpdateUser_NonExistent", duration, nil, "correctly returned error")
+	} else {
+		suite.add("UpdateUser_NonExistent", duration, fmt.Errorf("expected error but got success"), "")
+		logger.Error(nil, "✗ FAIL UpdateUser_NonExistent - should return error")
+	}
+
+	// Test UpdateUser with duplicate email (if we have another user)
+	if len(createdUserIDs) >= 2 {
+		start = time.Now()
+		// Get email from second user
+		getReq2 := connect.NewRequest(&userv1.GetUserRequest{Id: createdUserIDs[1]})
+		getResp2, err := client.GetUser(ctx, getReq2)
+		if err == nil {
+			// Try to update first user with second user's email
+			updateReqDup := connect.NewRequest(&userv1.UpdateUserRequest{
+				Id:    createdUserIDs[0],
+				Email: getResp2.Msg.User.Email, // Duplicate email
+				Name:  "Update Test",
+			})
+			_, err = client.UpdateUser(ctx, updateReqDup)
+			duration = time.Since(start)
+			if err != nil {
+				suite.add("UpdateUser_DuplicateEmail", duration, nil, "correctly returned error")
+			} else {
+				suite.add("UpdateUser_DuplicateEmail", duration, fmt.Errorf("expected error but got success"), "")
+				logger.Error(nil, "✗ FAIL UpdateUser_DuplicateEmail - should return error")
+			}
+		}
+	}
+
+	// Test DeleteUser error scenarios
+
+	// Test DeleteUser with non-existent ID
+	start = time.Now()
+	deleteReqInvalid := connect.NewRequest(&userv1.DeleteUserRequest{Id: "non-existent-delete-id"})
+	_, err = client.DeleteUser(ctx, deleteReqInvalid)
+	duration = time.Since(start)
+	if err != nil {
+		suite.add("DeleteUser_NonExistent", duration, nil, "correctly returned error")
+	} else {
+		suite.add("DeleteUser_NonExistent", duration, fmt.Errorf("expected error but got success"), "")
+		logger.Error(nil, "✗ FAIL DeleteUser_NonExistent - should return error")
+	}
+
+	// Test AdminResetAllUsers WITHOUT internal token (should fail)
+	start = time.Now()
+	adminReq := connect.NewRequest(&userv1.AdminResetAllUsersRequest{Confirm: true})
+	_, err = client.AdminResetAllUsers(ctx, adminReq)
+	duration = time.Since(start)
+	if err != nil {
+		suite.add("AdminResetAllUsers_NoToken", duration, nil, "correctly rejected without token")
+	} else {
+		suite.add("AdminResetAllUsers_NoToken", duration, fmt.Errorf("should reject without token"), "")
+		logger.Error(nil, "✗ FAIL AdminResetAllUsers_NoToken - should reject")
+	}
+
+	// Test AdminResetAllUsers with confirm=false (should fail even with token)
+	internalToken := os.Getenv("INTERNAL_TOKEN")
+	if internalToken != "" {
+		clientWithToken := clientx.NewConnectClient(
+			baseURL,
+			"user-service",
+			func(httpClient connect.HTTPClient, url string, opts ...connect.ClientOption) userv1connect.UserServiceClient {
+				return userv1connect.NewUserServiceClient(httpClient, url, opts...)
+			},
+			clientx.WithTimeout(10*time.Second),
+			clientx.WithRetry(3),
+			clientx.WithInternalToken(internalToken),
+		)
+		start = time.Now()
+		adminReqNoConfirm := connect.NewRequest(&userv1.AdminResetAllUsersRequest{Confirm: false})
+		_, err = clientWithToken.AdminResetAllUsers(ctx, adminReqNoConfirm)
+		duration = time.Since(start)
+		if err != nil {
+			suite.add("AdminResetAllUsers_NoConfirm", duration, nil, "correctly rejected without confirm")
+		} else {
+			suite.add("AdminResetAllUsers_NoConfirm", duration, fmt.Errorf("should reject without confirm"), "")
+			logger.Error(nil, "✗ FAIL AdminResetAllUsers_NoConfirm - should reject")
+		}
+	}
+
+	// Test AdminResetAllUsers WITH internal token (should succeed)
+	start = time.Now()
+	if internalToken == "" {
+		suite.add("AdminResetAllUsers_WithToken", time.Since(start), fmt.Errorf("INTERNAL_TOKEN not set"), "")
+		logger.Error(nil, "✗ FAIL AdminResetAllUsers_WithToken - INTERNAL_TOKEN not set")
+	} else {
+		clientWithToken := clientx.NewConnectClient(
+			baseURL,
+			"user-service",
+			func(httpClient connect.HTTPClient, url string, opts ...connect.ClientOption) userv1connect.UserServiceClient {
+				return userv1connect.NewUserServiceClient(httpClient, url, opts...)
+			},
+			clientx.WithTimeout(10*time.Second),
+			clientx.WithRetry(3),
+			clientx.WithInternalToken(internalToken),
+		)
+		adminReqWithToken := connect.NewRequest(&userv1.AdminResetAllUsersRequest{Confirm: true})
+		adminResp, err := clientWithToken.AdminResetAllUsers(ctx, adminReqWithToken)
+		duration = time.Since(start)
+		if err != nil {
+			suite.add("AdminResetAllUsers_WithToken", duration, err, "")
+			logger.Error(err, "✗ FAIL AdminResetAllUsers_WithToken")
+		} else {
+			suite.add("AdminResetAllUsers_WithToken", duration, nil, fmt.Sprintf("deleted=%d", adminResp.Msg.DeletedCount))
+			logger.Info("✓ PASS AdminResetAllUsers_WithToken",
+				log.Int32("deleted_count", adminResp.Msg.DeletedCount),
+				log.Bool("success", adminResp.Msg.Success),
+				log.Str("duration", fmt.Sprintf("%dms", duration.Milliseconds())))
+		}
+	}
+
+	// Test ValidateInternalToken
+	// This endpoint demonstrates the service's client capability by calling the greet service
+	// The token in the request is ignored - the service uses its own configured internal token
+	start = time.Now()
+	validateReq := connect.NewRequest(&userv1.ValidateInternalTokenRequest{
+		Token: "", // Token is not used; service validates its own client capability
+	})
+	validateResp, err := client.ValidateInternalToken(ctx, validateReq)
+	duration = time.Since(start)
+	if err != nil {
+		suite.add("ValidateInternalToken", duration, err, "")
+		logger.Error(err, "✗ FAIL ValidateInternalToken")
+	} else {
+		if validateResp.Msg.Valid {
+			suite.add("ValidateInternalToken", duration, nil, fmt.Sprintf("client_works=true, message=%s", validateResp.Msg.Message))
+			logger.Info("✓ PASS ValidateInternalToken - client capability verified",
+				log.Bool("valid", validateResp.Msg.Valid),
+				log.Str("message", validateResp.Msg.Message),
+				log.Str("duration", fmt.Sprintf("%dms", duration.Milliseconds())))
+		} else {
+			suite.add("ValidateInternalToken", duration, fmt.Errorf("client should work"), "")
+			logger.Error(nil, "✗ FAIL ValidateInternalToken - client capability check failed",
+				log.Str("error", validateResp.Msg.ErrorMessage))
+		}
+	}
 
 	// Test metrics endpoint
 	// Derive metrics URL from base URL
 	// Calculate expected call count:
-	// - Success: 3 Create + 1 Get + 1 Update + 1 List + 1 Delete = 7
-	// - Errors: 3 error scenarios = 3
-	// - Total: 10
-	expectedCallCount := 10
+	// - Success: 3 Create + 1 Get + 1 Update + 5 ListUsers (different scenarios) + 1 Delete = 11
+	// - Admin: 1 AdminResetAllUsers_NoToken + 1 AdminResetAllUsers_NoConfirm + 1 AdminResetAllUsers_WithToken = 3
+	// - Errors: 5 base error scenarios + 2 UpdateUser errors + 1 DeleteUser error = 8
+	// - Client validation: 1 ValidateInternalToken call = 1
+	// - Total: 23
+	expectedCallCount := 23
 	metricsURL := deriveMetricsURL(baseURL)
 	testMetricsEndpoint(ctx, logger, metricsURL, suite, "user-service", expectedCallCount)
 
@@ -748,21 +962,30 @@ func findMetricValue(metrics map[string][]MetricSample, name string, labelFilter
 // testErrorScenarios tests error handling for common edge cases.
 func testErrorScenarios(ctx context.Context, logger log.Logger, client userv1connect.UserServiceClient, suite *TestSuite) {
 	// Test GetUser with non-existent ID
-	logger.Info("Testing GetUser with non-existent ID")
 	start := time.Now()
 	req := connect.NewRequest(&userv1.GetUserRequest{Id: "non-existent-id"})
 	_, err := client.GetUser(ctx, req)
 	duration := time.Since(start)
 	if err != nil {
 		suite.add("GetUser_NonExistent", duration, nil, "correctly returned error")
-		logger.Info("✓ PASS GetUser_NonExistent - correctly returned error")
 	} else {
 		suite.add("GetUser_NonExistent", duration, fmt.Errorf("expected error but got success"), "")
 		logger.Error(nil, "✗ FAIL GetUser_NonExistent - should return error")
 	}
 
+	// Test GetUser with empty ID
+	start = time.Now()
+	reqEmpty := connect.NewRequest(&userv1.GetUserRequest{Id: ""})
+	_, err = client.GetUser(ctx, reqEmpty)
+	duration = time.Since(start)
+	if err != nil {
+		suite.add("GetUser_EmptyID", duration, nil, "correctly returned error")
+	} else {
+		suite.add("GetUser_EmptyID", duration, fmt.Errorf("expected error but got success"), "")
+		logger.Error(nil, "✗ FAIL GetUser_EmptyID - should return error")
+	}
+
 	// Test CreateUser with empty email
-	logger.Info("Testing CreateUser with empty email")
 	start = time.Now()
 	createReq := connect.NewRequest(&userv1.CreateUserRequest{
 		Email: "",
@@ -772,14 +995,12 @@ func testErrorScenarios(ctx context.Context, logger log.Logger, client userv1con
 	duration = time.Since(start)
 	if err != nil {
 		suite.add("CreateUser_EmptyEmail", duration, nil, "correctly returned error")
-		logger.Info("✓ PASS CreateUser_EmptyEmail - correctly returned error")
 	} else {
 		suite.add("CreateUser_EmptyEmail", duration, fmt.Errorf("expected error but got success"), "")
 		logger.Error(nil, "✗ FAIL CreateUser_EmptyEmail - should return error")
 	}
 
 	// Test CreateUser with empty name
-	logger.Info("Testing CreateUser with empty name")
 	start = time.Now()
 	createReq = connect.NewRequest(&userv1.CreateUserRequest{
 		Email: "test@example.com",
@@ -789,10 +1010,24 @@ func testErrorScenarios(ctx context.Context, logger log.Logger, client userv1con
 	duration = time.Since(start)
 	if err != nil {
 		suite.add("CreateUser_EmptyName", duration, nil, "correctly returned error")
-		logger.Info("✓ PASS CreateUser_EmptyName - correctly returned error")
 	} else {
 		suite.add("CreateUser_EmptyName", duration, fmt.Errorf("expected error but got success"), "")
 		logger.Error(nil, "✗ FAIL CreateUser_EmptyName - should return error")
+	}
+
+	// Test CreateUser with invalid email format
+	start = time.Now()
+	createReqInvalid := connect.NewRequest(&userv1.CreateUserRequest{
+		Email: "not-an-email",
+		Name:  "Test User",
+	})
+	_, err = client.CreateUser(ctx, createReqInvalid)
+	duration = time.Since(start)
+	if err != nil {
+		suite.add("CreateUser_InvalidEmail", duration, nil, "correctly returned error")
+	} else {
+		suite.add("CreateUser_InvalidEmail", duration, fmt.Errorf("expected error but got success"), "")
+		logger.Error(nil, "✗ FAIL CreateUser_InvalidEmail - should return error")
 	}
 }
 

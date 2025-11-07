@@ -47,6 +47,9 @@ type UserRepository interface {
 	// List retrieves users with pagination.
 	// Returns empty list if no users found.
 	List(ctx context.Context, page, pageSize int) ([]*model.User, int64, error)
+
+	// DeleteAll deletes all users from the database.
+	DeleteAll(ctx context.Context) (int64, error)
 }
 
 // userRepository implements the UserRepository interface using GORM.
@@ -261,4 +264,13 @@ func (r *userRepository) List(ctx context.Context, page, pageSize int) ([]*model
 	}
 
 	return users, total, nil
+}
+
+// DeleteAll deletes all users from the database.
+func (r *userRepository) DeleteAll(ctx context.Context) (int64, error) {
+	result := r.db.WithContext(ctx).Where("1 = 1").Delete(&model.User{})
+	if result.Error != nil {
+		return 0, errors.Wrap(errors.CodeInternal, "delete all users", result.Error)
+	}
+	return result.RowsAffected, nil
 }

@@ -190,6 +190,31 @@ test_examples_update() {
 }
 
 # Run connect-tester tests for both minimal and user services
+#
+# Test Coverage:
+#   - Minimal Service:
+#     * SayHello with multiple languages (en, es, fr, de, zh)
+#     * SayHello with empty name (defaults to "World")
+#     * SayHelloStream with different counts (1, 3, 5, 10)
+#     * SayHelloStream with zero count (defaults to 5)
+#     * Metrics endpoint validation
+#
+#   - User Service (Comprehensive CRUD + Admin):
+#     * CreateUser: Multiple users, error scenarios (empty email/name, invalid email)
+#     * GetUser: Success case, non-existent ID, empty ID
+#     * UpdateUser: Success case, non-existent ID, duplicate email
+#     * DeleteUser: Success case, non-existent ID
+#     * ListUsers: Multiple pagination scenarios (page 1 size 10, page 1 size 5, invalid page/pageSize normalization, large pageSize capping)
+#     * AdminResetAllUsers: Without token (rejected), with token but confirm=false (rejected), with token and confirm=true (success)
+#     * ValidateInternalToken: Valid token (success), invalid token (rejected)
+#     * Metrics endpoint validation (RPC metrics, runtime metrics, process metrics, database metrics)
+#
+#   - New Features Tested:
+#     * CallService helper function (via all handler methods)
+#     * CallServiceWithToken helper function (via AdminResetAllUsers handler)
+#     * RegisterOptionalClients batch client registration
+#     * Error handling and logging automation
+#     * Internal token validation via service-to-service communication
 run_connect_tester_tests() {
     local test_failed=0
 
@@ -198,6 +223,7 @@ run_connect_tester_tests() {
 
     # Test minimal service
     print_info "Testing minimal-service endpoints..."
+    print_info "Coverage: SayHello (multiple languages), SayHelloStream (various counts), Metrics"
     if ! go run main.go http://localhost:8080 minimal-service; then
         print_error "Minimal service tests failed"
         test_failed=1
@@ -205,9 +231,10 @@ run_connect_tester_tests() {
         print_success "Minimal service tests passed"
     fi
 
-    # Test user service
+    # Test user service with comprehensive test suite
     print_info "Testing user-service endpoints..."
-    if ! go run main.go http://localhost:8082 user-service; then
+    print_info "Coverage: Full CRUD operations, pagination scenarios, error handling, admin operations, metrics"
+    if ! INTERNAL_TOKEN="dev-internal-secret-token-12345" go run main.go http://localhost:8082 user-service; then
         print_error "User service tests failed"
         test_failed=1
     else

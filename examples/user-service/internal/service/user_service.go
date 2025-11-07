@@ -15,10 +15,14 @@ package service
 
 import (
 	"context"
+	"fmt"
 
+	"connectrpc.com/connect"
 	"go.eggybyte.com/egg/core/errors"
 	"go.eggybyte.com/egg/core/log"
+	greetv1 "go.eggybyte.com/egg/examples/minimal-connect-service/gen/go/greet/v1"
 	userv1 "go.eggybyte.com/egg/examples/user-service/gen/go/user/v1"
+	"go.eggybyte.com/egg/examples/user-service/internal/client"
 	"go.eggybyte.com/egg/examples/user-service/internal/model"
 	"go.eggybyte.com/egg/examples/user-service/internal/repository"
 )
@@ -40,12 +44,24 @@ type UserService interface {
 
 	// ListUsers retrieves users with pagination.
 	ListUsers(ctx context.Context, req *userv1.ListUsersRequest) (*userv1.ListUsersResponse, error)
+
+	// AdminResetAllUsers deletes all users (admin operation, requires internal token).
+	AdminResetAllUsers(ctx context.Context, req *userv1.AdminResetAllUsersRequest) (*userv1.AdminResetAllUsersResponse, error)
+
+	// GetGreeting demonstrates service-to-service communication using clientx.
+	// This method calls the greet service and returns a personalized greeting.
+	GetGreeting(ctx context.Context, userName string) (string, error)
+
+	// ValidateInternalToken validates an internal token by calling the greet service.
+	// This demonstrates service-to-service communication and token validation.
+	ValidateInternalToken(ctx context.Context, req *userv1.ValidateInternalTokenRequest) (*userv1.ValidateInternalTokenResponse, error)
 }
 
 // userService implements the UserService interface.
 type userService struct {
-	repo   repository.UserRepository
-	logger log.Logger
+	repo        repository.UserRepository
+	logger      log.Logger
+	greetClient *client.GreetClient
 }
 
 // NewUserService creates a new UserService instance with dependency injection.
@@ -56,6 +72,7 @@ type userService struct {
 // Parameters:
 //   - repo: UserRepository implementation for data access (must not be nil)
 //   - logger: Logger implementation for structured logging (must not be nil)
+//   - greetClient: GreetClient for service-to-service communication (may be nil)
 //
 // Returns:
 //   - UserService: service instance ready for use
@@ -73,7 +90,7 @@ type userService struct {
 // Concurrency:
 //
 //	Returned service is safe for concurrent use across multiple goroutines.
-func NewUserService(repo repository.UserRepository, logger log.Logger) UserService {
+func NewUserService(repo repository.UserRepository, logger log.Logger, greetClient *client.GreetClient) UserService {
 	if repo == nil {
 		panic("NewUserService: repository cannot be nil")
 	}
@@ -82,8 +99,9 @@ func NewUserService(repo repository.UserRepository, logger log.Logger) UserServi
 	}
 
 	return &userService{
-		repo:   repo,
-		logger: logger,
+		repo:        repo,
+		logger:      logger,
+		greetClient: greetClient,
 	}
 }
 
@@ -306,6 +324,164 @@ func (s *userService) ListUsers(ctx context.Context, req *userv1.ListUsersReques
 		Total:    int32(total),
 		Page:     int32(page),
 		PageSize: int32(pageSize),
+	}, nil
+}
+
+// AdminResetAllUsers deletes all users from the database.
+// This is a destructive admin operation that requires internal token authentication.
+//
+// Parameters:
+//   - ctx: request context (must contain valid internal token)
+//   - req: request with confirmation flag
+//
+// Returns:
+//   - *userv1.AdminResetAllUsersResponse: count of deleted users
+//   - error: nil on success; CodeInvalidArgument if not confirmed
+//
+// Security:
+//   - This method MUST be protected by internal token validation at handler level
+//   - Should only be callable by internal services
+func (s *userService) AdminResetAllUsers(ctx context.Context, req *userv1.AdminResetAllUsersRequest) (*userv1.AdminResetAllUsersResponse, error) {
+	s.logger.Debug("AdminResetAllUsers started", log.Bool("confirm", req.Confirm))
+
+	// Require explicit confirmation
+	if !req.Confirm {
+		s.logger.Debug("AdminResetAllUsers rejected: not confirmed")
+		return nil, errors.New(errors.CodeInvalidArgument, "confirm must be true to execute")
+	}
+
+	s.logger.Debug("AdminResetAllUsers calling repository")
+
+	// Delete all users
+	count, err := s.repo.DeleteAll(ctx)
+	if err != nil {
+		s.logger.Debug("AdminResetAllUsers repository failed", log.Str("error", err.Error()))
+		return nil, err
+	}
+
+	s.logger.Info("AdminResetAllUsers completed",
+		log.Int("deleted_count", int(count)))
+
+	return &userv1.AdminResetAllUsersResponse{
+		DeletedCount: int32(count),
+		Success:      true,
+	}, nil
+}
+
+// GetGreeting demonstrates service-to-service communication using clientx.
+//
+// This method showcases the egg framework's recommended pattern for calling other
+// microservices:
+//   - Uses clientx.NewConnectClient for production-ready client features
+//   - Automatic retry with exponential backoff
+//   - Circuit breaker to prevent cascade failures
+//   - Internal token injection for service-to-service authentication
+//   - Proper error handling and logging
+//
+// Parameters:
+//   - ctx: request context for cancellation and deadlines
+//   - userName: name to greet
+//
+// Returns:
+//   - string: greeting message from the greet service
+//   - error: nil on success; wrapped error on failure
+//
+// Errors:
+//   - CodeUnavailable: greet service is unavailable (circuit breaker or network error)
+//   - CodeDeadlineExceeded: request timeout exceeded
+//
+// Concurrency:
+//   - Safe for concurrent use
+func (s *userService) GetGreeting(ctx context.Context, userName string) (string, error) {
+	s.logger.Debug("GetGreeting started", log.Str("user_name", userName))
+
+	// Check if greet client is configured
+	if s.greetClient == nil {
+		s.logger.Debug("GetGreeting skipped: greet client not configured")
+		return "", errors.New(errors.CodeUnimplemented, "greet service not configured")
+	}
+
+	// Call the greet service using clientx client
+	// The client automatically handles:
+	// - Retry with exponential backoff
+	// - Circuit breaker
+	// - Internal token injection
+	// - Timeout handling
+	req := connect.NewRequest(&greetv1.SayHelloRequest{
+		Name:     userName,
+		Language: "en",
+	})
+
+	resp, err := s.greetClient.Client().SayHello(ctx, req)
+	if err != nil {
+		s.logger.Debug("GetGreeting failed", log.Str("user_name", userName), log.Str("error", err.Error()))
+		return "", errors.Wrap(errors.CodeUnavailable, "call greet service", err)
+	}
+
+	s.logger.Debug("GetGreeting completed",
+		log.Str("user_name", userName),
+		log.Str("greeting", resp.Msg.Message))
+
+	return resp.Msg.Message, nil
+}
+
+// ValidateInternalToken validates an internal token by calling the greet service.
+//
+// This method demonstrates standard client usage pattern - using the injected greetClient
+// to validate that the service's internal token works by making a real service call.
+// This is the recommended pattern: always use injected clients, never create temporary clients.
+//
+// Parameters:
+//   - ctx: request context (must not be nil)
+//   - req: validation request containing the token to validate
+//
+// Returns:
+//   - *userv1.ValidateInternalTokenResponse: validation result with status and message
+//   - error: nil on success; wrapped error on failure
+//
+// Behavior:
+//   - Uses the standard injected greetClient (configured with service's internal token)
+//   - Makes a real service call to validate token functionality
+//   - Returns validation result based on whether the call succeeds
+//
+// Concurrency:
+//   - Safe for concurrent use
+func (s *userService) ValidateInternalToken(ctx context.Context, req *userv1.ValidateInternalTokenRequest) (*userv1.ValidateInternalTokenResponse, error) {
+	s.logger.Debug("ValidateInternalToken started")
+
+	// Check if greet client is configured
+	if s.greetClient == nil {
+		s.logger.Debug("ValidateInternalToken: greet client not configured")
+		return &userv1.ValidateInternalTokenResponse{
+			Valid:        false,
+			ErrorMessage: "greet service not configured",
+		}, nil
+	}
+
+	// Use the standard injected client to call greet service
+	// The client already has the service's internal token configured
+	// This demonstrates standard client usage pattern
+	greetReq := connect.NewRequest(&greetv1.SayHelloRequest{
+		Name:     "Token Validator",
+		Language: "en",
+	})
+
+	resp, err := s.greetClient.Client().SayHello(ctx, greetReq)
+	if err != nil {
+		s.logger.Debug("ValidateInternalToken: greet service call failed",
+			log.Str("error", err.Error()))
+		return &userv1.ValidateInternalTokenResponse{
+			Valid:        false,
+			ErrorMessage: fmt.Sprintf("validation failed: %v", err),
+		}, nil
+	}
+
+	s.logger.Debug("ValidateInternalToken: validation successful",
+		log.Str("message", resp.Msg.Message))
+
+	return &userv1.ValidateInternalTokenResponse{
+		Valid:   true,
+		Message: resp.Msg.Message,
 	}, nil
 }
 

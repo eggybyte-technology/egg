@@ -49,18 +49,22 @@ type AppConfig struct {
 }
 
 func register(app *servicex.App) error {
-    // Get logger
+    // Get logger and database
     logger := app.Logger()
+    db := app.MustDB() // Panics if not configured
+    
+    // Access configuration if needed
+    cfg := app.Config().(*AppConfig)
     
     // Register your service handlers
-    handler := myhandler.New(logger, app.DB())
+    handler := myhandler.New(logger, db)
     
-    // Get interceptors and bind to mux
-    path, svcHandler := userv1connect.NewUserServiceHandler(
-        handler,
-        connect.WithInterceptors(app.Interceptors()...),
-    )
-    app.Mux().Handle(path, svcHandler)
+    // Simplified handler registration (automatically applies interceptors)
+    if err := app.RegisterConnectHandler(handler, func(handler any, opts ...connect.HandlerOption) (string, http.Handler) {
+        return userv1connect.NewUserServiceHandler(handler.(userv1connect.UserServiceHandler), opts...)
+    }); err != nil {
+        return err
+    }
     
     return nil
 }
@@ -120,6 +124,16 @@ DB_DRIVER=mysql DB_DSN=user:pass@tcp(localhost:3306)/mydb go run main.go
 | `WithDatabase(cfg)`       | Enable database support (auto-detected by `WithAppConfig`) |
 | `WithAutoMigrate(models...)`| Auto-migrate database models                   |
 
+### App Methods
+
+```go
+// Config returns the configuration struct that was passed to WithConfig
+func (a *App) Config() any
+
+// RegisterConnectHandler registers a Connect service handler with automatic interceptor injection
+func (a *App) RegisterConnectHandler(handler any, newHandler func(handler any, opts ...connect.HandlerOption) (string, http.Handler)) error
+```
+
 ### Environment Variables
 
 | Variable              | Description                          | Default  | Example                    |
@@ -138,6 +152,7 @@ DB_DRIVER=mysql DB_DSN=user:pass@tcp(localhost:3306)/mydb go run main.go
 | `HEALTH_PORT`         | Health check port                    | `8081`   | `HEALTH_PORT=9001`          |
 | `METRICS_PORT`        | Metrics endpoint port                | `9091`   | `METRICS_PORT=9002`        |
 | `ENABLE_METRICS`      | Enable metrics collection            | `true`   | `ENABLE_METRICS=false`     |
+| `INTERNAL_TOKEN`      | Internal service token for service-to-service auth | - | `INTERNAL_TOKEN=secret-token` |
 | `SLOW_REQUEST_MILLIS` | Slow request warning threshold (ms) | `1000`   | `SLOW_REQUEST_MILLIS=500`  |
 | `SHUTDOWN_TIMEOUT`    | Graceful shutdown timeout            | `15s`    | `SHUTDOWN_TIMEOUT=30s`     |
 
@@ -286,7 +301,15 @@ func (a *App) DB() *gorm.DB
 
 // MustDB returns the GORM database instance or panics
 func (a *App) MustDB() *gorm.DB
-```
+
+// InternalToken returns the configured internal token from environment
+func (a *App) InternalToken() string
+
+// Config returns the configuration struct that was passed to WithConfig
+func (a *App) Config() any
+
+// RegisterConnectHandler registers a Connect service handler with automatic interceptor injection
+func (a *App) RegisterConnectHandler(handler any, newHandler func(handler any, opts ...connect.HandlerOption) (string, http.Handler)) error
 
 ### Main Function
 
@@ -836,6 +859,8 @@ Check the initialization stages:
 
 ## Best Practices
 
+### Configuration and Setup
+
 1. **Configuration**: Always use `configx.BaseConfig` as embedded struct for auto-detection
 2. **Logging**: Use `LOG_LEVEL` environment variable instead of `WithDebugLogs()`
 3. **Database**: Use `WithAppConfig()` for automatic database configuration
@@ -843,6 +868,49 @@ Check the initialization stages:
 5. **Dependencies**: Use DI container for complex dependency graphs
 6. **Testing**: Use short timeouts and random ports for tests
 7. **Migration**: Prefer `WithAppConfig()` over separate `WithConfig()` + `WithDatabase()`
+
+### Service Registration Patterns (v0.3.3-alpha.2+)
+
+1. **Use `RegisterServices()`** for simplified dependency registration:
+   ```go
+   func registerServices(app *servicex.App) error {
+       return servicex.RegisterServices(app, map[string]any{
+           "repository": func(db *gorm.DB) MyRepository { ... },
+           "service": func(repo MyRepository, logger log.Logger) MyService { ... },
+           "handler": func(svc MyService, logger log.Logger) *MyHandler { ... },
+       })
+   }
+   ```
+
+2. **Use `CallService()` for handler simplification**:
+   ```go
+   func (h *MyHandler) GetUser(ctx context.Context, req *connect.Request[GetUserRequest]) (*connect.Response[GetUserResponse], error) {
+       return servicex.CallService(h.service.GetUser, h.logger, "GetUser")(ctx, req)
+   }
+   ```
+
+3. **Use injected clients** instead of creating temporary clients:
+   ```go
+   // ✅ Good: Use injected client
+   type MyService struct {
+       greetClient *client.GreetClient  // Injected via constructor
+   }
+   
+   // ❌ Bad: Creating temporary client in methods
+   func (s *MyService) DoSomething(token string) {
+       tempClient := client.NewGreetClient(url, token)  // Anti-pattern
+   }
+   ```
+
+4. **Prefer type-safe DI** with `ResolveTyped`:
+   ```go
+   // ✅ Good: Type-safe
+   service, err := servicex.ResolveTyped[*MyService](app)
+   
+   // ⚠️ OK: Traditional (requires type assertion)
+   var service *MyService
+   err := app.Resolve(&service)
+   ```
 
 ## Stability
 

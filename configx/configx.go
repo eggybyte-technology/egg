@@ -110,6 +110,9 @@ type BaseConfig struct {
 
 	// Database configuration (optional, embedded)
 	Database DatabaseConfig
+
+	// Security configuration (optional)
+	Security SecurityConfig
 }
 
 // DatabaseConfig holds database connection settings.
@@ -119,6 +122,11 @@ type DatabaseConfig struct {
 	MaxIdle     int           `env:"DB_MAX_IDLE" default:"10"`
 	MaxOpen     int           `env:"DB_MAX_OPEN" default:"100"`
 	MaxLifetime time.Duration `env:"DB_MAX_LIFETIME" default:"1h"`
+}
+
+// SecurityConfig holds security-related configuration.
+type SecurityConfig struct {
+	InternalToken string `env:"INTERNAL_TOKEN" default:""` // Token for internal service-to-service authentication
 }
 
 // GetHTTPPort returns the HTTP server port.

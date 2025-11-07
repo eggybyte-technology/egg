@@ -97,6 +97,15 @@ func HasAnyRole(ctx context.Context, roles ...string) bool
 func IsInternalService(ctx context.Context, serviceName string) bool
 ```
 
+#### Internal Token Validation
+
+```go
+// RequireInternalToken validates the internal token from context against expected token
+// Uses constant-time comparison to prevent timing attacks
+// Returns error if token is missing or invalid
+func RequireInternalToken(ctx context.Context, expectedToken string) error
+```
+
 ## Usage Examples
 
 ### Basic User Management
@@ -181,6 +190,26 @@ func multiRoleHandler(ctx context.Context) error {
     return nil
 }
 ```
+
+### Service-to-Service Authentication
+
+```go
+func adminResetHandler(ctx context.Context, req *AdminResetRequest) error {
+    // Validate internal token for service-to-service authentication
+    if err := identity.RequireInternalToken(ctx, expectedInternalToken); err != nil {
+        return err // Returns CodeUnauthenticated if token is missing or invalid
+    }
+    
+    // Admin operation logic (only callable by internal services)
+    return performReset(ctx, req)
+}
+```
+
+The `RequireInternalToken()` function:
+- Validates token from `RequestMeta.InternalToken` (extracted from `X-Internal-Token` header)
+- Uses constant-time comparison to prevent timing attacks
+- Returns `CodeUnauthenticated` error if token is missing or doesn't match
+- Supports method-level protection for fine-grained access control
 
 ## Integration with Connect
 

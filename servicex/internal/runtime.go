@@ -347,6 +347,14 @@ func (r *ServiceRuntime) buildApp() (*App, error) {
 		true, // payloadAccounting enabled by default
 	)
 
+	// Read internal token from environment
+	internalToken := ""
+	if r.config.Config != nil {
+		if baseCfg, ok := ExtractBaseConfig(r.config.Config); ok {
+			internalToken = baseCfg.Security.InternalToken
+		}
+	}
+
 	app := &App{
 		Mux:           mux,
 		Logger:        r.logger,
@@ -355,6 +363,8 @@ func (r *ServiceRuntime) buildApp() (*App, error) {
 		Container:     NewContainer(),
 		ShutdownHooks: []func(context.Context) error{},
 		DB:            r.db,
+		InternalToken: internalToken,
+		Config:        r.config.Config,
 	}
 
 	return app, nil
@@ -493,4 +503,6 @@ type App struct {
 	Container     *Container
 	ShutdownHooks []func(context.Context) error
 	DB            *gorm.DB
+	InternalToken string
+	Config        any
 }

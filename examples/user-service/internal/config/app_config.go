@@ -51,6 +51,12 @@ type AppConfig struct {
 	// Default: 100
 	// Environment variable: MAX_PAGE_SIZE
 	MaxPageSize int `env:"MAX_PAGE_SIZE" default:"100"`
+
+	// GreetServiceURL specifies the base URL for the greet service.
+	// This is used for service-to-service communication examples.
+	// Default: "http://minimal-service:8080"
+	// Environment variable: GREET_SERVICE_URL
+	GreetServiceURL string `env:"GREET_SERVICE_URL" default:"http://minimal-service:8080"`
 }
 
 // GetBaseConfig returns the embedded BaseConfig for framework use.

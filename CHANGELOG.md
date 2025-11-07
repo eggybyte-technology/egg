@@ -7,6 +7,146 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3-alpha.2] - 2025-11-07
+
+### Changed
+
+- **servicex**: Standardized client usage pattern across all services
+  - Services now use injected clients exclusively (no temporary client creation)
+  - Simplified `ValidateInternalToken` to demonstrate client capability by calling greet service
+  - Removed redundant `expectedInternalToken` and `greetServiceURL` fields from service structs
+  - Service constructors now accept only necessary dependencies (reduced parameters)
+- **servicex**: Consolidated handler wrapper functions for cleaner API
+  - Removed `WrapHandler` and `WrapHandlerWithToken` (redundant wrappers)
+  - `CallService` now directly includes logging logic
+  - `CallServiceWithToken` wraps `CallService` with `WithInternalToken` for consistent composition
+- **servicex**: Simplified DI container API
+  - `Provide()` and `Resolve()` are now convenience wrappers around `ProvideTyped()`/`ResolveTyped()`
+  - Improved error messages and type safety for dependency injection
+  - Reduced API surface while maintaining backward compatibility
+- **servicex**: Added `RegisterServices()` helper to consolidate common registration patterns
+  - Combines `ProvideCommonConstructors()` and `ProvideMany()` into single call
+  - Reduces boilerplate in service registration functions
+  - Automatically registers logger and database constructors
+- **examples/user-service**: Updated to demonstrate standardized patterns
+  - Simplified `registerServices()` function using new helpers
+  - Cleaner handler registration with direct pattern instead of unused generic helper
+  - Reduced main.go from ~180 lines to ~175 lines with improved clarity
+
+### Removed
+
+- **servicex**: Removed unused `RegisterConnectService` generic helper
+  - Not compatible with Connect's interface-based handler pattern
+  - Direct registration pattern is clearer and more idiomatic
+- **servicex**: Removed `CreateOptionalClient` helper (redundant)
+  - `RegisterOptionalClients` provides better batch registration
+- **examples/user-service**: Removed redundant service fields
+  - Removed `expectedInternalToken` field (direct validation no longer used)
+  - Removed `greetServiceURL` field (client encapsulates URL)
+  - Removed `secureCompare` helper function (no longer needed)
+
+### Fixed
+
+- **examples/connect-tester**: Updated `ValidateInternalToken` test to match new behavior
+  - Test now validates client capability instead of token comparison
+  - Adjusted expected RPC call count (23 instead of 24)
+  - Removed `ValidateInternalToken_Invalid` test (no longer applicable)
+
+## [0.3.3-alpha.1] - 2025-11-06
+
+### Added
+
+- **core/identity**: Added `RequireInternalToken()` function for service-to-service authentication
+  - Validates internal token from context against expected token using constant-time comparison
+  - Prevents timing attacks with `crypto/subtle.ConstantTimeCompare`
+  - Returns `CodeUnauthenticated` error if token is missing or invalid
+  - Supports method-level token validation for fine-grained access control
+- **configx**: Added `Security.InternalToken` field to `BaseConfig` for internal token configuration
+  - Automatically loaded from `INTERNAL_TOKEN` environment variable
+  - Integrated into service initialization flow via `servicex`
+- **servicex**: Added `App.Config()` method to access configuration struct in registration function
+  - Eliminates need to pass configuration as parameter to `registerServices`
+  - Simplifies service initialization code
+- **servicex**: Added `App.RegisterConnectHandler()` convenience method
+  - Automatically injects configured interceptors
+  - Reduces boilerplate code for Connect handler registration
+  - Logs handler registration for observability
+- **servicex**: Added `CallService()` and `CallServiceWithToken()` helper functions for handler simplification
+  - Automatically handles Connect request/response conversion (req.Msg → service call → connect.NewResponse)
+  - Provides automatic debug logging for all handler methods
+  - Reduces handler code from ~10 lines to 1 line per method
+  - `CallServiceWithToken()` includes internal token validation for admin operations
+- **servicex**: Added `RegisterOptionalClients()` for batch client registration
+  - Supports registering multiple optional service clients in one call
+  - Automatically extracts URLs from config struct using reflection (via field names)
+  - Unified logging and error handling for all clients
+  - Eliminates repetitive client creation code
+  - Extensible design: easily add new clients by adding entries to the map
+- **servicex**: Added `ProvideMany()` helper for bulk constructor registration
+  - Registers multiple constructors with unified error handling
+  - Stops on first error with descriptive error messages
+  - Reduces boilerplate in service registration
+- **servicex**: Added `ProvideCommonConstructors()` helper for standard dependencies
+  - Automatically registers logger and database constructors
+  - Reduces common initialization boilerplate
+- **servicex**: Added `ResolveAndRegister()` helper for dependency resolution and handler registration
+  - Combines dependency resolution and Connect handler registration in one call
+  - Simplifies service initialization flow
+- **clientx**: Added internal token support with `WithInternalToken()` option
+  - Automatically adds `X-Internal-Token` header to all outgoing requests
+  - Integrated into `NewConnectClient()` for seamless service-to-service authentication
+  - Configurable header name via `WithInternalTokenHeader()`
+- **examples/user-service**: Added comprehensive clientx usage example
+  - Demonstrates service-to-service communication pattern
+  - Shows client initialization with internal token injection
+  - Includes `internal/client` package with production-ready client wrapper
+  - Added `GetGreeting()` method demonstrating inter-service calls
+- **examples/user-service**: Added `ValidateInternalToken` RPC method
+  - Validates internal tokens by calling greet service with provided token
+  - Demonstrates service-to-service token validation pattern
+  - Supports both valid and invalid token test scenarios
+- **examples/connect-tester**: Enhanced test coverage with comprehensive endpoint testing
+  - Added multiple ListUsers pagination scenarios (different page sizes, normalization, capping)
+  - Added UpdateUser error scenarios (non-existent ID, duplicate email)
+  - Added DeleteUser error scenarios (non-existent ID)
+  - Added AdminResetAllUsers scenarios (no token, no confirm, with token and confirm)
+  - Added ValidateInternalToken tests (valid token, invalid token)
+  - Enhanced error scenario testing (empty ID, invalid email format)
+  - Reduced redundant test output for cleaner test logs
+  - Test coverage increased from 12 to 24 test cases
+
+### Changed
+
+- **servicex**: Simplified `registerServices` function signature
+  - No longer requires configuration parameter
+  - Configuration accessed via `app.Config()` method
+  - Makes main.go initialization code cleaner and more maintainable
+- **servicex**: Refactored internal structure following egg standards
+  - Moved `handlers.go` and `registration.go` to `internal/` directory
+  - Module root now contains only `servicex.go` and `servicex_test.go`
+  - All implementation logic properly encapsulated in `internal/` package
+- **examples/user-service**: Refactored to use new servicex convenience methods
+  - Uses `app.MustDB()` instead of manual nil check
+  - Uses `app.RegisterConnectHandler()` for simplified handler registration
+  - Uses `RegisterOptionalClients()` for batch client registration
+  - Uses `ProvideMany()` for bulk constructor registration
+  - Handler methods simplified using `CallService()` and `CallServiceWithToken()`
+  - Handler code reduced from ~150 lines to ~35 lines (77% reduction)
+  - Improved code organization and readability
+- **examples/user-service**: Simplified handler implementations
+  - All CRUD methods now use `CallService()` helper (1 line per method)
+  - Admin methods use `CallServiceWithToken()` for automatic token validation
+  - Eliminated repetitive error handling and response conversion code
+- **examples/user-service**: Simplified main.go client registration
+  - Replaced manual client creation with `RegisterOptionalClients()`
+  - Automatic URL extraction from config (no manual URLGetter functions)
+  - Easier to extend with additional clients in the future
+- **examples/connect-tester**: Reduced redundant test output
+  - Removed verbose success logging for individual test cases
+  - Only logs failures and critical test scenarios
+  - Test summary still provides complete coverage information
+  - Cleaner test output for better readability
+
 ### Fixed
 
 - **configx**: Fixed configuration validation not being called after environment variable binding

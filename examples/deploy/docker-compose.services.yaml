@@ -77,6 +77,12 @@ services:
       DB_MAX_IDLE: "10"
       DB_MAX_OPEN: "100"
       DB_MAX_LIFETIME: "1h"
+      
+      # Internal Token (for service-to-service authentication)
+      INTERNAL_TOKEN: "dev-internal-secret-token-12345"
+      
+      # Service-to-Service Communication (clientx example)
+      GREET_SERVICE_URL: "http://minimal-service:8080"
     ports:
       - "8082:8082"       # HTTP service port
       - "8083:8083"       # Health check port

@@ -55,6 +55,33 @@ func main() {
 }
 ```
 
+## Service-to-Service Communication
+
+For service-to-service authentication, use `NewConnectClient()` with `WithInternalToken()`:
+
+```go
+import (
+    "go.eggybyte.com/egg/clientx"
+    greetv1connect "myapp/gen/go/greet/v1/greetv1connect"
+)
+
+func createGreetClient(baseURL, internalToken string) greetv1connect.GreeterServiceClient {
+    return clientx.NewConnectClient(
+        baseURL,
+        "greet-service",
+        func(httpClient connect.HTTPClient, url string, opts ...connect.ClientOption) greetv1connect.GreeterServiceClient {
+            return greetv1connect.NewGreeterServiceClient(httpClient, url, opts...)
+        },
+        clientx.WithTimeout(10*time.Second),
+        clientx.WithRetry(3),
+        clientx.WithCircuitBreaker(true),
+        clientx.WithInternalToken(internalToken), // Automatically adds X-Internal-Token header
+    )
+}
+```
+
+The internal token is automatically added to all outgoing requests via the `X-Internal-Token` header (configurable via `WithInternalTokenHeader()`).
+
 ## Configuration Options
 
 | Option                      | Type           | Description                                |
@@ -63,6 +90,8 @@ func main() {
 | `WithRetry(n)`              | `int`          | Maximum retry attempts (default: 3)        |
 | `WithCircuitBreaker(bool)`  | `bool`         | Enable circuit breaker (default: true)     |
 | `WithIdempotencyKey(key)`   | `string`       | Custom idempotency header name             |
+| `WithInternalToken(token)`  | `string`       | Internal service token (auto-added to requests) |
+| `WithInternalTokenHeader(header)` | `string` | Custom header name for internal token (default: `X-Internal-Token`) |
 
 ## API Reference
 
@@ -70,12 +99,14 @@ func main() {
 
 ```go
 type Options struct {
-    Timeout          time.Duration // Request timeout
-    MaxRetries       int           // Maximum retry attempts
-    RetryBackoff     time.Duration // Initial backoff duration
-    EnableCircuit    bool          // Enable circuit breaker
-    CircuitThreshold uint32        // Circuit breaker failure threshold
-    IdempotencyKey   string        // Idempotency key header name
+    Timeout            time.Duration // Request timeout
+    MaxRetries         int           // Maximum retry attempts
+    RetryBackoff       time.Duration // Initial backoff duration
+    EnableCircuit      bool          // Enable circuit breaker
+    CircuitThreshold   uint32        // Circuit breaker failure threshold
+    IdempotencyKey     string        // Idempotency key header name
+    InternalToken      string        // Internal service token
+    InternalTokenHeader string       // Header name for internal token
 }
 ```
 
